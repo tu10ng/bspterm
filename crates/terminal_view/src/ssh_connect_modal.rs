@@ -2,19 +2,28 @@ use crate::TerminalView;
 use editor::Editor;
 use gpui::{
     App, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable, IntoElement, Render,
-    Styled, WeakEntity, Window,
+    Styled, Task, WeakEntity, Window,
 };
 use settings::Settings;
-use terminal::{TerminalBuilder, connection::ssh::SshConfig, terminal_settings::TerminalSettings};
+use terminal::{TerminalBuilder, connection::ssh::{SshAuthConfig, SshConfig}, terminal_settings::TerminalSettings};
 use ui::prelude::*;
+use ui::SpinnerLabel;
 use util::paths::PathStyle;
 use workspace::{ModalView, Pane, Workspace};
+
+#[derive(Clone, Debug, PartialEq)]
+enum ConnectionStatus {
+    Idle,
+    Connecting,
+    Error(SharedString),
+}
 
 pub struct SshConnectModal {
     workspace: WeakEntity<Workspace>,
     pane: Entity<Pane>,
     editor: Entity<Editor>,
-    error: Option<SharedString>,
+    connection_status: ConnectionStatus,
+    _connecting_task: Option<Task<()>>,
 }
 
 impl SshConnectModal {
@@ -26,7 +35,7 @@ impl SshConnectModal {
     ) -> Self {
         let editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
-            editor.set_placeholder_text("user@host[:port]", window, cx);
+            editor.set_placeholder_text("user@host[:port] or host user password", window, cx);
             editor
         });
 
@@ -37,7 +46,8 @@ impl SshConnectModal {
             workspace,
             pane,
             editor,
-            error: None,
+            connection_status: ConnectionStatus::Idle,
+            _connecting_task: None,
         }
     }
 
@@ -49,20 +59,31 @@ impl SshConnectModal {
         cx: &mut Context<Self>,
     ) {
         if let editor::EditorEvent::BufferEdited { .. } = event {
-            self.error = None;
-            cx.notify();
+            if matches!(self.connection_status, ConnectionStatus::Error(_)) {
+                self.connection_status = ConnectionStatus::Idle;
+                cx.notify();
+            }
         }
     }
 
     fn confirm(&mut self, _: &menu::Confirm, window: &mut Window, cx: &mut Context<Self>) {
+        if matches!(self.connection_status, ConnectionStatus::Connecting) {
+            return;
+        }
+
         let input = self.editor.read(cx).text(cx);
         match parse_ssh_string(&input) {
             Ok(config) => {
+                self.connection_status = ConnectionStatus::Connecting;
+                self.editor.update(cx, |editor, cx| {
+                    editor.set_read_only(true);
+                    cx.notify();
+                });
+                cx.notify();
                 self.connect(config, window, cx);
-                cx.emit(DismissEvent);
             }
             Err(err) => {
-                self.error = Some(err.into());
+                self.connection_status = ConnectionStatus::Error(err.into());
                 cx.notify();
             }
         }
@@ -72,7 +93,7 @@ impl SshConnectModal {
         cx.emit(DismissEvent);
     }
 
-    fn connect(&self, config: SshConfig, window: &mut Window, cx: &mut Context<Self>) {
+    fn connect(&mut self, config: SshConfig, window: &mut Window, cx: &mut Context<Self>) {
         let Some(workspace) = self.workspace.upgrade() else {
             return;
         };
@@ -85,6 +106,7 @@ impl SshConnectModal {
         let window_id = window.window_handle().window_id().as_u64();
         let pane = self.pane.clone();
         let weak_workspace = self.workspace.clone();
+        let this = cx.entity().downgrade();
 
         let terminal_task = TerminalBuilder::new_with_ssh(
             config,
@@ -96,11 +118,21 @@ impl SshConnectModal {
             path_style,
         );
 
-        cx.spawn_in(window, async move |_, cx| {
+        let task = cx.spawn_in(window, async move |_, cx| {
             let terminal_builder = match terminal_task.await {
                 Ok(builder) => builder,
                 Err(error) => {
                     log::error!("Failed to create SSH terminal: {}", error);
+                    let error_message = format_ssh_error(&error);
+                    this.update(cx, |this, cx| {
+                        this.connection_status = ConnectionStatus::Error(error_message.into());
+                        this.editor.update(cx, |editor, cx| {
+                            editor.set_read_only(false);
+                            cx.notify();
+                        });
+                        cx.notify();
+                    })
+                    .ok();
                     return;
                 }
             };
@@ -124,9 +156,49 @@ impl SshConnectModal {
                     });
                 })
                 .ok();
-        })
-        .detach();
+
+            this.update(cx, |_, cx| {
+                cx.emit(DismissEvent);
+            })
+            .ok();
+        });
+
+        self._connecting_task = Some(task);
     }
+}
+
+fn format_ssh_error(error: &anyhow::Error) -> String {
+    let error_string = format!("{:#}", error);
+
+    if error_string.contains("authentication") {
+        return "Authentication failed - check username and credentials".to_string();
+    }
+
+    if error_string.contains("Connection refused") {
+        return "Connection refused - check host and port".to_string();
+    }
+
+    if error_string.contains("No route to host") || error_string.contains("Network is unreachable")
+    {
+        return "Network unreachable - check host address".to_string();
+    }
+
+    if error_string.contains("timed out") || error_string.contains("Timeout") {
+        return "Connection timed out".to_string();
+    }
+
+    if error_string.contains("Name or service not known")
+        || error_string.contains("Could not resolve")
+    {
+        return "Could not resolve hostname".to_string();
+    }
+
+    let root_cause = error.root_cause().to_string();
+    if root_cause.len() <= 80 {
+        return root_cause;
+    }
+
+    root_cause.chars().take(77).collect::<String>() + "..."
 }
 
 impl ModalView for SshConnectModal {}
@@ -142,6 +214,7 @@ impl Focusable for SshConnectModal {
 impl Render for SshConnectModal {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
+        let status = self.connection_status.clone();
 
         v_flex()
             .key_context("SshConnectModal")
@@ -164,15 +237,26 @@ impl Render for SshConnectModal {
                     .w_full()
                     .p_2()
                     .gap_1()
-                    .when_some(self.error.clone(), |this, err| {
-                        this.child(Label::new(err).size(LabelSize::Small).color(Color::Error))
-                    })
-                    .when(self.error.is_none(), |this| {
-                        this.child(
+                    .map(|this| match &status {
+                        ConnectionStatus::Idle => this.child(
                             Label::new("Enter SSH connection string")
                                 .color(Color::Muted)
                                 .size(LabelSize::Small),
-                        )
+                        ),
+                        ConnectionStatus::Connecting => this
+                            .child(SpinnerLabel::new().size(LabelSize::Small))
+                            .child(
+                                Label::new("Connecting...")
+                                    .color(Color::Muted)
+                                    .size(LabelSize::Small),
+                            ),
+                        ConnectionStatus::Error(err) => this.child(
+                            div().max_w_full().overflow_hidden().child(
+                                Label::new(err.clone())
+                                    .size(LabelSize::Small)
+                                    .color(Color::Error),
+                            ),
+                        ),
                     }),
             )
     }
@@ -184,6 +268,24 @@ fn parse_ssh_string(input: &str) -> Result<SshConfig, String> {
         return Err("Connection string required".into());
     }
 
+    // Try space-separated format: host username password [port]
+    let parts: Vec<&str> = input.split_whitespace().collect();
+    if parts.len() >= 3 && !input.contains('@') {
+        let host = parts[0];
+        let username = parts[1];
+        let password = parts[2];
+        let port = if parts.len() >= 4 {
+            parts[3].parse::<u16>().map_err(|_| "Invalid port number")?
+        } else {
+            22
+        };
+
+        return Ok(SshConfig::new(host, port)
+            .with_username(username)
+            .with_auth(SshAuthConfig::Password(password.to_string())));
+    }
+
+    // Fall back to original format: user@host[:port]
     let (user_host, port) = if let Some((left, port_str)) = input.rsplit_once(':') {
         let port = port_str
             .parse::<u16>()
@@ -195,7 +297,7 @@ fn parse_ssh_string(input: &str) -> Result<SshConfig, String> {
 
     let (username, host) = user_host
         .split_once('@')
-        .ok_or("Format: user@host[:port]")?;
+        .ok_or("Format: user@host[:port] or host user password [port]")?;
 
     if username.is_empty() || host.is_empty() {
         return Err("Username and host required".into());
@@ -235,7 +337,7 @@ mod tests {
     fn test_parse_ssh_string_no_at() {
         let result = parse_ssh_string("hostname");
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Format: user@host[:port]");
+        assert_eq!(result.unwrap_err(), "Format: user@host[:port] or host user password [port]");
     }
 
     #[test]
@@ -264,5 +366,30 @@ mod tests {
         let config = parse_ssh_string("  user@host  ").unwrap();
         assert_eq!(config.host, "host");
         assert_eq!(config.username, Some("user".to_string()));
+    }
+
+    #[test]
+    fn test_parse_ssh_string_space_format_basic() {
+        let config = parse_ssh_string("127.0.0.1 root root").unwrap();
+        assert_eq!(config.host, "127.0.0.1");
+        assert_eq!(config.port, 22);
+        assert_eq!(config.username, Some("root".to_string()));
+        assert!(matches!(config.auth, SshAuthConfig::Password(ref p) if p == "root"));
+    }
+
+    #[test]
+    fn test_parse_ssh_string_space_format_with_port() {
+        let config = parse_ssh_string("192.168.1.1 admin password123 2222").unwrap();
+        assert_eq!(config.host, "192.168.1.1");
+        assert_eq!(config.port, 2222);
+        assert_eq!(config.username, Some("admin".to_string()));
+        assert!(matches!(config.auth, SshAuthConfig::Password(ref p) if p == "password123"));
+    }
+
+    #[test]
+    fn test_parse_ssh_string_space_format_invalid_port() {
+        let result = parse_ssh_string("host user pass notaport");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Invalid port number");
     }
 }

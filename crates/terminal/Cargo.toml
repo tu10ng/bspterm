@@ -46,6 +46,8 @@ russh.workspace = true
 ssh-key.workspace = true
 async-trait.workspace = true
 dirs.workspace = true
+gpui_tokio.workspace = true
+tokio.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows.workspace = true

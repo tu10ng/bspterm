@@ -5,8 +5,8 @@ use alacritty_terminal::event::{Event as AlacTermEvent, WindowSize};
 use anyhow::Result;
 use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
 use futures::FutureExt;
-use gpui::{BackgroundExecutor, Task};
 use parking_lot::{Mutex, RwLock};
+use tokio::task::JoinHandle;
 
 use super::session::{SshChannel, SshSession};
 use super::SshConfig;
@@ -27,7 +27,7 @@ pub struct SshTerminalConnection {
     command_tx: UnboundedSender<ChannelCommand>,
     state: Arc<RwLock<ConnectionState>>,
     #[allow(dead_code)]
-    channel_task: Mutex<Option<Task<()>>>,
+    channel_task: Mutex<Option<JoinHandle<()>>>,
     #[allow(dead_code)]
     initial_size: WindowSize,
     incoming_buffer: Arc<Mutex<Vec<u8>>>,
@@ -39,7 +39,7 @@ impl SshTerminalConnection {
         config: &SshConfig,
         initial_size: WindowSize,
         event_tx: UnboundedSender<AlacTermEvent>,
-        executor: BackgroundExecutor,
+        tokio_handle: tokio::runtime::Handle,
     ) -> Result<Self> {
         let state = Arc::new(RwLock::new(ConnectionState::Connecting));
 
@@ -60,7 +60,7 @@ impl SshTerminalConnection {
             state.clone(),
             config.initial_command.clone(),
             incoming_buffer.clone(),
-            executor,
+            tokio_handle,
         );
 
         Ok(Self {
@@ -128,9 +128,9 @@ fn spawn_channel_task(
     state: Arc<RwLock<ConnectionState>>,
     initial_command: Option<String>,
     incoming_buffer: Arc<Mutex<Vec<u8>>>,
-    executor: BackgroundExecutor,
-) -> Task<()> {
-    executor.spawn(async move {
+    tokio_handle: tokio::runtime::Handle,
+) -> JoinHandle<()> {
+    tokio_handle.spawn(async move {
         use futures::StreamExt;
 
         if let Some(command) = initial_command {

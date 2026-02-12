@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use alacritty_terminal::event::WindowSize;
 use anyhow::{Context as _, Result};
-use gpui::{BackgroundExecutor, Task};
+use gpui::Task;
 use parking_lot::RwLock;
 use russh::client::{Config, Handle};
 use russh::ChannelId;
+use tokio::sync::RwLock as TokioRwLock;
 
 use super::auth::{authenticate, SshAuthMethod};
 use super::{SshConfig, SshHostKey};
@@ -39,7 +40,7 @@ impl russh::client::Handler for SshClientHandler {
 /// This holds the authenticated connection and can open multiple channels.
 pub struct SshSession {
     host_key: SshHostKey,
-    handle: RwLock<Option<Handle<SshClientHandler>>>,
+    handle: TokioRwLock<Option<Handle<SshClientHandler>>>,
     state: RwLock<ConnectionState>,
     #[allow(dead_code)]
     keepalive_task: Option<Task<()>>,
@@ -47,10 +48,7 @@ pub struct SshSession {
 }
 
 impl SshSession {
-    pub async fn connect(
-        config: &SshConfig,
-        _executor: BackgroundExecutor,
-    ) -> Result<Arc<Self>> {
+    pub async fn connect(config: &SshConfig) -> Result<Arc<Self>> {
         let ssh_config = Arc::new(Config {
             keepalive_interval: config.keepalive_interval,
             keepalive_max: 3,
@@ -79,7 +77,7 @@ impl SshSession {
 
         let session = Arc::new(Self {
             host_key,
-            handle: RwLock::new(Some(handle)),
+            handle: TokioRwLock::new(Some(handle)),
             state: RwLock::new(ConnectionState::Connected),
             keepalive_task: None,
             auth_method,
@@ -105,13 +103,12 @@ impl SshSession {
     }
 
     /// Open a new terminal channel with a PTY.
-    #[allow(clippy::await_holding_lock)]
     pub async fn open_terminal_channel(
         &self,
         initial_size: WindowSize,
         env: &collections::HashMap<String, String>,
     ) -> Result<SshChannel> {
-        let handle_guard = self.handle.read();
+        let handle_guard = self.handle.read().await;
         let handle = handle_guard
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("SSH session is closed"))?;
@@ -153,10 +150,9 @@ impl SshSession {
         })
     }
 
-    #[allow(clippy::await_holding_lock)]
     pub async fn close(&self) {
         *self.state.write() = ConnectionState::Disconnected;
-        if let Some(handle) = self.handle.write().take() {
+        if let Some(handle) = self.handle.write().await.take() {
             let _ = handle
                 .disconnect(russh::Disconnect::ByApplication, "", "en")
                 .await;

@@ -700,6 +700,7 @@ impl TerminalBuilder {
         path_style: PathStyle,
     ) -> Task<Result<TerminalBuilder>> {
         let background_executor = cx.background_executor().clone();
+        let tokio_handle = gpui_tokio::Tokio::handle(cx);
         cx.spawn(async move |_| {
             let default_cursor_style = AlacCursorStyle::from(cursor_shape);
             let scrolling_history = max_scroll_history_lines
@@ -724,23 +725,30 @@ impl TerminalBuilder {
 
             let term = Arc::new(FairMutex::new(term));
 
-            let session_manager =
-                connection::ssh::SshSessionManager::new(background_executor.clone());
-            let session = session_manager
-                .get_or_create_session(&ssh_config)
-                .await
-                .context("failed to establish SSH session")?;
-
             let initial_size = TerminalBounds::default().into();
-            let ssh_connection = connection::ssh::SshTerminalConnection::new(
-                session,
-                &ssh_config,
-                initial_size,
-                events_tx,
-                background_executor.clone(),
-            )
-            .await
-            .context("failed to create SSH terminal channel")?;
+            let ssh_connection = tokio_handle
+                .spawn({
+                    let tokio_handle = tokio_handle.clone();
+                    async move {
+                        let session_manager = connection::ssh::SshSessionManager::new();
+                        let session = session_manager
+                            .get_or_create_session(&ssh_config)
+                            .await
+                            .context("failed to establish SSH session")?;
+
+                        connection::ssh::SshTerminalConnection::new(
+                            session,
+                            &ssh_config,
+                            initial_size,
+                            events_tx,
+                            tokio_handle,
+                        )
+                        .await
+                        .context("failed to create SSH terminal channel")
+                    }
+                })
+                .await
+                .context("SSH connection task panicked")??;
 
             let terminal = Terminal {
                 task: None,

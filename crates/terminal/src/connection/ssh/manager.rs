@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use gpui::BackgroundExecutor;
 use parking_lot::RwLock;
 
 use super::session::SshSession;
@@ -11,14 +10,12 @@ use super::{SshConfig, SshHostKey};
 /// Uses a hub-and-spoke model where sessions are pooled by host.
 pub struct SshSessionManager {
     sessions: RwLock<collections::HashMap<SshHostKey, Arc<SshSession>>>,
-    executor: BackgroundExecutor,
 }
 
 impl SshSessionManager {
-    pub fn new(executor: BackgroundExecutor) -> Self {
+    pub fn new() -> Self {
         Self {
             sessions: RwLock::new(collections::HashMap::default()),
-            executor,
         }
     }
 
@@ -33,7 +30,7 @@ impl SshSessionManager {
             }
         }
 
-        let session = SshSession::connect(config, self.executor.clone()).await?;
+        let session = SshSession::connect(config).await?;
         self.sessions.write().insert(key, session.clone());
         Ok(session)
     }
