@@ -1,7 +1,13 @@
 pub mod connection;
 pub mod mappings;
+pub mod session_store;
 
 pub use alacritty_terminal;
+
+pub use session_store::{
+    AuthMethod, GlobalSessionStore, ProtocolConfig, SessionConfig, SessionGroup, SessionNode,
+    SessionStore, SessionStoreEntity, SessionStoreEvent, SshSessionConfig, TelnetSessionConfig,
+};
 
 mod pty_info;
 mod terminal_hyperlinks;

@@ -48,6 +48,9 @@ async-trait.workspace = true
 dirs.workspace = true
 gpui_tokio.workspace = true
 tokio.workspace = true
+uuid = { workspace = true, features = ["v4", "serde"] }
+serde_json.workspace = true
+paths.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows.workspace = true
@@ -55,6 +58,5 @@ windows.workspace = true
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
 rand.workspace = true
-serde_json.workspace = true
 settings = { workspace = true, features = ["test-support"] }
 util_macros.workspace = true

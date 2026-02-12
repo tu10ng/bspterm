@@ -17760,6 +17760,7 @@ dependencies = [
  "libc",
  "log",
  "parking_lot",
+ "paths",
  "rand 0.9.2",
  "regex",
  "release_channel",
@@ -17779,6 +17780,7 @@ dependencies = [
  "urlencoding",
  "util",
  "util_macros",
+ "uuid",
  "windows 0.61.3",
 ]
 

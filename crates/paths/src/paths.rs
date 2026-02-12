@@ -236,6 +236,12 @@ pub fn settings_file() -> &'static PathBuf {
     SETTINGS_FILE.get_or_init(|| config_dir().join("settings.json"))
 }
 
+/// Returns the path to the `sessions.json` file for SSH/Telnet session configurations.
+pub fn sessions_file() -> &'static PathBuf {
+    static SESSIONS_FILE: OnceLock<PathBuf> = OnceLock::new();
+    SESSIONS_FILE.get_or_init(|| config_dir().join("sessions.json"))
+}
+
 /// Returns the path to the global settings file.
 pub fn global_settings_file() -> &'static PathBuf {
     static GLOBAL_SETTINGS_FILE: OnceLock<PathBuf> = OnceLock::new();
