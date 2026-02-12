@@ -307,6 +307,19 @@ pub mod project_panel {
         ]
     );
 }
+
+pub mod remote_explorer {
+    use gpui::actions;
+
+    actions!(
+        remote_explorer,
+        [
+            /// Toggles focus on the remote explorer panel.
+            ToggleFocus
+        ]
+    );
+}
+
 pub mod feedback {
     use gpui::actions;
 

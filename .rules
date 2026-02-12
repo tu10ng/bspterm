@@ -53,7 +53,8 @@ This is a fork of [Zed](https://github.com/zed-industries/zed), a GPU-accelerate
 - **vim** (`crates/vim`): Vim mode implementation over the editor.
 - **ui** (`crates/ui`): Shared UI components and patterns.
 - **collab** (`crates/collab`): Collaboration server for project sharing.
-- **terminal** / **terminal_view** (`crates/terminal`, `crates/terminal_view`): Terminal emulator.
+- **terminal** / **terminal_view** (`crates/terminal`, `crates/terminal_view`): Terminal emulator with SSH/Telnet session management.
+- **remote_explorer** (`crates/remote_explorer`): Panel for browsing and managing saved SSH/Telnet sessions in a tree view.
 
 ## Rust Coding Guidelines
 
@@ -193,3 +194,79 @@ Other entities can then register a callback to handle these events by doing `cx.
 ## Build guidelines
 
 - Use `./script/clippy` instead of `cargo clippy`
+
+## Session Management
+
+The terminal crate includes a session management system for persistent SSH/Telnet configurations (`crates/terminal/src/session_store.rs`).
+
+### Data Model
+
+- `SessionNode`: Enum representing either a `Group` or `Session` in a tree structure
+- `SessionGroup`: Folder containing other groups or sessions
+- `SessionConfig`: Session configuration with name, tags, and protocol-specific settings
+- `ProtocolConfig`: Enum for `Ssh` or `Telnet` configurations
+- `AuthMethod`: Authentication options (Interactive, Password, PrivateKey, Agent)
+
+### GPUI Integration
+
+- `SessionStoreEntity`: GPUI entity wrapping `SessionStore` with auto-save and event emission
+- `GlobalSessionStore`: Global marker for `cx.global()` access
+- `SessionStoreEvent`: Events for UI subscription (Changed, SessionAdded, SessionRemoved)
+
+### Usage
+
+```rust
+// Initialize on app startup
+SessionStoreEntity::init(cx);
+
+// Access globally
+let sessions = SessionStoreEntity::global(cx);
+sessions.update(cx, |store, cx| {
+    store.add_session(config, parent_id, cx);
+});
+
+// Subscribe to changes
+cx.subscribe(&sessions, |this, _, event, cx| {
+    // Handle SessionStoreEvent
+});
+```
+
+### Persistence
+
+Sessions are stored in `~/.config/zed/sessions.json` (or platform equivalent via `paths::sessions_file()`).
+
+## Remote Explorer Panel
+
+The `remote_explorer` crate (`crates/remote_explorer`) provides a panel for browsing saved SSH/Telnet sessions in a tree view.
+
+### Architecture
+
+- Uses `UniformList` for virtual scrolling with flattened tree structure
+- Indentation via `ListItem.indent_level()` with `px(12.)` step size
+- Icons: `FolderOpen`/`Folder` for groups, `Server` for sessions
+- Subscribes to `SessionStoreEvent` for automatic updates
+
+### Key Components
+
+- `FlattenedEntry`: Flattened tree entry with `id`, `depth`, and `node`
+- `RemoteExplorer`: Main panel struct implementing `Panel`, `Focusable`, `Render`
+- `init(cx)`: Initializes `SessionStoreEntity` and registers `ToggleFocus` action
+- `load()`: Async loader for workspace panel initialization
+
+### Integration Points
+
+- **Action**: `zed_actions::remote_explorer::ToggleFocus`
+- **Menu**: View > Remote Explorer
+- **Icon**: Server icon in left dock
+- **Position**: Left or Right dock (default: Left)
+- **Priority**: `activation_priority = 10`
+
+### Usage
+
+```rust
+// In app initialization (already done in zed crate)
+remote_explorer::init(cx);
+
+// Panel is automatically loaded via initialize_workspace()
+let remote_explorer = RemoteExplorer::load(workspace_handle.clone(), cx.clone());
+```

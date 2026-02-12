@@ -41,11 +41,16 @@ impl SessionNode {
     }
 }
 
+fn default_expanded() -> bool {
+    true
+}
+
 /// A group of sessions, can contain other groups or sessions.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SessionGroup {
     pub id: Uuid,
     pub name: String,
+    #[serde(default = "default_expanded")]
     pub expanded: bool,
     pub children: Vec<SessionNode>,
 }

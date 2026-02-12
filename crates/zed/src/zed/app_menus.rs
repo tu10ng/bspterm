@@ -40,6 +40,7 @@ pub fn app_menus(cx: &mut App) -> Vec<Menu> {
         }),
         MenuItem::separator(),
         MenuItem::action("Project Panel", zed_actions::project_panel::ToggleFocus),
+        MenuItem::action("Remote Explorer", zed_actions::remote_explorer::ToggleFocus),
         MenuItem::action("Outline Panel", outline_panel::ToggleFocus),
         MenuItem::action("Collab Panel", collab_panel::ToggleFocus),
         MenuItem::action("Terminal Panel", terminal_panel::ToggleFocus),

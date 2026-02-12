@@ -14419,6 +14419,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "remote_explorer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "gpui",
+ "terminal",
+ "ui",
+ "uuid",
+ "workspace",
+ "zed_actions",
+]
+
+[[package]]
 name = "remote_server"
 version = "0.1.0"
 dependencies = [
@@ -22101,6 +22114,7 @@ dependencies = [
  "recent_projects",
  "release_channel",
  "remote",
+ "remote_explorer",
  "repl",
  "reqwest_client",
  "rope",
