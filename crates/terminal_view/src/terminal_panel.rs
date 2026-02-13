@@ -29,10 +29,10 @@ use ui::{
 use util::{ResultExt, TryFutureExt};
 use workspace::{
     ActivateNextPane, ActivatePane, ActivatePaneDown, ActivatePaneLeft, ActivatePaneRight,
-    ActivatePaneUp, ActivatePreviousPane, DraggedSelection, DraggedTab, ItemId, MoveItemToPane,
-    MoveItemToPaneInDirection, MovePaneDown, MovePaneLeft, MovePaneRight, MovePaneUp, Pane,
-    PaneGroup, SplitDirection, SplitDown, SplitLeft, SplitMode, SplitRight, SplitUp, SwapPaneDown,
-    SwapPaneLeft, SwapPaneRight, SwapPaneUp, ToggleZoom, Workspace,
+    ActivatePaneUp, ActivatePreviousPane, ConnectSsh, DraggedSelection, DraggedTab, ItemId,
+    MoveItemToPane, MoveItemToPaneInDirection, MovePaneDown, MovePaneLeft, MovePaneRight,
+    MovePaneUp, Pane, PaneGroup, SplitDirection, SplitDown, SplitLeft, SplitMode, SplitRight,
+    SplitUp, SwapPaneDown, SwapPaneLeft, SwapPaneRight, SwapPaneUp, ToggleZoom, Workspace,
     dock::{DockPosition, Panel, PanelEvent, PanelHandle},
     item::SerializableItem,
     move_active_item, move_item, pane,
@@ -50,8 +50,6 @@ actions!(
         Toggle,
         /// Toggles focus on the terminal panel.
         ToggleFocus,
-        /// Opens SSH connection modal.
-        ConnectSsh
     ]
 );
 
@@ -73,10 +71,7 @@ pub fn init(cx: &mut App) {
                 }
             });
             workspace.register_action(|workspace, _: &ConnectSsh, window, cx| {
-                let Some(terminal_panel) = workspace.panel::<TerminalPanel>(cx) else {
-                    return;
-                };
-                let pane = terminal_panel.read(cx).active_pane.clone();
+                let pane = workspace.active_pane().clone();
                 let weak_workspace = workspace.weak_handle();
                 workspace.toggle_modal(window, cx, |window, cx| {
                     SshConnectModal::new(weak_workspace, pane, window, cx)

@@ -270,3 +270,25 @@ remote_explorer::init(cx);
 // Panel is automatically loaded via initialize_workspace()
 let remote_explorer = RemoteExplorer::load(workspace_handle.clone(), cx.clone());
 ```
+
+## Editor Panel
+
+The `editor_panel` crate (`crates/editor_panel`) provides a dockable panel for code editing, similar to the main editor but positioned in a dock.
+
+### Architecture
+
+- Wraps a `Pane` containing editor items
+- Auto-closes when the last tab is closed (matches TerminalPanel behavior)
+- Supports tab bar display and pane splitting
+
+### Key Components
+
+- `EditorPanel`: Main panel struct implementing `Panel`, `Focusable`, `Render`
+- `new_editor_pane()`: Creates a configured pane for the editor panel
+- `init(cx)`: Registers `ToggleFocus` action
+
+### Integration Points
+
+- **Action**: `zed_actions::editor_panel::ToggleFocus`
+- **Position**: Left, Right, or Bottom dock (default: Right)
+- **Auto-close**: Panel closes automatically when last tab is closed

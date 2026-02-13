@@ -61,6 +61,7 @@ members = [
     "crates/edit_prediction_ui",
     "crates/edit_prediction_context",
     "crates/editor",
+    "crates/editor_panel",
     "crates/encoding_selector",
     "crates/eval",
     "crates/eval_utils",
@@ -305,6 +306,7 @@ derive_refineable = { path = "crates/refineable/derive_refineable" }
 dev_container = { path = "crates/dev_container" }
 diagnostics = { path = "crates/diagnostics" }
 editor = { path = "crates/editor" }
+editor_panel = { path = "crates/editor_panel" }
 encoding_selector = { path = "crates/encoding_selector" }
 eval_utils = { path = "crates/eval_utils" }
 extension = { path = "crates/extension" }

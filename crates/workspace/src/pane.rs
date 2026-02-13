@@ -1,6 +1,6 @@
 use crate::{
-    CloseWindow, NewFile, NewTerminal, OpenInTerminal, OpenOptions, OpenTerminal, OpenVisible,
-    SplitDirection, ToggleFileFinder, ToggleProjectSymbols, ToggleZoom, Workspace,
+    CloseWindow, ConnectSsh, NewCenterTerminal, NewFile, OpenInTerminal, OpenOptions, OpenTerminal,
+    OpenVisible, SplitDirection, ToggleFileFinder, ToggleProjectSymbols, ToggleZoom, Workspace,
     WorkspaceItemBuilder, ZoomIn, ZoomOut,
     invalid_item_view::InvalidItemView,
     item::{
@@ -4107,10 +4107,7 @@ fn default_render_tab_bar_buttons(
         Some(_) => (false, pane.items_len() > 1),
         None => (false, false),
     };
-    // Ideally we would return a vec of elements here to pass directly to the [TabBar]'s
-    // `end_slot`, but due to needing a view here that isn't possible.
     let right_children = h_flex()
-        // Instead we need to replicate the spacing from the [TabBar]'s `end_slot` here.
         .gap(DynamicSpacing::Base04.rems(cx))
         .child(
             PopoverMenu::new("pane-tab-bar-popover-menu")
@@ -4122,7 +4119,10 @@ fn default_render_tab_bar_buttons(
                 .with_handle(pane.new_item_context_menu_handle.clone())
                 .menu(move |window, cx| {
                     Some(ContextMenu::build(window, cx, |menu, _, _| {
-                        menu.action("New File", NewFile.boxed_clone())
+                        menu.action("New Terminal", NewCenterTerminal::default().boxed_clone())
+                            .action("Connect SSH…", ConnectSsh.boxed_clone())
+                            .separator()
+                            .action("New File", NewFile.boxed_clone())
                             .action("Open File", ToggleFileFinder::default().boxed_clone())
                             .separator()
                             .action(
@@ -4135,9 +4135,15 @@ fn default_render_tab_bar_buttons(
                                 .boxed_clone(),
                             )
                             .action("Search Symbols", ToggleProjectSymbols.boxed_clone())
-                            .separator()
-                            .action("New Terminal", NewTerminal::default().boxed_clone())
                     }))
+                }),
+        )
+        .child(
+            IconButton::new("ssh-connect", IconName::Server)
+                .icon_size(IconSize::Small)
+                .tooltip(Tooltip::text("Connect SSH…"))
+                .on_click(|_, window, cx| {
+                    window.dispatch_action(ConnectSsh.boxed_clone(), cx);
                 }),
         )
         .child(

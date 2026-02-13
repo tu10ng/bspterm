@@ -100,6 +100,7 @@ debugger_ui.workspace = true
 dev_container.workspace = true
 diagnostics.workspace = true
 editor.workspace = true
+editor_panel.workspace = true
 encoding_selector.workspace = true
 env_logger.workspace = true
 extension.workspace = true

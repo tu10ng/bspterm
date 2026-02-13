@@ -249,14 +249,7 @@ impl RemoteExplorer {
     fn get_terminal_pane(&self, cx: &App) -> Option<Entity<Pane>> {
         let workspace = self.workspace.upgrade()?;
         let workspace = workspace.read(cx);
-
-        if let Some(terminal_panel) =
-            workspace.panel::<terminal_view::terminal_panel::TerminalPanel>(cx)
-        {
-            terminal_panel.read(cx).pane()
-        } else {
-            None
-        }
+        Some(workspace.active_pane().clone())
     }
 
     fn handle_auto_recognize_confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {

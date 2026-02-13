@@ -301,6 +301,8 @@ actions!(
         RestoreBanner,
         /// Toggles expansion of the selected item.
         ToggleExpandItem,
+        /// Opens the SSH connection dialog.
+        ConnectSsh,
     ]
 );
 
@@ -1440,13 +1442,13 @@ impl Workspace {
                 project.clone(),
                 pane_history_timestamp.clone(),
                 None,
-                NewFile.boxed_clone(),
+                NewCenterTerminal::default().boxed_clone(),
                 true,
                 window,
                 cx,
             );
             center_pane.set_can_split(Some(Arc::new(|_, _, _, _| true)));
-            center_pane.set_should_display_welcome_page(true);
+            center_pane.set_should_display_welcome_page(false);
             center_pane
         });
         cx.subscribe_in(&center_pane, window, Self::handle_pane_event)
@@ -3687,7 +3689,7 @@ impl Workspace {
                 self.project.clone(),
                 self.pane_history_timestamp.clone(),
                 None,
-                NewFile.boxed_clone(),
+                NewCenterTerminal::default().boxed_clone(),
                 true,
                 window,
                 cx,
