@@ -49,6 +49,7 @@ serde_json.workspace = true
 settings.workspace = true
 shell_command_parser.workspace = true
 strum.workspace = true
+terminal.workspace = true
 telemetry.workspace = true
 theme.workspace = true
 ui.workspace = true

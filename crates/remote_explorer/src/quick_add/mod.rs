@@ -114,22 +114,24 @@ impl QuickAddArea {
         pane: Option<Entity<Pane>>,
         window: &mut Window,
         cx: &mut App,
-    ) {
+    ) -> Option<(terminal::SshSessionConfig, Entity<Workspace>, Entity<Pane>)> {
         let input = self.auto_recognize.get_input(cx);
         let parsed = parse_connection_text(&input);
 
         if parsed.is_empty() {
-            return;
+            return None;
         }
 
-        if parsed.len() == 1 {
+        let result = if parsed.len() == 1 {
             let connection = &parsed[0];
-            self.connect_single(connection.clone(), workspace, pane, window, cx);
+            self.connect_single(connection.clone(), workspace, pane, window, cx)
         } else {
             self.show_multi_connection_modal(parsed, workspace, pane, window, cx);
-        }
+            None
+        };
 
         self.auto_recognize.clear_input(window, cx);
+        result
     }
 
     fn connect_single(
@@ -137,9 +139,9 @@ impl QuickAddArea {
         connection: ParsedConnection,
         workspace: WeakEntity<Workspace>,
         pane: Option<Entity<Pane>>,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut App,
-    ) {
+    ) -> Option<(terminal::SshSessionConfig, Entity<Workspace>, Entity<Pane>)> {
         match connection.protocol {
             ConnectionProtocol::Telnet => {
                 let config = terminal::TelnetSessionConfig::new(&connection.host, connection.port);
@@ -160,6 +162,7 @@ impl QuickAddArea {
                 });
 
                 log::info!("Telnet connection not yet implemented: {}", session_name);
+                None
             }
             ConnectionProtocol::Ssh => {
                 let username = connection.username.unwrap_or_else(|| "root".to_string());
@@ -178,7 +181,9 @@ impl QuickAddArea {
                 });
 
                 if let (Some(workspace), Some(pane)) = (workspace.upgrade(), pane) {
-                    connect_ssh(ssh_config, workspace, pane, window, cx);
+                    Some((ssh_config, workspace, pane))
+                } else {
+                    None
                 }
             }
         }
@@ -247,10 +252,10 @@ impl QuickAddArea {
         pane: Option<Entity<Pane>>,
         window: &mut Window,
         cx: &mut App,
-    ) {
+    ) -> Option<(terminal::SshSessionConfig, Entity<Workspace>, Entity<Pane>)> {
         let host_input = self.ssh_section.get_host(cx);
         if host_input.is_empty() {
-            return;
+            return None;
         }
 
         let (host, port, username) = parse_ssh_host_string(&host_input);
@@ -269,11 +274,13 @@ impl QuickAddArea {
             store.add_session(session_config, None, cx);
         });
 
-        if let (Some(workspace), Some(pane)) = (workspace.upgrade(), pane) {
-            connect_ssh(ssh_config, workspace, pane, window, cx);
-        }
-
         self.ssh_section.clear_host(window, cx);
+
+        if let (Some(workspace), Some(pane)) = (workspace.upgrade(), pane) {
+            Some((ssh_config, workspace, pane))
+        } else {
+            None
+        }
     }
 }
 
@@ -297,17 +304,66 @@ fn parse_ssh_host_string(input: &str) -> (String, u16, Option<String>) {
     }
 }
 
-fn connect_ssh(
+pub fn connect_ssh<T: 'static>(
     ssh_config: terminal::SshSessionConfig,
-    _workspace: Entity<Workspace>,
-    _pane: Entity<Pane>,
-    _window: &mut Window,
-    _cx: &mut App,
+    workspace: Entity<Workspace>,
+    pane: Entity<Pane>,
+    window: &mut Window,
+    cx: &mut gpui::Context<T>,
 ) {
-    let username = ssh_config.username.as_deref().unwrap_or("root");
-    let session_name = format!("{}@{}:{}", username, ssh_config.host, ssh_config.port);
-    log::info!(
-        "SSH connection requested: {} (use terminal panel SSH button for actual connection)",
-        session_name
+    use settings::Settings;
+    use terminal::connection::ssh::SshConfig;
+    use terminal::terminal_settings::TerminalSettings;
+    use terminal::TerminalBuilder;
+    use util::paths::PathStyle;
+
+    let config: SshConfig = (&ssh_config).into();
+    let settings = TerminalSettings::get_global(cx);
+    let cursor_shape = settings.cursor_shape;
+    let alternate_scroll = settings.alternate_scroll;
+    let max_scroll_history_lines = settings.max_scroll_history_lines;
+    let path_style = PathStyle::local();
+    let window_id = window.window_handle().window_id().as_u64();
+    let weak_workspace = workspace.downgrade();
+
+    let terminal_task = TerminalBuilder::new_with_ssh(
+        config,
+        cursor_shape,
+        alternate_scroll,
+        max_scroll_history_lines,
+        window_id,
+        cx,
+        path_style,
     );
+
+    cx.spawn_in(window, async move |_, cx| {
+        let terminal_builder = match terminal_task.await {
+            Ok(builder) => builder,
+            Err(error) => {
+                log::error!("Failed to create SSH terminal: {}", error);
+                return;
+            }
+        };
+
+        workspace
+            .update_in(cx, |workspace, window, cx| {
+                let terminal_handle = cx.new(|cx| terminal_builder.subscribe(cx));
+                let terminal_view = Box::new(cx.new(|cx| {
+                    terminal_view::TerminalView::new(
+                        terminal_handle,
+                        weak_workspace.clone(),
+                        workspace.database_id(),
+                        workspace.project().downgrade(),
+                        window,
+                        cx,
+                    )
+                }));
+
+                pane.update(cx, |pane, cx| {
+                    pane.add_item(terminal_view, true, true, None, window, cx);
+                });
+            })
+            .ok();
+    })
+    .detach();
 }

@@ -52,7 +52,7 @@ pub struct RemoteExplorer {
     width: Option<Pixels>,
     quick_add_expanded: bool,
     quick_add_area: QuickAddArea,
-    _subscription: Subscription,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl RemoteExplorer {
@@ -70,17 +70,37 @@ impl RemoteExplorer {
         let focus_handle = cx.focus_handle();
         let weak_workspace = workspace.weak_handle();
 
-        let subscription = cx.subscribe(&session_store, |this, _, event, cx| match event {
-            SessionStoreEvent::Changed
-            | SessionStoreEvent::SessionAdded(_)
-            | SessionStoreEvent::SessionRemoved(_)
-            | SessionStoreEvent::CredentialPresetChanged => {
-                this.update_visible_entries(cx);
-            }
-        });
+        let session_store_subscription =
+            cx.subscribe(&session_store, |this, _, event, cx| match event {
+                SessionStoreEvent::Changed
+                | SessionStoreEvent::SessionAdded(_)
+                | SessionStoreEvent::SessionRemoved(_)
+                | SessionStoreEvent::CredentialPresetChanged => {
+                    this.update_visible_entries(cx);
+                }
+            });
 
         let quick_add_area =
             QuickAddArea::new(session_store.clone(), weak_workspace.clone(), window, cx);
+
+        let username_editor = quick_add_area.telnet_section.username_editor.clone();
+        let password_editor = quick_add_area.telnet_section.password_editor.clone();
+
+        let username_subscription =
+            cx.subscribe(&username_editor, |this, _, event: &editor::EditorEvent, cx| {
+                if matches!(event, editor::EditorEvent::BufferEdited { .. }) {
+                    this.quick_add_area.telnet_section.clear_preset_selection();
+                    cx.notify();
+                }
+            });
+
+        let password_subscription =
+            cx.subscribe(&password_editor, |this, _, event: &editor::EditorEvent, cx| {
+                if matches!(event, editor::EditorEvent::BufferEdited { .. }) {
+                    this.quick_add_area.telnet_section.clear_preset_selection();
+                    cx.notify();
+                }
+            });
 
         let mut this = Self {
             session_store,
@@ -91,7 +111,11 @@ impl RemoteExplorer {
             width: None,
             quick_add_expanded: true,
             quick_add_area,
-            _subscription: subscription,
+            _subscriptions: vec![
+                session_store_subscription,
+                username_subscription,
+                password_subscription,
+            ],
         };
 
         this.update_visible_entries(cx);
@@ -152,8 +176,12 @@ impl RemoteExplorer {
     fn handle_auto_recognize_confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let workspace = self.workspace.clone();
         let pane = self.get_terminal_pane(cx);
-        self.quick_add_area
-            .handle_auto_recognize_confirm(workspace, pane, window, cx);
+        if let Some((ssh_config, workspace, pane)) = self
+            .quick_add_area
+            .handle_auto_recognize_confirm(workspace, pane, window, cx)
+        {
+            connect_ssh(ssh_config, workspace, pane, window, cx);
+        }
     }
 
     fn handle_telnet_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -166,8 +194,12 @@ impl RemoteExplorer {
     fn handle_ssh_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let workspace = self.workspace.clone();
         let pane = self.get_terminal_pane(cx);
-        self.quick_add_area
-            .handle_ssh_connect(workspace, pane, window, cx);
+        if let Some((ssh_config, workspace, pane)) = self
+            .quick_add_area
+            .handle_ssh_connect(workspace, pane, window, cx)
+        {
+            connect_ssh(ssh_config, workspace, pane, window, cx);
+        }
     }
 
     fn render_quick_add_header(&self, cx: &mut Context<Self>) -> impl IntoElement {

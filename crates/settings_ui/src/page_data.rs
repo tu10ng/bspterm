@@ -8,7 +8,7 @@ use ui::IntoElement;
 use crate::{
     ActionLink, DynamicItem, PROJECT, SettingField, SettingItem, SettingsFieldMetadata,
     SettingsPage, SettingsPageItem, SubPageLink, USER, active_language, all_language_names,
-    pages::{render_edit_prediction_setup_page, render_tool_permissions_setup_page},
+    pages::{render_credential_presets_page, render_edit_prediction_setup_page, render_tool_permissions_setup_page},
 };
 
 const DEFAULT_STRING: String = String::new();
@@ -6327,6 +6327,21 @@ fn terminal_page() -> SettingsPage {
         ]
     }
 
+    fn remote_sessions_section() -> [SettingsPageItem; 2] {
+        [
+            SettingsPageItem::SectionHeader("Remote Sessions"),
+            SettingsPageItem::SubPageLink(SubPageLink {
+                title: "Credential Presets".into(),
+                r#type: Default::default(),
+                json_path: None,
+                description: Some("Manage saved username/password presets for quick connections".into()),
+                in_json: false,
+                files: USER,
+                render: render_credential_presets_page,
+            }),
+        ]
+    }
+
     SettingsPage {
         title: "Terminal",
         items: concat_sections![
@@ -6338,6 +6353,7 @@ fn terminal_page() -> SettingsPage {
             advanced_settings_section(),
             toolbar_section(),
             scrollbar_section(),
+            remote_sessions_section(),
         ],
     }
 }

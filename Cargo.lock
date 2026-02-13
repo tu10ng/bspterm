@@ -16090,6 +16090,7 @@ dependencies = [
  "shell_command_parser",
  "strum 0.27.2",
  "telemetry",
+ "terminal",
  "theme",
  "title_bar",
  "ui",
