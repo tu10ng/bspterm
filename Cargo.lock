@@ -14423,9 +14423,15 @@ name = "remote_explorer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "editor",
  "gpui",
+ "log",
+ "menu",
+ "settings",
  "terminal",
+ "terminal_view",
  "ui",
+ "util",
  "uuid",
  "workspace",
  "zed_actions",

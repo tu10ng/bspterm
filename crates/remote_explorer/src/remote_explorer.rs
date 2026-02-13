@@ -1,19 +1,26 @@
+mod quick_add;
+
 use std::ops::Range;
 
 use anyhow::Result;
 use gpui::{
-    Action, App, AppContext as _, AsyncWindowContext, Context, Entity, EventEmitter, FocusHandle,
-    Focusable, ParentElement, Render, Styled, Subscription, UniformListScrollHandle, WeakEntity,
-    Window, px, uniform_list,
+    Action, App, AppContext as _, AsyncWindowContext, ClickEvent, Context, Entity, EventEmitter,
+    FocusHandle, Focusable, ParentElement, Render, Styled, Subscription, UniformListScrollHandle,
+    WeakEntity, Window, px, uniform_list,
 };
 use terminal::{SessionNode, SessionStoreEntity, SessionStoreEvent};
-use ui::{prelude::*, Color, Icon, IconName, IconSize, Label, ListItem, ListItemSpacing, v_flex};
+use ui::{
+    prelude::*, Color, Disclosure, Icon, IconName, IconSize, Label, LabelSize, ListItem,
+    ListItemSpacing, h_flex, v_flex,
+};
 use uuid::Uuid;
 use workspace::{
-    Workspace,
+    Pane, Workspace,
     dock::{DockPosition, Panel, PanelEvent},
 };
 use zed_actions::remote_explorer::ToggleFocus;
+
+pub use quick_add::*;
 
 const REMOTE_EXPLORER_PANEL_KEY: &str = "RemoteExplorerPanel";
 
@@ -41,9 +48,10 @@ pub struct RemoteExplorer {
     focus_handle: FocusHandle,
     scroll_handle: UniformListScrollHandle,
     visible_entries: Vec<FlattenedEntry>,
-    #[allow(dead_code)]
     workspace: WeakEntity<Workspace>,
     width: Option<Pixels>,
+    quick_add_expanded: bool,
+    quick_add_area: QuickAddArea,
     _subscription: Subscription,
 }
 
@@ -57,31 +65,32 @@ impl RemoteExplorer {
         })
     }
 
-    pub fn new(
-        workspace: &Workspace,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    pub fn new(workspace: &Workspace, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let session_store = SessionStoreEntity::global(cx);
         let focus_handle = cx.focus_handle();
+        let weak_workspace = workspace.weak_handle();
 
-        let subscription = cx.subscribe(&session_store, |this, _, event, cx| {
-            match event {
-                SessionStoreEvent::Changed
-                | SessionStoreEvent::SessionAdded(_)
-                | SessionStoreEvent::SessionRemoved(_) => {
-                    this.update_visible_entries(cx);
-                }
+        let subscription = cx.subscribe(&session_store, |this, _, event, cx| match event {
+            SessionStoreEvent::Changed
+            | SessionStoreEvent::SessionAdded(_)
+            | SessionStoreEvent::SessionRemoved(_)
+            | SessionStoreEvent::CredentialPresetChanged => {
+                this.update_visible_entries(cx);
             }
         });
+
+        let quick_add_area =
+            QuickAddArea::new(session_store.clone(), weak_workspace.clone(), window, cx);
 
         let mut this = Self {
             session_store,
             focus_handle,
             scroll_handle: UniformListScrollHandle::new(),
             visible_entries: Vec::new(),
-            workspace: workspace.weak_handle(),
+            workspace: weak_workspace,
             width: None,
+            quick_add_expanded: true,
+            quick_add_area,
             _subscription: subscription,
         };
 
@@ -99,11 +108,7 @@ impl RemoteExplorer {
         cx.notify();
     }
 
-    fn flatten_nodes(
-        nodes: &[SessionNode],
-        depth: usize,
-        result: &mut Vec<FlattenedEntry>,
-    ) {
+    fn flatten_nodes(nodes: &[SessionNode], depth: usize, result: &mut Vec<FlattenedEntry>) {
         for node in nodes {
             result.push(FlattenedEntry {
                 id: node.id(),
@@ -126,12 +131,318 @@ impl RemoteExplorer {
         self.update_visible_entries(cx);
     }
 
-    fn render_entry(
-        &self,
-        index: usize,
+    fn toggle_quick_add(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.quick_add_expanded = !self.quick_add_expanded;
+        cx.notify();
+    }
+
+    fn get_terminal_pane(&self, cx: &App) -> Option<Entity<Pane>> {
+        let workspace = self.workspace.upgrade()?;
+        let workspace = workspace.read(cx);
+
+        if let Some(terminal_panel) =
+            workspace.panel::<terminal_view::terminal_panel::TerminalPanel>(cx)
+        {
+            terminal_panel.read(cx).pane()
+        } else {
+            None
+        }
+    }
+
+    fn handle_auto_recognize_confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let workspace = self.workspace.clone();
+        let pane = self.get_terminal_pane(cx);
+        self.quick_add_area
+            .handle_auto_recognize_confirm(workspace, pane, window, cx);
+    }
+
+    fn handle_telnet_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let workspace = self.workspace.clone();
+        let pane = self.get_terminal_pane(cx);
+        self.quick_add_area
+            .handle_telnet_connect(workspace, pane, window, cx);
+    }
+
+    fn handle_ssh_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let workspace = self.workspace.clone();
+        let pane = self.get_terminal_pane(cx);
+        self.quick_add_area
+            .handle_ssh_connect(workspace, pane, window, cx);
+    }
+
+    fn render_quick_add_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+        let expanded = self.quick_add_expanded;
+
+        h_flex()
+            .id("quick-add-header")
+            .w_full()
+            .px_2()
+            .py_1()
+            .gap_1()
+            .cursor_pointer()
+            .hover(|style| style.bg(theme.colors().ghost_element_hover))
+            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                this.toggle_quick_add(window, cx);
+            }))
+            .child(Disclosure::new("quick-add-disclosure", expanded))
+            .child(
+                Label::new("Quick Add")
+                    .size(LabelSize::Small)
+                    .color(Color::Muted),
+            )
+    }
+
+    fn render_quick_add_content(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        v_flex()
+            .w_full()
+            .px_2()
+            .pb_2()
+            .gap_3()
+            .child(self.render_auto_recognize_section(window, cx))
+            .child(self.render_telnet_section(window, cx))
+            .child(self.render_ssh_section(window, cx))
+    }
+
+    fn render_auto_recognize_section(
+        &mut self,
         _window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> ListItem {
+    ) -> impl IntoElement {
+        let theme = cx.theme();
+        let editor = self.quick_add_area.auto_recognize.editor().clone();
+
+        v_flex()
+            .w_full()
+            .gap_1()
+            .child(
+                h_flex()
+                    .gap_1()
+                    .child(
+                        Icon::new(IconName::MagnifyingGlass)
+                            .size(IconSize::Small)
+                            .color(Color::Muted),
+                    )
+                    .child(
+                        Label::new("Auto-recognize")
+                            .size(LabelSize::Small)
+                            .color(Color::Muted),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .gap_1()
+                    .child(
+                        div()
+                            .flex_1()
+                            .border_1()
+                            .border_color(theme.colors().border)
+                            .rounded_sm()
+                            .px_1()
+                            .py_px()
+                            .on_action(cx.listener(|this, _: &menu::Confirm, window, cx| {
+                                this.handle_auto_recognize_confirm(window, cx);
+                            }))
+                            .child(editor),
+                    ),
+            )
+            .child(
+                Label::new("Supports: IP, IP:port, IP user pass")
+                    .size(LabelSize::XSmall)
+                    .color(Color::Muted),
+            )
+    }
+
+    fn render_telnet_section(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let session_store = self.session_store.read(cx);
+        let presets = session_store.credential_presets().to_vec();
+        let has_presets = !presets.is_empty();
+        let preset_label = self.quick_add_area.telnet_section.get_preset_label(cx);
+
+        let ip_editor = self.quick_add_area.telnet_section.ip_editor.clone();
+        let port_editor = self.quick_add_area.telnet_section.port_editor.clone();
+        let username_editor = self.quick_add_area.telnet_section.username_editor.clone();
+        let password_editor = self.quick_add_area.telnet_section.password_editor.clone();
+
+        let preset_menu = if has_presets {
+            Some(ui::ContextMenu::build(window, cx, move |mut menu, _window, _cx| {
+                menu = menu.entry("Custom", None, |_window, _cx| {});
+                for preset in &presets {
+                    let name = preset.name.clone();
+                    menu = menu.entry(name, None, |_window, _cx| {});
+                }
+                menu
+            }))
+        } else {
+            None
+        };
+
+        let theme = cx.theme();
+        let border_color = theme.colors().border;
+
+        v_flex()
+            .w_full()
+            .gap_1()
+            .child(
+                h_flex()
+                    .gap_1()
+                    .child(
+                        Icon::new(IconName::Terminal)
+                            .size(IconSize::Small)
+                            .color(Color::Muted),
+                    )
+                    .child(
+                        Label::new("Telnet Quick Connect")
+                            .size(LabelSize::Small)
+                            .color(Color::Muted),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .gap_1()
+                    .child(
+                        div()
+                            .flex_1()
+                            .border_1()
+                            .border_color(border_color)
+                            .rounded_sm()
+                            .px_1()
+                            .py_px()
+                            .child(ip_editor),
+                    )
+                    .child(
+                        div()
+                            .w_16()
+                            .border_1()
+                            .border_color(border_color)
+                            .rounded_sm()
+                            .px_1()
+                            .py_px()
+                            .child(port_editor),
+                    ),
+            )
+            .when_some(preset_menu, |this, menu| {
+                this.child(
+                    h_flex()
+                        .w_full()
+                        .gap_1()
+                        .child(
+                            Label::new("Preset:")
+                                .size(LabelSize::Small)
+                                .color(Color::Muted),
+                        )
+                        .child(
+                            ui::DropdownMenu::new("telnet-preset", preset_label, menu)
+                                .trigger_size(ui::ButtonSize::Compact),
+                        ),
+                )
+            })
+            .child(
+                h_flex()
+                    .w_full()
+                    .gap_1()
+                    .child(
+                        div()
+                            .flex_1()
+                            .border_1()
+                            .border_color(border_color)
+                            .rounded_sm()
+                            .px_1()
+                            .py_px()
+                            .child(username_editor),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .border_1()
+                            .border_color(border_color)
+                            .rounded_sm()
+                            .px_1()
+                            .py_px()
+                            .child(password_editor),
+                    ),
+            )
+            .child(
+                h_flex().w_full().justify_end().child(
+                    ui::Button::new("telnet-connect", "Connect")
+                        .style(ui::ButtonStyle::Filled)
+                        .size(ui::ButtonSize::Compact)
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.handle_telnet_connect(window, cx);
+                        })),
+                ),
+            )
+    }
+
+    fn render_ssh_section(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let theme = cx.theme();
+        let host_editor = self.quick_add_area.ssh_section.editor().clone();
+
+        v_flex()
+            .w_full()
+            .gap_1()
+            .child(
+                h_flex()
+                    .gap_1()
+                    .child(
+                        Icon::new(IconName::Server)
+                            .size(IconSize::Small)
+                            .color(Color::Muted),
+                    )
+                    .child(
+                        Label::new("SSH Quick Connect")
+                            .size(LabelSize::Small)
+                            .color(Color::Muted),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .gap_1()
+                    .child(
+                        div()
+                            .flex_1()
+                            .border_1()
+                            .border_color(theme.colors().border)
+                            .rounded_sm()
+                            .px_1()
+                            .py_px()
+                            .on_action(cx.listener(|this, _: &menu::Confirm, window, cx| {
+                                this.handle_ssh_connect(window, cx);
+                            }))
+                            .child(host_editor),
+                    )
+                    .child(
+                        ui::Button::new("ssh-connect", "Connect")
+                            .style(ui::ButtonStyle::Filled)
+                            .size(ui::ButtonSize::Compact)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.handle_ssh_connect(window, cx);
+                            })),
+                    ),
+            )
+            .child(
+                Label::new("Default: root/root")
+                    .size(LabelSize::XSmall)
+                    .color(Color::Muted),
+            )
+    }
+
+    fn render_entry(&self, index: usize, _window: &mut Window, cx: &mut Context<Self>) -> ListItem {
         let entry = &self.visible_entries[index];
         let id = entry.id;
         let depth = entry.depth;
@@ -147,12 +458,7 @@ impl RemoteExplorer {
                 true,
                 Some(group.expanded),
             ),
-            SessionNode::Session(session) => (
-                IconName::Server,
-                session.name.clone(),
-                false,
-                None,
-            ),
+            SessionNode::Session(session) => (IconName::Server, session.name.clone(), false, None),
         };
 
         ListItem::new(id)
@@ -190,13 +496,25 @@ impl RemoteExplorer {
 impl EventEmitter<PanelEvent> for RemoteExplorer {}
 
 impl Render for RemoteExplorer {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
         let item_count = self.visible_entries.len();
+        let quick_add_expanded = self.quick_add_expanded;
 
         v_flex()
             .id("remote-explorer")
             .size_full()
             .track_focus(&self.focus_handle(cx))
+            .child(
+                v_flex()
+                    .w_full()
+                    .border_b_1()
+                    .border_color(theme.colors().border_variant)
+                    .child(self.render_quick_add_header(cx))
+                    .when(quick_add_expanded, |this| {
+                        this.child(self.render_quick_add_content(window, cx))
+                    }),
+            )
             .child(if item_count > 0 {
                 uniform_list(
                     "remote-explorer-list",
@@ -210,12 +528,10 @@ impl Render for RemoteExplorer {
                 .into_any_element()
             } else {
                 v_flex()
+                    .flex_1()
                     .p_4()
                     .gap_2()
-                    .child(
-                        Label::new("No saved sessions")
-                            .color(Color::Muted)
-                    )
+                    .child(Label::new("No saved sessions").color(Color::Muted))
                     .into_any_element()
             })
     }
@@ -244,7 +560,12 @@ impl Panel for RemoteExplorer {
         matches!(position, DockPosition::Left | DockPosition::Right)
     }
 
-    fn set_position(&mut self, _position: DockPosition, _window: &mut Window, _cx: &mut Context<Self>) {
+    fn set_position(
+        &mut self,
+        _position: DockPosition,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
     }
 
     fn size(&self, _window: &Window, _cx: &App) -> Pixels {

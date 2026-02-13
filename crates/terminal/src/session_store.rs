@@ -10,6 +10,26 @@ use uuid::Uuid;
 
 use crate::connection::ssh::{SshAuthConfig, SshConfig};
 
+/// A saved credential preset for quick connection.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CredentialPreset {
+    pub id: Uuid,
+    pub name: String,
+    pub username: String,
+    pub password: String,
+}
+
+impl CredentialPreset {
+    pub fn new(name: impl Into<String>, username: impl Into<String>, password: impl Into<String>) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            name: name.into(),
+            username: username.into(),
+            password: password.into(),
+        }
+    }
+}
+
 /// A node in the session tree, either a group or a session.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -156,6 +176,10 @@ pub enum AuthMethod {
 pub struct TelnetSessionConfig {
     pub host: String,
     pub port: u16,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
     pub encoding: Option<String>,
 }
 
@@ -164,8 +188,20 @@ impl TelnetSessionConfig {
         Self {
             host: host.into(),
             port,
+            username: None,
+            password: None,
             encoding: None,
         }
+    }
+
+    pub fn with_credentials(
+        mut self,
+        username: impl Into<String>,
+        password: impl Into<String>,
+    ) -> Self {
+        self.username = Some(username.into());
+        self.password = Some(password.into());
+        self
     }
 }
 
@@ -233,6 +269,8 @@ impl From<&SshAuthConfig> for AuthMethod {
 pub struct SessionStore {
     pub version: u32,
     pub root: Vec<SessionNode>,
+    #[serde(default)]
+    pub credential_presets: Vec<CredentialPreset>,
 }
 
 impl SessionStore {
@@ -242,6 +280,7 @@ impl SessionStore {
         Self {
             version: Self::CURRENT_VERSION,
             root: Vec::new(),
+            credential_presets: Vec::new(),
         }
     }
 
@@ -356,6 +395,7 @@ pub enum SessionStoreEvent {
     Changed,
     SessionAdded(Uuid),
     SessionRemoved(Uuid),
+    CredentialPresetChanged,
 }
 
 /// Global marker for cx.global access.
@@ -458,6 +498,44 @@ impl SessionStoreEntity {
         if let Some(SessionNode::Group(group)) = self.store.find_node_mut(id) {
             group.expanded = !group.expanded;
             self.schedule_save(cx);
+            cx.notify();
+        }
+    }
+
+    /// Get credential presets.
+    pub fn credential_presets(&self) -> &[CredentialPreset] {
+        &self.store.credential_presets
+    }
+
+    /// Add a credential preset and trigger save.
+    pub fn add_credential_preset(&mut self, preset: CredentialPreset, cx: &mut Context<Self>) {
+        self.store.credential_presets.push(preset);
+        self.schedule_save(cx);
+        cx.emit(SessionStoreEvent::CredentialPresetChanged);
+        cx.notify();
+    }
+
+    /// Remove a credential preset by ID and trigger save.
+    pub fn remove_credential_preset(&mut self, id: Uuid, cx: &mut Context<Self>) {
+        if let Some(pos) = self.store.credential_presets.iter().position(|p| p.id == id) {
+            self.store.credential_presets.remove(pos);
+            self.schedule_save(cx);
+            cx.emit(SessionStoreEvent::CredentialPresetChanged);
+            cx.notify();
+        }
+    }
+
+    /// Update a credential preset and trigger save.
+    pub fn update_credential_preset(
+        &mut self,
+        id: Uuid,
+        update_fn: impl FnOnce(&mut CredentialPreset),
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(preset) = self.store.credential_presets.iter_mut().find(|p| p.id == id) {
+            update_fn(preset);
+            self.schedule_save(cx);
+            cx.emit(SessionStoreEvent::CredentialPresetChanged);
             cx.notify();
         }
     }
@@ -633,5 +711,52 @@ mod tests {
             }
             _ => panic!("Expected telnet config"),
         }
+    }
+
+    #[test]
+    fn test_telnet_config_with_credentials() {
+        let config = TelnetSessionConfig::new("legacy.host.com", 23)
+            .with_credentials("admin", "secret");
+        let session = SessionConfig::new_telnet("Legacy System", config);
+
+        let json = serde_json::to_string(&session).expect("serialize");
+        let restored: SessionConfig = serde_json::from_str(&json).expect("deserialize");
+
+        match restored.protocol {
+            ProtocolConfig::Telnet(t) => {
+                assert_eq!(t.host, "legacy.host.com");
+                assert_eq!(t.port, 23);
+                assert_eq!(t.username, Some("admin".to_string()));
+                assert_eq!(t.password, Some("secret".to_string()));
+            }
+            _ => panic!("Expected telnet config"),
+        }
+    }
+
+    #[test]
+    fn test_credential_preset() {
+        let preset = CredentialPreset::new("Default", "root", "password123");
+        assert_eq!(preset.name, "Default");
+        assert_eq!(preset.username, "root");
+        assert_eq!(preset.password, "password123");
+
+        let json = serde_json::to_string(&preset).expect("serialize");
+        let restored: CredentialPreset = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(restored.name, preset.name);
+        assert_eq!(restored.username, preset.username);
+        assert_eq!(restored.password, preset.password);
+    }
+
+    #[test]
+    fn test_session_store_with_credential_presets() {
+        let mut store = SessionStore::new();
+        let preset = CredentialPreset::new("Admin", "admin", "admin123");
+        store.credential_presets.push(preset);
+
+        let json = serde_json::to_string_pretty(&store).expect("serialize");
+        let restored: SessionStore = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(restored.credential_presets.len(), 1);
+        assert_eq!(restored.credential_presets[0].name, "Admin");
     }
 }
