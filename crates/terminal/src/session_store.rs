@@ -387,6 +387,135 @@ impl SessionStore {
         }
         None
     }
+
+    /// Move a node to a new parent at the specified index.
+    /// Returns true if the move was successful.
+    pub fn move_node(&mut self, node_id: Uuid, new_parent_id: Option<Uuid>, index: usize) -> bool {
+        if let Some(new_parent) = new_parent_id {
+            if self.is_ancestor_of(node_id, new_parent) {
+                return false;
+            }
+        }
+
+        let Some((current_parent, current_index)) = self.find_node_location(node_id) else {
+            return false;
+        };
+
+        let node = if current_parent.is_none() {
+            self.root.remove(current_index)
+        } else {
+            let mut removed_node = None;
+            Self::remove_from_parent(&mut self.root, current_parent, node_id, &mut removed_node);
+            match removed_node {
+                Some(n) => n,
+                None => return false,
+            }
+        };
+
+        let adjusted_index = if current_parent == new_parent_id && current_index < index {
+            index.saturating_sub(1)
+        } else {
+            index
+        };
+
+        match new_parent_id {
+            None => {
+                let insert_at = adjusted_index.min(self.root.len());
+                self.root.insert(insert_at, node);
+            }
+            Some(parent_id) => {
+                Self::insert_into_parent(&mut self.root, parent_id, node, adjusted_index);
+            }
+        }
+
+        true
+    }
+
+    /// Find the parent ID and index of a node.
+    /// Returns None if the node is not found.
+    /// Returns Some((None, index)) if the node is at the root level.
+    pub fn find_node_location(&self, id: Uuid) -> Option<(Option<Uuid>, usize)> {
+        if let Some(index) = self.root.iter().position(|n| n.id() == id) {
+            return Some((None, index));
+        }
+
+        Self::find_node_location_recursive(&self.root, id)
+    }
+
+    fn find_node_location_recursive(
+        nodes: &[SessionNode],
+        id: Uuid,
+    ) -> Option<(Option<Uuid>, usize)> {
+        for node in nodes {
+            if let SessionNode::Group(group) = node {
+                if let Some(index) = group.children.iter().position(|n| n.id() == id) {
+                    return Some((Some(group.id), index));
+                }
+                if let Some(found) = Self::find_node_location_recursive(&group.children, id) {
+                    return Some(found);
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if ancestor_id is an ancestor of node_id.
+    /// Returns true if node_id is contained within ancestor_id (directly or nested).
+    pub fn is_ancestor_of(&self, ancestor_id: Uuid, node_id: Uuid) -> bool {
+        let Some(SessionNode::Group(group)) = self.find_node(ancestor_id) else {
+            return false;
+        };
+        Self::contains_node(&group.children, node_id)
+    }
+
+    fn contains_node(nodes: &[SessionNode], id: Uuid) -> bool {
+        for node in nodes {
+            if node.id() == id {
+                return true;
+            }
+            if let SessionNode::Group(group) = node {
+                if Self::contains_node(&group.children, id) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn remove_from_parent(
+        nodes: &mut [SessionNode],
+        parent_id: Option<Uuid>,
+        node_id: Uuid,
+        removed: &mut Option<SessionNode>,
+    ) {
+        for node in nodes.iter_mut() {
+            if let SessionNode::Group(group) = node {
+                if Some(group.id) == parent_id {
+                    if let Some(index) = group.children.iter().position(|n| n.id() == node_id) {
+                        *removed = Some(group.children.remove(index));
+                        return;
+                    }
+                }
+                Self::remove_from_parent(&mut group.children, parent_id, node_id, removed);
+                if removed.is_some() {
+                    return;
+                }
+            }
+        }
+    }
+
+    fn insert_into_parent(nodes: &mut [SessionNode], parent_id: Uuid, node: SessionNode, index: usize) {
+        for n in nodes.iter_mut() {
+            if let SessionNode::Group(group) = n {
+                if group.id == parent_id {
+                    let insert_at = index.min(group.children.len());
+                    group.children.insert(insert_at, node);
+                    return;
+                }
+                Self::insert_into_parent(&mut group.children, parent_id, node.clone(), index);
+            }
+        }
+    }
 }
 
 /// Events emitted by the session store for UI subscription.
@@ -537,6 +666,32 @@ impl SessionStoreEntity {
             self.schedule_save(cx);
             cx.emit(SessionStoreEvent::CredentialPresetChanged);
             cx.notify();
+        }
+    }
+
+    /// Move a node to a new location and trigger save.
+    pub fn move_node(
+        &mut self,
+        node_id: Uuid,
+        new_parent_id: Option<Uuid>,
+        index: usize,
+        cx: &mut Context<Self>,
+    ) {
+        if self.store.move_node(node_id, new_parent_id, index) {
+            self.schedule_save(cx);
+            cx.emit(SessionStoreEvent::Changed);
+            cx.notify();
+        }
+    }
+
+    /// Expand a group if it's collapsed.
+    pub fn expand_group(&mut self, id: Uuid, cx: &mut Context<Self>) {
+        if let Some(SessionNode::Group(group)) = self.store.find_node_mut(id) {
+            if !group.expanded {
+                group.expanded = true;
+                self.schedule_save(cx);
+                cx.notify();
+            }
         }
     }
 
@@ -758,5 +913,161 @@ mod tests {
 
         assert_eq!(restored.credential_presets.len(), 1);
         assert_eq!(restored.credential_presets[0].name, "Admin");
+    }
+
+    #[test]
+    fn test_find_node_location_at_root() {
+        let mut store = SessionStore::new();
+        let session1 = SessionConfig::new_ssh("First", SshSessionConfig::new("host1", 22));
+        let session2 = SessionConfig::new_ssh("Second", SshSessionConfig::new("host2", 22));
+        let id1 = session1.id;
+        let id2 = session2.id;
+
+        store.add_node(SessionNode::Session(session1), None);
+        store.add_node(SessionNode::Session(session2), None);
+
+        assert_eq!(store.find_node_location(id1), Some((None, 0)));
+        assert_eq!(store.find_node_location(id2), Some((None, 1)));
+    }
+
+    #[test]
+    fn test_find_node_location_in_group() {
+        let mut store = SessionStore::new();
+        let group = SessionGroup::new("Group");
+        let group_id = group.id;
+        store.add_node(SessionNode::Group(group), None);
+
+        let session = SessionConfig::new_ssh("Test", SshSessionConfig::new("host", 22));
+        let session_id = session.id;
+        store.add_node(SessionNode::Session(session), Some(group_id));
+
+        assert_eq!(store.find_node_location(session_id), Some((Some(group_id), 0)));
+    }
+
+    #[test]
+    fn test_is_ancestor_of() {
+        let mut store = SessionStore::new();
+
+        let mut outer = SessionGroup::new("Outer");
+        let inner = SessionGroup::new("Inner");
+        let outer_id = outer.id;
+        let inner_id = inner.id;
+        outer.children.push(SessionNode::Group(inner));
+        store.add_node(SessionNode::Group(outer), None);
+
+        let session = SessionConfig::new_ssh("Test", SshSessionConfig::new("host", 22));
+        let session_id = session.id;
+        store.add_node(SessionNode::Session(session), Some(inner_id));
+
+        assert!(store.is_ancestor_of(outer_id, inner_id));
+        assert!(store.is_ancestor_of(outer_id, session_id));
+        assert!(store.is_ancestor_of(inner_id, session_id));
+        assert!(!store.is_ancestor_of(inner_id, outer_id));
+        assert!(!store.is_ancestor_of(session_id, outer_id));
+    }
+
+    #[test]
+    fn test_move_node_within_root() {
+        let mut store = SessionStore::new();
+        let session1 = SessionConfig::new_ssh("First", SshSessionConfig::new("host1", 22));
+        let session2 = SessionConfig::new_ssh("Second", SshSessionConfig::new("host2", 22));
+        let session3 = SessionConfig::new_ssh("Third", SshSessionConfig::new("host3", 22));
+        let id1 = session1.id;
+        let id2 = session2.id;
+        let id3 = session3.id;
+
+        store.add_node(SessionNode::Session(session1), None);
+        store.add_node(SessionNode::Session(session2), None);
+        store.add_node(SessionNode::Session(session3), None);
+
+        assert!(store.move_node(id3, None, 0));
+
+        assert_eq!(store.root[0].id(), id3);
+        assert_eq!(store.root[1].id(), id1);
+        assert_eq!(store.root[2].id(), id2);
+    }
+
+    #[test]
+    fn test_move_node_into_group() {
+        let mut store = SessionStore::new();
+        let group = SessionGroup::new("Group");
+        let group_id = group.id;
+        store.add_node(SessionNode::Group(group), None);
+
+        let session = SessionConfig::new_ssh("Test", SshSessionConfig::new("host", 22));
+        let session_id = session.id;
+        store.add_node(SessionNode::Session(session), None);
+
+        assert_eq!(store.root.len(), 2);
+
+        assert!(store.move_node(session_id, Some(group_id), 0));
+
+        assert_eq!(store.root.len(), 1);
+        if let Some(SessionNode::Group(g)) = store.find_node(group_id) {
+            assert_eq!(g.children.len(), 1);
+            assert_eq!(g.children[0].id(), session_id);
+        } else {
+            panic!("Expected group");
+        }
+    }
+
+    #[test]
+    fn test_move_node_out_of_group() {
+        let mut store = SessionStore::new();
+        let group = SessionGroup::new("Group");
+        let group_id = group.id;
+        store.add_node(SessionNode::Group(group), None);
+
+        let session = SessionConfig::new_ssh("Test", SshSessionConfig::new("host", 22));
+        let session_id = session.id;
+        store.add_node(SessionNode::Session(session), Some(group_id));
+
+        assert!(store.move_node(session_id, None, 0));
+
+        assert_eq!(store.root.len(), 2);
+        assert_eq!(store.root[0].id(), session_id);
+        if let Some(SessionNode::Group(g)) = store.find_node(group_id) {
+            assert_eq!(g.children.len(), 0);
+        } else {
+            panic!("Expected group");
+        }
+    }
+
+    #[test]
+    fn test_move_node_prevents_cycle() {
+        let mut store = SessionStore::new();
+
+        let mut outer = SessionGroup::new("Outer");
+        let inner = SessionGroup::new("Inner");
+        let outer_id = outer.id;
+        let inner_id = inner.id;
+        outer.children.push(SessionNode::Group(inner));
+        store.add_node(SessionNode::Group(outer), None);
+
+        assert!(!store.move_node(outer_id, Some(inner_id), 0));
+
+        assert_eq!(store.root.len(), 1);
+        assert_eq!(store.root[0].id(), outer_id);
+    }
+
+    #[test]
+    fn test_move_node_adjusts_index_when_moving_later_in_same_parent() {
+        let mut store = SessionStore::new();
+        let session1 = SessionConfig::new_ssh("First", SshSessionConfig::new("host1", 22));
+        let session2 = SessionConfig::new_ssh("Second", SshSessionConfig::new("host2", 22));
+        let session3 = SessionConfig::new_ssh("Third", SshSessionConfig::new("host3", 22));
+        let id1 = session1.id;
+        let id2 = session2.id;
+        let id3 = session3.id;
+
+        store.add_node(SessionNode::Session(session1), None);
+        store.add_node(SessionNode::Session(session2), None);
+        store.add_node(SessionNode::Session(session3), None);
+
+        assert!(store.move_node(id1, None, 2));
+
+        assert_eq!(store.root[0].id(), id2);
+        assert_eq!(store.root[1].id(), id1);
+        assert_eq!(store.root[2].id(), id3);
     }
 }

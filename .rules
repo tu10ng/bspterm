@@ -173,6 +173,42 @@ Input event handlers can be registered on an element via methods like `.on_click
 
 Often event handlers will want to update the entity that's in the current `Context<T>`. The `cx.listener` method provides this - its use looks like `.on_click(cx.listener(|this: &mut T, event, window, cx: &mut Context<T>| ...)`.
 
+## Drag and Drop
+
+### Classic Pitfall: `on_drag_move` fires for ALL registered handlers
+
+`on_drag_move` events fire during the Capture phase, which means ALL elements with registered `on_drag_move` handlers will receive the event, regardless of where the mouse actually is. This can cause unexpected behavior where a "background" or "blank-area" handler overwrites the target set by specific item handlers.
+
+**Wrong:**
+```rust
+// Background area - this handler fires even when mouse is over list items!
+div()
+    .id("blank-area")
+    .on_drag_move::<DraggedItem>(cx.listener(
+        |this, _event, _window, cx| {
+            this.drag_target = Some(DragTarget::Root);  // Overwrites item targets!
+            cx.notify();
+        },
+    ))
+```
+
+**Correct:**
+```rust
+// Background area - check bounds before setting target
+div()
+    .id("blank-area")
+    .on_drag_move::<DraggedItem>(cx.listener(
+        |this, event: &DragMoveEvent<DraggedItem>, _window, cx| {
+            if event.bounds.contains(&event.event.position) {
+                this.drag_target = Some(DragTarget::Root);
+                cx.notify();
+            }
+        },
+    ))
+```
+
+Always use `event.bounds.contains(&event.event.position)` in `on_drag_move` handlers to ensure the mouse is actually within the element's bounds. See `project_panel` for reference implementation.
+
 ## Actions
 
 Actions are dispatched via user keyboard interaction or in code via `window.dispatch_action(SomeAction.boxed_clone(), cx)` or `focus_handle.dispatch_action(&SomeAction, window, cx)`.

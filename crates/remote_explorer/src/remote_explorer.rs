@@ -2,12 +2,14 @@ mod quick_add;
 mod session_edit_modal;
 
 use std::ops::Range;
+use std::time::Duration;
 
 use anyhow::Result;
 use gpui::{
-    Action, App, AppContext as _, AsyncWindowContext, ClickEvent, Context, DismissEvent, Entity,
-    EventEmitter, FocusHandle, Focusable, MouseDownEvent, ParentElement, Point, Render, Styled,
-    Subscription, UniformListScrollHandle, WeakEntity, Window, anchored, deferred, px, uniform_list,
+    Action, AnyElement, App, AppContext as _, AsyncWindowContext, ClickEvent, Context,
+    DismissEvent, DragMoveEvent, Entity, EventEmitter, FocusHandle, Focusable, IntoElement,
+    ListSizingBehavior, MouseDownEvent, ParentElement, Point, Render, Styled, Subscription, Task,
+    UniformListScrollHandle, WeakEntity, Window, anchored, deferred, px, uniform_list,
 };
 use terminal::{ProtocolConfig, SessionNode, SessionStoreEntity, SessionStoreEvent};
 use ui::{
@@ -45,6 +47,51 @@ pub struct FlattenedEntry {
     pub node: SessionNode,
 }
 
+/// Data attached to drag operations.
+#[derive(Clone)]
+struct DraggedSessionEntry {
+    id: Uuid,
+    name: String,
+    is_group: bool,
+}
+
+/// Drop target indicator.
+#[derive(Clone, PartialEq)]
+enum DragTarget {
+    IntoGroup { group_id: Uuid },
+    BeforeEntry { entry_id: Uuid },
+    AfterEntry { entry_id: Uuid },
+    Root,
+}
+
+/// Visual representation during drag.
+struct DraggedSessionView {
+    name: String,
+    is_group: bool,
+}
+
+impl Render for DraggedSessionView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let icon = if self.is_group {
+            IconName::Folder
+        } else {
+            IconName::Server
+        };
+
+        h_flex()
+            .px_2()
+            .py_1()
+            .gap_1()
+            .bg(cx.theme().colors().elevated_surface_background)
+            .border_1()
+            .border_color(cx.theme().colors().border)
+            .rounded_md()
+            .shadow_md()
+            .child(Icon::new(icon).color(Color::Muted).size(IconSize::Small))
+            .child(Label::new(self.name.clone()))
+    }
+}
+
 pub struct RemoteExplorer {
     session_store: Entity<SessionStoreEntity>,
     focus_handle: FocusHandle,
@@ -56,6 +103,8 @@ pub struct RemoteExplorer {
     quick_add_area: QuickAddArea,
     selected_entry_id: Option<Uuid>,
     context_menu: Option<(Entity<ContextMenu>, Point<Pixels>, Subscription)>,
+    drag_target: Option<DragTarget>,
+    hover_expand_task: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -117,6 +166,8 @@ impl RemoteExplorer {
             quick_add_area,
             selected_entry_id: None,
             context_menu: None,
+            drag_target: None,
+            hover_expand_task: None,
             _subscriptions: vec![
                 session_store_subscription,
                 username_subscription,
@@ -553,7 +604,138 @@ impl RemoteExplorer {
             )
     }
 
-    fn render_entry(&self, index: usize, _window: &mut Window, cx: &mut Context<Self>) -> ListItem {
+    fn handle_drag_move(
+        &mut self,
+        target_id: Uuid,
+        target_is_group: bool,
+        target_is_expanded: bool,
+        dragged_id: Uuid,
+        dragged_is_group: bool,
+        mouse_y: f32,
+        item_height: f32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Bounds check: only process if mouse is within this item's bounds.
+        // This is necessary because on_drag_move fires for ALL registered handlers
+        // during the Capture phase, regardless of hitbox.
+        if mouse_y < 0.0 || mouse_y > item_height {
+            return;
+        }
+
+        if dragged_id == target_id {
+            self.drag_target = None;
+            self.hover_expand_task = None;
+            cx.notify();
+            return;
+        }
+
+        if dragged_is_group {
+            let session_store = self.session_store.read(cx);
+            if session_store.store().is_ancestor_of(dragged_id, target_id) {
+                self.drag_target = None;
+                self.hover_expand_task = None;
+                cx.notify();
+                return;
+            }
+        }
+
+        let relative_y = mouse_y / item_height;
+
+        let new_target = if target_is_group {
+            if relative_y < 0.25 {
+                DragTarget::BeforeEntry { entry_id: target_id }
+            } else if relative_y > 0.75 {
+                DragTarget::AfterEntry { entry_id: target_id }
+            } else {
+                DragTarget::IntoGroup { group_id: target_id }
+            }
+        } else if relative_y < 0.5 {
+            DragTarget::BeforeEntry { entry_id: target_id }
+        } else {
+            DragTarget::AfterEntry { entry_id: target_id }
+        };
+
+        let target_changed = self.drag_target.as_ref() != Some(&new_target);
+        self.drag_target = Some(new_target.clone());
+
+        if target_changed {
+            self.hover_expand_task = None;
+
+            if let DragTarget::IntoGroup { group_id } = &new_target {
+                if target_is_group && !target_is_expanded {
+                    let group_id = *group_id;
+                    let session_store = self.session_store.clone();
+                    self.hover_expand_task = Some(cx.spawn_in(window, async move |this, cx| {
+                        cx.background_executor().timer(Duration::from_millis(500)).await;
+                        this.update(&mut cx.clone(), |this, cx| {
+                            session_store.update(cx, |store, cx| {
+                                store.expand_group(group_id, cx);
+                            });
+                            this.update_visible_entries(cx);
+                        }).ok();
+                    }));
+                }
+            }
+
+            cx.notify();
+        }
+    }
+
+    fn handle_drop(
+        &mut self,
+        dragged: &DraggedSessionEntry,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(target) = self.drag_target.take() else {
+            return;
+        };
+        self.hover_expand_task = None;
+
+        let session_store = self.session_store.read(cx);
+        let store = session_store.store();
+
+        let (new_parent_id, index) = match target {
+            DragTarget::IntoGroup { group_id } => {
+                let child_count = store
+                    .find_node(group_id)
+                    .and_then(|n| match n {
+                        SessionNode::Group(g) => Some(g.children.len()),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+                (Some(group_id), child_count)
+            }
+            DragTarget::BeforeEntry { entry_id } => {
+                if let Some((parent_id, idx)) = store.find_node_location(entry_id) {
+                    (parent_id, idx)
+                } else {
+                    cx.notify();
+                    return;
+                }
+            }
+            DragTarget::AfterEntry { entry_id } => {
+                if let Some((parent_id, idx)) = store.find_node_location(entry_id) {
+                    (parent_id, idx + 1)
+                } else {
+                    cx.notify();
+                    return;
+                }
+            }
+            DragTarget::Root => (None, store.root.len()),
+        };
+
+        let _ = session_store;
+
+        self.session_store.update(cx, |store, cx| {
+            store.move_node(dragged.id, new_parent_id, index, cx);
+        });
+
+        self.update_visible_entries(cx);
+    }
+
+    fn render_entry(&mut self, index: usize, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let entry = &self.visible_entries[index];
         let id = entry.id;
         let depth = entry.depth;
@@ -573,7 +755,33 @@ impl RemoteExplorer {
             SessionNode::Session(session) => (IconName::Server, session.name.clone(), false, None),
         };
 
-        ListItem::new(id)
+        let is_expanded_bool = is_expanded.unwrap_or(false);
+
+        let show_before_indicator = matches!(
+            &self.drag_target,
+            Some(DragTarget::BeforeEntry { entry_id }) if *entry_id == id
+        );
+        let show_after_indicator = matches!(
+            &self.drag_target,
+            Some(DragTarget::AfterEntry { entry_id }) if *entry_id == id
+        );
+        let show_into_highlight = matches!(
+            &self.drag_target,
+            Some(DragTarget::IntoGroup { group_id }) if *group_id == id
+        );
+
+        let theme = cx.theme();
+        let accent_color = theme.colors().text_accent;
+        let drop_bg = theme.colors().drop_target_background;
+        let drop_border = theme.colors().drop_target_border;
+
+        let drag_data = DraggedSessionEntry {
+            id,
+            name: name.clone(),
+            is_group,
+        };
+
+        let list_item = ListItem::new(id)
             .indent_level(depth)
             .indent_step_size(px(12.))
             .spacing(ListItemSpacing::Dense)
@@ -608,7 +816,62 @@ impl RemoteExplorer {
                     .color(Color::Muted)
                     .size(IconSize::Small),
             )
-            .child(Label::new(name))
+            .child(Label::new(name));
+
+        let before_line = div()
+            .w_full()
+            .h(px(2.))
+            .when(show_before_indicator, |this| this.bg(accent_color));
+
+        let after_line = div()
+            .w_full()
+            .h(px(2.))
+            .when(show_after_indicator, |this| this.bg(accent_color));
+
+        let entry_wrapper = div()
+            .id(SharedString::from(format!("entry-wrapper-{}", id)))
+            .w_full()
+            .when(show_into_highlight, |this| {
+                this.bg(drop_bg).border_l_2().border_color(drop_border)
+            })
+            .on_drag(drag_data, move |drag_data, _click_offset, _window, cx| {
+                cx.new(|_| DraggedSessionView {
+                    name: drag_data.name.clone(),
+                    is_group: drag_data.is_group,
+                })
+            })
+            .on_drag_move::<DraggedSessionEntry>(cx.listener(
+                move |this, event: &DragMoveEvent<DraggedSessionEntry>, window, cx| {
+                    let bounds = event.bounds;
+                    let mouse_y = event.event.position.y - bounds.origin.y;
+                    let item_height = bounds.size.height;
+                    let drag_state = event.drag(cx);
+                    this.handle_drag_move(
+                        id,
+                        is_group,
+                        is_expanded_bool,
+                        drag_state.id,
+                        drag_state.is_group,
+                        mouse_y.into(),
+                        item_height.into(),
+                        window,
+                        cx,
+                    );
+                },
+            ))
+            .on_drop(cx.listener(
+                move |this, dragged: &DraggedSessionEntry, window, cx| {
+                    this.handle_drop(dragged, window, cx);
+                },
+            ))
+            .child(list_item);
+
+        v_flex()
+            .w_full()
+            .child(before_line)
+            .child(entry_wrapper)
+            .child(after_line)
+            .into_any_element()
     }
 
     fn render_entries(
@@ -616,7 +879,7 @@ impl RemoteExplorer {
         range: Range<usize>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Vec<ListItem> {
+    ) -> Vec<AnyElement> {
         let mut items = Vec::with_capacity(range.len());
         for ix in range {
             items.push(self.render_entry(ix, window, cx));
@@ -629,9 +892,21 @@ impl EventEmitter<PanelEvent> for RemoteExplorer {}
 
 impl Render for RemoteExplorer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Clean up drag state when there's no active drag.
+        // GPUI clears active_drag when mouse is released, but our drag_target persists.
+        if !cx.has_active_drag() && self.drag_target.is_some() {
+            self.drag_target = None;
+            self.hover_expand_task = None;
+        }
+
         let theme = cx.theme();
+        let border_variant = theme.colors().border_variant;
+        let accent_color = theme.colors().text_accent;
+        let drop_bg = theme.colors().drop_target_background;
+
         let item_count = self.visible_entries.len();
         let quick_add_expanded = self.quick_add_expanded;
+        let show_root_indicator = matches!(self.drag_target, Some(DragTarget::Root));
 
         v_flex()
             .id("remote-explorer")
@@ -641,31 +916,74 @@ impl Render for RemoteExplorer {
                 v_flex()
                     .w_full()
                     .border_b_1()
-                    .border_color(theme.colors().border_variant)
+                    .border_color(border_variant)
                     .child(self.render_quick_add_header(cx))
                     .when(quick_add_expanded, |this| {
                         this.child(self.render_quick_add_content(window, cx))
                     }),
             )
-            .child(if item_count > 0 {
-                uniform_list(
-                    "remote-explorer-list",
-                    item_count,
-                    cx.processor(|this, range: Range<usize>, window, cx| {
-                        this.render_entries(range, window, cx)
-                    }),
-                )
-                .flex_1()
-                .track_scroll(&self.scroll_handle)
-                .into_any_element()
-            } else {
+            .child(
                 v_flex()
                     .flex_1()
-                    .p_4()
-                    .gap_2()
-                    .child(Label::new("No saved sessions").color(Color::Muted))
-                    .into_any_element()
-            })
+                    .child(if item_count > 0 {
+                        uniform_list(
+                            "remote-explorer-list",
+                            item_count,
+                            cx.processor(|this, range: Range<usize>, window, cx| {
+                                this.render_entries(range, window, cx)
+                            }),
+                        )
+                        .with_sizing_behavior(ListSizingBehavior::Infer)
+                        .track_scroll(&self.scroll_handle)
+                        .on_drop(cx.listener(
+                            |this, dragged: &DraggedSessionEntry, window, cx| {
+                                // Handle drops on the list area that didn't land on a specific item.
+                                // If we have a valid drag_target, process the drop normally.
+                                // Otherwise, clean up the drag state.
+                                if this.drag_target.is_some() {
+                                    this.handle_drop(dragged, window, cx);
+                                } else {
+                                    this.hover_expand_task = None;
+                                    cx.notify();
+                                }
+                            },
+                        ))
+                        .into_any_element()
+                    } else {
+                        v_flex()
+                            .p_4()
+                            .gap_2()
+                            .child(Label::new("No saved sessions").color(Color::Muted))
+                            .into_any_element()
+                    })
+                    .child(
+                        div()
+                            .id("remote-explorer-blank-area")
+                            .w_full()
+                            .flex_grow()
+                            .child(
+                                div()
+                                    .w_full()
+                                    .h(px(2.))
+                                    .when(show_root_indicator, |this| this.bg(accent_color)),
+                            )
+                            .when(show_root_indicator, |this| this.bg(drop_bg))
+                            .on_drag_move::<DraggedSessionEntry>(cx.listener(
+                                |this, event: &DragMoveEvent<DraggedSessionEntry>, _window, cx| {
+                                    if event.bounds.contains(&event.event.position) {
+                                        this.drag_target = Some(DragTarget::Root);
+                                        this.hover_expand_task = None;
+                                        cx.notify();
+                                    }
+                                },
+                            ))
+                            .on_drop(cx.listener(
+                                |this, dragged: &DraggedSessionEntry, window, cx| {
+                                    this.handle_drop(dragged, window, cx);
+                                },
+                            )),
+                    ),
+            )
             .children(self.context_menu.as_ref().map(|(menu, position, _)| {
                 deferred(
                     anchored()
