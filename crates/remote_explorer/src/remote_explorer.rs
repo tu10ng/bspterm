@@ -142,7 +142,7 @@ impl RemoteExplorer {
         let username_subscription =
             cx.subscribe(&username_editor, |this, _, event: &editor::EditorEvent, cx| {
                 if matches!(event, editor::EditorEvent::BufferEdited { .. }) {
-                    this.quick_add_area.telnet_section.clear_preset_selection();
+                    this.quick_add_area.telnet_section.clear_credential_selection();
                     cx.notify();
                 }
             });
@@ -150,7 +150,7 @@ impl RemoteExplorer {
         let password_subscription =
             cx.subscribe(&password_editor, |this, _, event: &editor::EditorEvent, cx| {
                 if matches!(event, editor::EditorEvent::BufferEdited { .. }) {
-                    this.quick_add_area.telnet_section.clear_preset_selection();
+                    this.quick_add_area.telnet_section.clear_credential_selection();
                     cx.notify();
                 }
             });
@@ -437,27 +437,45 @@ impl RemoteExplorer {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let session_store = self.session_store.read(cx);
-        let presets = session_store.credential_presets().to_vec();
-        let has_presets = !presets.is_empty();
-        let preset_label = self.quick_add_area.telnet_section.get_preset_label(cx);
+        let credentials = session_store.store().collect_telnet_credentials();
+        let credential_label = self.quick_add_area.telnet_section.get_credential_label();
 
         let ip_editor = self.quick_add_area.telnet_section.ip_editor.clone();
         let port_editor = self.quick_add_area.telnet_section.port_editor.clone();
         let username_editor = self.quick_add_area.telnet_section.username_editor.clone();
         let password_editor = self.quick_add_area.telnet_section.password_editor.clone();
 
-        let preset_menu = if has_presets {
-            Some(ui::ContextMenu::build(window, cx, move |mut menu, _window, _cx| {
-                menu = menu.entry("Custom", None, |_window, _cx| {});
-                for preset in &presets {
-                    let name = preset.name.clone();
-                    menu = menu.entry(name, None, |_window, _cx| {});
+        let this = cx.entity().downgrade();
+        let credential_menu = ui::ContextMenu::build(window, cx, move |mut menu, _window, _cx| {
+            let this_for_custom = this.clone();
+            menu = menu.entry("Custom", None, move |window, cx| {
+                if let Some(this) = this_for_custom.upgrade() {
+                    this.update(cx, |this, cx| {
+                        this.quick_add_area
+                            .telnet_section
+                            .select_credential(None, window, cx);
+                        cx.notify();
+                    });
                 }
-                menu
-            }))
-        } else {
-            None
-        };
+            });
+            for (username, password) in &credentials {
+                let label = username.clone();
+                let credential = (username.clone(), password.clone());
+                let this_for_cred = this.clone();
+                menu = menu.entry(label, None, move |window, cx| {
+                    if let Some(this) = this_for_cred.upgrade() {
+                        let cred = credential.clone();
+                        this.update(cx, |this, cx| {
+                            this.quick_add_area
+                                .telnet_section
+                                .select_credential(Some(cred), window, cx);
+                            cx.notify();
+                        });
+                    }
+                });
+            }
+            menu
+        });
 
         let theme = cx.theme();
         let border_color = theme.colors().border;
@@ -504,22 +522,20 @@ impl RemoteExplorer {
                             .child(port_editor),
                     ),
             )
-            .when_some(preset_menu, |this, menu| {
-                this.child(
-                    h_flex()
-                        .w_full()
-                        .gap_1()
-                        .child(
-                            Label::new("Preset:")
-                                .size(LabelSize::Small)
-                                .color(Color::Muted),
-                        )
-                        .child(
-                            ui::DropdownMenu::new("telnet-preset", preset_label, menu)
-                                .trigger_size(ui::ButtonSize::Compact),
-                        ),
-                )
-            })
+            .child(
+                h_flex()
+                    .w_full()
+                    .gap_1()
+                    .child(
+                        Label::new("Credential:")
+                            .size(LabelSize::Small)
+                            .color(Color::Muted),
+                    )
+                    .child(
+                        ui::DropdownMenu::new("telnet-credential", credential_label, credential_menu)
+                            .trigger_size(ui::ButtonSize::Compact),
+                    ),
+            )
             .child(
                 h_flex()
                     .w_full()

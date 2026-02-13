@@ -5,21 +5,19 @@ use ui::{
     prelude::*, Button, ButtonStyle, Color, Icon, IconName, IconSize, Label, LabelSize, h_flex,
     v_flex,
 };
-use uuid::Uuid;
 
 pub struct TelnetSection {
     pub ip_editor: Entity<Editor>,
     pub port_editor: Entity<Editor>,
     pub username_editor: Entity<Editor>,
     pub password_editor: Entity<Editor>,
-    selected_preset: Option<Uuid>,
-    session_store: Entity<SessionStoreEntity>,
+    selected_credential: Option<(String, String)>,
     _subscriptions: Vec<Subscription>,
 }
 
 impl TelnetSection {
     pub fn new(
-        session_store: Entity<SessionStoreEntity>,
+        _session_store: Entity<SessionStoreEntity>,
         window: &mut Window,
         cx: &mut App,
     ) -> Self {
@@ -52,8 +50,7 @@ impl TelnetSection {
             port_editor,
             username_editor,
             password_editor,
-            selected_preset: None,
-            session_store,
+            selected_credential: None,
             _subscriptions: Vec::new(),
         }
     }
@@ -80,44 +77,35 @@ impl TelnetSection {
         self.password_editor.update(cx, |editor, cx| {
             editor.set_text("", window, cx);
         });
-        self.selected_preset = None;
+        self.selected_credential = None;
     }
 
-    pub fn select_preset(&mut self, preset_id: Option<Uuid>, window: &mut Window, cx: &mut App) {
-        self.selected_preset = preset_id;
+    pub fn select_credential(
+        &mut self,
+        credential: Option<(String, String)>,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.selected_credential = credential.clone();
 
-        if let Some(id) = preset_id {
-            let session_store = self.session_store.read(cx);
-            if let Some(preset) = session_store.credential_presets().iter().find(|p| p.id == id) {
-                let username = preset.username.clone();
-                let password = preset.password.clone();
-
-                self.username_editor.update(cx, |editor, cx| {
-                    editor.set_text(username, window, cx);
-                });
-                self.password_editor.update(cx, |editor, cx| {
-                    editor.set_text(password, window, cx);
-                });
-            }
+        if let Some((username, password)) = credential {
+            self.username_editor.update(cx, |editor, cx| {
+                editor.set_text(username, window, cx);
+            });
+            self.password_editor.update(cx, |editor, cx| {
+                editor.set_text(password, window, cx);
+            });
         }
     }
 
-    pub fn clear_preset_selection(&mut self) {
-        self.selected_preset = None;
+    pub fn clear_credential_selection(&mut self) {
+        self.selected_credential = None;
     }
 
-    pub fn get_preset_label(&self, cx: &App) -> String {
-        match self.selected_preset {
+    pub fn get_credential_label(&self) -> String {
+        match &self.selected_credential {
             None => "Custom".to_string(),
-            Some(id) => {
-                let session_store = self.session_store.read(cx);
-                session_store
-                    .credential_presets()
-                    .iter()
-                    .find(|p| p.id == id)
-                    .map(|p| p.name.clone())
-                    .unwrap_or_else(|| "Custom".to_string())
-            }
+            Some((username, _)) => username.clone(),
         }
     }
 

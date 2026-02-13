@@ -533,6 +533,39 @@ impl SessionStore {
             }
         }
     }
+
+    /// Collects unique (username, password) pairs from all saved Telnet sessions.
+    pub fn collect_telnet_credentials(&self) -> Vec<(String, String)> {
+        let mut credentials = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+
+        fn traverse(
+            nodes: &[SessionNode],
+            credentials: &mut Vec<(String, String)>,
+            seen: &mut std::collections::HashSet<(String, String)>,
+        ) {
+            for node in nodes {
+                match node {
+                    SessionNode::Session(session) => {
+                        if let ProtocolConfig::Telnet(config) = &session.protocol {
+                            if let (Some(user), Some(pass)) = (&config.username, &config.password) {
+                                let pair = (user.clone(), pass.clone());
+                                if seen.insert(pair.clone()) {
+                                    credentials.push(pair);
+                                }
+                            }
+                        }
+                    }
+                    SessionNode::Group(group) => {
+                        traverse(&group.children, credentials, seen);
+                    }
+                }
+            }
+        }
+
+        traverse(&self.root, &mut credentials, &mut seen);
+        credentials
+    }
 }
 
 /// Events emitted by the session store for UI subscription.
@@ -1086,5 +1119,51 @@ mod tests {
         assert_eq!(store.root[0].id(), id2);
         assert_eq!(store.root[1].id(), id1);
         assert_eq!(store.root[2].id(), id3);
+    }
+
+    #[test]
+    fn test_collect_telnet_credentials() {
+        let mut store = SessionStore::new();
+
+        let telnet1 = SessionConfig::new_telnet(
+            "Telnet 1",
+            TelnetSessionConfig::new("host1", 23).with_credentials("admin", "pass1"),
+        );
+        let telnet2 = SessionConfig::new_telnet(
+            "Telnet 2",
+            TelnetSessionConfig::new("host2", 23).with_credentials("root", "pass2"),
+        );
+        let telnet3 = SessionConfig::new_telnet(
+            "Telnet 3 (duplicate)",
+            TelnetSessionConfig::new("host3", 23).with_credentials("admin", "pass1"),
+        );
+        let telnet_no_creds = SessionConfig::new_telnet(
+            "Telnet No Creds",
+            TelnetSessionConfig::new("host4", 23),
+        );
+        let ssh = SessionConfig::new_ssh("SSH", SshSessionConfig::new("host5", 22));
+
+        store.add_node(SessionNode::Session(telnet1), None);
+        store.add_node(SessionNode::Session(telnet2), None);
+        store.add_node(SessionNode::Session(telnet3), None);
+        store.add_node(SessionNode::Session(telnet_no_creds), None);
+        store.add_node(SessionNode::Session(ssh), None);
+
+        let group = SessionGroup::new("Group");
+        let group_id = group.id;
+        store.add_node(SessionNode::Group(group), None);
+
+        let nested_telnet = SessionConfig::new_telnet(
+            "Nested Telnet",
+            TelnetSessionConfig::new("host6", 23).with_credentials("user", "pass3"),
+        );
+        store.add_node(SessionNode::Session(nested_telnet), Some(group_id));
+
+        let credentials = store.collect_telnet_credentials();
+
+        assert_eq!(credentials.len(), 3);
+        assert!(credentials.contains(&("admin".to_string(), "pass1".to_string())));
+        assert!(credentials.contains(&("root".to_string(), "pass2".to_string())));
+        assert!(credentials.contains(&("user".to_string(), "pass3".to_string())));
     }
 }
