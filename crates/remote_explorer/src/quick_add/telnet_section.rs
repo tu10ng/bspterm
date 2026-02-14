@@ -105,7 +105,7 @@ impl TelnetSection {
     pub fn get_credential_label(&self) -> String {
         match &self.selected_credential {
             None => "Custom".to_string(),
-            Some((username, _)) => username.clone(),
+            Some((username, password)) => format!("{}/{}", username, password),
         }
     }
 

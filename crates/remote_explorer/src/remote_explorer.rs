@@ -459,7 +459,7 @@ impl RemoteExplorer {
                 }
             });
             for (username, password) in &credentials {
-                let label = username.clone();
+                let label = format!("{}/{}", username, password);
                 let credential = (username.clone(), password.clone());
                 let this_for_cred = this.clone();
                 menu = menu.entry(label, None, move |window, cx| {
