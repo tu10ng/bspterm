@@ -1513,18 +1513,18 @@ impl Item for TerminalView {
                 if is_disconnected {
                     terminal.connection_info().map(|info| {
                         match info {
-                            terminal::ConnectionInfo::Ssh { host, username, .. } => {
-                                if let Some(user) = username {
-                                    format!("{}@{}", user, host)
-                                } else {
+                            terminal::ConnectionInfo::Ssh { host, port, .. } => {
+                                if *port == 22 {
                                     host.clone()
+                                } else {
+                                    format!("{}:{}", host, port)
                                 }
                             }
-                            terminal::ConnectionInfo::Telnet { host, username, .. } => {
-                                if let Some(user) = username {
-                                    format!("{}@{}", user, host)
-                                } else {
+                            terminal::ConnectionInfo::Telnet { host, port, .. } => {
+                                if *port == 23 {
                                     host.clone()
+                                } else {
+                                    format!("{}:{}", host, port)
                                 }
                             }
                         }

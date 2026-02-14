@@ -2622,6 +2622,24 @@ impl Terminal {
                                 format!("{process_file} — {process_name}")
                             })
                         })
+                        .or_else(|| {
+                            self.connection_info.as_ref().map(|info| match info {
+                                ConnectionInfo::Ssh { host, port, .. } => {
+                                    if *port == 22 {
+                                        host.clone()
+                                    } else {
+                                        format!("{}:{}", host, port)
+                                    }
+                                }
+                                ConnectionInfo::Telnet { host, port, .. } => {
+                                    if *port == 23 {
+                                        host.clone()
+                                    } else {
+                                        format!("{}:{}", host, port)
+                                    }
+                                }
+                            })
+                        })
                         .unwrap_or_else(|| "Terminal".to_string())
                 }),
         }

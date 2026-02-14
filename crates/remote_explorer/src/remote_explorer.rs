@@ -779,7 +779,13 @@ impl RemoteExplorer {
                 true,
                 Some(group.expanded),
             ),
-            SessionNode::Session(session) => (IconName::Server, session.name.clone(), false, None),
+            SessionNode::Session(session) => {
+                let icon = match &session.protocol {
+                    ProtocolConfig::Ssh(_) => IconName::LetterS,
+                    ProtocolConfig::Telnet(_) => IconName::LetterT,
+                };
+                (icon, session.name.clone(), false, None)
+            }
         };
 
         let is_expanded_bool = is_expanded.unwrap_or(false);

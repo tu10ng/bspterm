@@ -150,6 +150,8 @@ pub enum IconName {
     Info,
     Json,
     Keyboard,
+    LetterS,
+    LetterT,
     Library,
     LineHeight,
     Link,

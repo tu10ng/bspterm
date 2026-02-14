@@ -148,7 +148,9 @@ impl QuickAddArea {
     ) -> Option<ConnectionResult> {
         match connection.protocol {
             ConnectionProtocol::Telnet => {
-                let config = terminal::TelnetSessionConfig::new(&connection.host, connection.port);
+                let host = &connection.host;
+                let port = connection.port;
+                let config = terminal::TelnetSessionConfig::new(host, port);
                 let config = if let (Some(user), Some(pass)) =
                     (&connection.username, &connection.password)
                 {
@@ -157,7 +159,11 @@ impl QuickAddArea {
                     config
                 };
 
-                let session_name = format!("{}:{}", connection.host, connection.port);
+                let session_name = if port == 23 {
+                    connection.host
+                } else {
+                    format!("{}:{}", connection.host, port)
+                };
                 let session_config =
                     terminal::SessionConfig::new_telnet(session_name, config.clone());
 
@@ -174,12 +180,18 @@ impl QuickAddArea {
             ConnectionProtocol::Ssh => {
                 let username = connection.username.unwrap_or_else(|| "root".to_string());
                 let password = connection.password.unwrap_or_else(|| "root".to_string());
+                let host = &connection.host;
+                let port = connection.port;
 
-                let ssh_config = terminal::SshSessionConfig::new(&connection.host, connection.port)
+                let ssh_config = terminal::SshSessionConfig::new(host, port)
                     .with_username(&username)
                     .with_auth(terminal::AuthMethod::Password { password });
 
-                let session_name = format!("{}@{}:{}", username, connection.host, connection.port);
+                let session_name = if port == 22 {
+                    connection.host
+                } else {
+                    format!("{}:{}", connection.host, port)
+                };
                 let session_config =
                     terminal::SessionConfig::new_ssh(session_name, ssh_config.clone());
 
@@ -232,15 +244,15 @@ impl QuickAddArea {
         let port = port.parse::<u16>().unwrap_or(23);
         let config = terminal::TelnetSessionConfig::new(&host, port);
         let config = if !username.is_empty() {
-            config.with_credentials(username.clone(), password)
+            config.with_credentials(username, password)
         } else {
             config
         };
 
-        let session_name = if username.is_empty() {
-            format!("{}:{}", host, port)
+        let session_name = if port == 23 {
+            host
         } else {
-            format!("{}@{}:{}", username, host, port)
+            format!("{}:{}", host, port)
         };
 
         let session_config = terminal::SessionConfig::new_telnet(session_name, config.clone());
@@ -277,7 +289,11 @@ impl QuickAddArea {
             .with_username(&username)
             .with_auth(terminal::AuthMethod::Password { password });
 
-        let session_name = format!("{}@{}:{}", username, host, port);
+        let session_name = if port == 22 {
+            host
+        } else {
+            format!("{}:{}", host, port)
+        };
         let session_config =
             terminal::SessionConfig::new_ssh(session_name, ssh_config.clone());
 
