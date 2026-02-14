@@ -7,7 +7,10 @@ use terminal::{
     AuthMethod, ProtocolConfig, SessionConfig, SessionNode, SessionStoreEntity,
     SshSessionConfig, TelnetSessionConfig,
 };
-use ui::{prelude::*, Button, ButtonStyle, Color, Label, LabelSize, h_flex, v_flex};
+use ui::{
+    prelude::*, Button, ButtonStyle, Color, ContextMenu, DropdownMenu, DropdownStyle, Label,
+    LabelSize, h_flex, v_flex,
+};
 use uuid::Uuid;
 use workspace::ModalView;
 
@@ -19,6 +22,7 @@ pub struct SessionEditModal {
     port_editor: Entity<Editor>,
     username_editor: Entity<Editor>,
     password_editor: Entity<Editor>,
+    selected_terminal_type: Option<String>,
     protocol: ProtocolType,
     focus_handle: FocusHandle,
 }
@@ -34,12 +38,20 @@ impl SessionEditModal {
         let session_store = SessionStoreEntity::global(cx);
         let focus_handle = cx.focus_handle();
 
-        let (name, host, port, username, password, protocol) = {
+        let (name, host, port, username, password, terminal_type, protocol) = {
             let store = session_store.read(cx);
             if let Some(SessionNode::Session(session)) = store.store().find_node(session_id) {
                 extract_session_data(session)
             } else {
-                (String::new(), String::new(), 22, String::new(), String::new(), ProtocolType::Ssh)
+                (
+                    String::new(),
+                    String::new(),
+                    22,
+                    String::new(),
+                    String::new(),
+                    None,
+                    ProtocolType::Ssh,
+                )
             }
         };
 
@@ -86,6 +98,7 @@ impl SessionEditModal {
             port_editor,
             username_editor,
             password_editor,
+            selected_terminal_type: terminal_type,
             protocol,
             focus_handle,
         }
@@ -102,6 +115,7 @@ impl SessionEditModal {
             .unwrap_or(if self.protocol == ProtocolType::Ssh { 22 } else { 23 });
         let username = self.username_editor.read(cx).text(cx);
         let password = self.password_editor.read(cx).text(cx);
+        let terminal_type = self.selected_terminal_type.clone();
 
         let protocol = self.protocol;
         self.session_store.update(cx, |store, cx| {
@@ -127,6 +141,7 @@ impl SessionEditModal {
                                 env: std::collections::HashMap::new(),
                                 keepalive_interval_secs: Some(30),
                                 initial_command: None,
+                                terminal_type,
                             });
                         }
                         ProtocolType::Telnet => {
@@ -144,6 +159,7 @@ impl SessionEditModal {
                                     Some(password)
                                 },
                                 encoding: None,
+                                terminal_type,
                             });
                         }
                     }
@@ -160,7 +176,9 @@ impl SessionEditModal {
     }
 }
 
-fn extract_session_data(session: &SessionConfig) -> (String, String, u16, String, String, ProtocolType) {
+fn extract_session_data(
+    session: &SessionConfig,
+) -> (String, String, u16, String, String, Option<String>, ProtocolType) {
     match &session.protocol {
         ProtocolConfig::Ssh(ssh) => {
             let password = match &ssh.auth {
@@ -173,6 +191,7 @@ fn extract_session_data(session: &SessionConfig) -> (String, String, u16, String
                 ssh.port,
                 ssh.username.clone().unwrap_or_default(),
                 password,
+                ssh.terminal_type.clone(),
                 ProtocolType::Ssh,
             )
         }
@@ -182,6 +201,7 @@ fn extract_session_data(session: &SessionConfig) -> (String, String, u16, String
             telnet.port,
             telnet.username.clone().unwrap_or_default(),
             telnet.password.clone().unwrap_or_default(),
+            telnet.terminal_type.clone(),
             ProtocolType::Telnet,
         ),
     }
@@ -198,7 +218,7 @@ impl Focusable for SessionEditModal {
 }
 
 impl Render for SessionEditModal {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let border_color = theme.colors().border;
         let border_variant_color = theme.colors().border_variant;
@@ -207,6 +227,32 @@ impl Render for SessionEditModal {
             ProtocolType::Ssh => "SSH",
             ProtocolType::Telnet => "Telnet",
         };
+
+        let terminal_type_label = self
+            .selected_terminal_type
+            .clone()
+            .unwrap_or_else(|| "xterm-256color".to_string());
+
+        let weak_self = cx.weak_entity();
+        let terminal_type_menu = ContextMenu::build(window, cx, move |mut menu, _, _| {
+            for term_type in ["xterm-256color", "xterm", "vt100", "linux", "dumb"] {
+                let label = term_type.to_string();
+                let term_type_owned = term_type.to_string();
+                let weak = weak_self.clone();
+                menu = menu.entry(label, None, move |_, cx| {
+                    weak.update(cx, |this, cx| {
+                        this.selected_terminal_type = if term_type_owned == "xterm-256color" {
+                            None
+                        } else {
+                            Some(term_type_owned.clone())
+                        };
+                        cx.notify();
+                    })
+                    .ok();
+                });
+            }
+            menu
+        });
 
         v_flex()
             .key_context("SessionEditModal")
@@ -338,6 +384,24 @@ impl Render for SessionEditModal {
                                             .py_px()
                                             .child(self.password_editor.clone()),
                                     ),
+                            ),
+                    )
+                    .child(
+                        v_flex()
+                            .gap_1()
+                            .child(
+                                Label::new("Terminal Type")
+                                    .size(LabelSize::Small)
+                                    .color(Color::Muted),
+                            )
+                            .child(
+                                DropdownMenu::new(
+                                    "terminal-type",
+                                    terminal_type_label,
+                                    terminal_type_menu,
+                                )
+                                .full_width(true)
+                                .style(DropdownStyle::Outlined),
                             ),
                     ),
             )

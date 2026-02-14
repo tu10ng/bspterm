@@ -136,6 +136,8 @@ pub struct SshSessionConfig {
     pub env: HashMap<String, String>,
     pub keepalive_interval_secs: Option<u64>,
     pub initial_command: Option<String>,
+    #[serde(default)]
+    pub terminal_type: Option<String>,
 }
 
 impl SshSessionConfig {
@@ -148,6 +150,7 @@ impl SshSessionConfig {
             env: HashMap::new(),
             keepalive_interval_secs: Some(30),
             initial_command: None,
+            terminal_type: None,
         }
     }
 
@@ -172,7 +175,7 @@ pub enum AuthMethod {
     Agent,
 }
 
-/// Telnet session configuration (placeholder for future implementation).
+/// Telnet session configuration.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TelnetSessionConfig {
     pub host: String,
@@ -182,6 +185,8 @@ pub struct TelnetSessionConfig {
     #[serde(default)]
     pub password: Option<String>,
     pub encoding: Option<String>,
+    #[serde(default)]
+    pub terminal_type: Option<String>,
 }
 
 impl TelnetSessionConfig {
@@ -192,6 +197,7 @@ impl TelnetSessionConfig {
             username: None,
             password: None,
             encoding: None,
+            terminal_type: None,
         }
     }
 
@@ -219,6 +225,9 @@ impl From<&SshSessionConfig> for SshConfig {
         }
         if let Some(cmd) = &config.initial_command {
             ssh_config = ssh_config.with_initial_command(cmd);
+        }
+        if let Some(terminal_type) = &config.terminal_type {
+            ssh_config = ssh_config.with_terminal_type(terminal_type);
         }
         ssh_config
     }
@@ -248,6 +257,11 @@ impl From<&SshConfig> for SshSessionConfig {
             env: config.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
             keepalive_interval_secs: config.keepalive_interval.map(|d| d.as_secs()),
             initial_command: config.initial_command.clone(),
+            terminal_type: if config.terminal_type == "xterm-256color" {
+                None
+            } else {
+                Some(config.terminal_type.clone())
+            },
         }
     }
 }
@@ -276,6 +290,9 @@ impl From<&TelnetSessionConfig> for TelnetConfig {
         }
         if let Some(encoding) = &config.encoding {
             telnet_config = telnet_config.with_encoding(encoding);
+        }
+        if let Some(terminal_type) = &config.terminal_type {
+            telnet_config = telnet_config.with_terminal_type(terminal_type);
         }
         telnet_config
     }
@@ -855,6 +872,7 @@ mod tests {
             env: [("TERM".into(), "xterm".into())].into_iter().collect(),
             keepalive_interval_secs: Some(60),
             initial_command: Some("htop".into()),
+            terminal_type: Some("vt100".into()),
         };
 
         let ssh_config: SshConfig = (&session_config).into();
@@ -865,6 +883,7 @@ mod tests {
         assert!(matches!(ssh_config.auth, SshAuthConfig::Password(_)));
         assert_eq!(ssh_config.keepalive_interval, Some(Duration::from_secs(60)));
         assert_eq!(ssh_config.initial_command, Some("htop".into()));
+        assert_eq!(ssh_config.terminal_type, "vt100");
     }
 
     #[test]

@@ -45,6 +45,7 @@ pub struct SshSession {
     #[allow(dead_code)]
     keepalive_task: Option<Task<()>>,
     auth_method: SshAuthMethod,
+    terminal_type: String,
 }
 
 impl SshSession {
@@ -81,6 +82,7 @@ impl SshSession {
             state: RwLock::new(ConnectionState::Connected),
             keepalive_task: None,
             auth_method,
+            terminal_type: config.terminal_type.clone(),
         });
 
         Ok(session)
@@ -129,7 +131,7 @@ impl SshSession {
         channel
             .request_pty(
                 true,
-                "xterm-256color",
+                &self.terminal_type,
                 initial_size.num_cols as u32,
                 initial_size.num_lines as u32,
                 initial_size.cell_width as u32,

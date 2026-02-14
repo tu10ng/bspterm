@@ -20,6 +20,7 @@ pub struct SshConfig {
     pub env: collections::HashMap<String, String>,
     pub keepalive_interval: Option<std::time::Duration>,
     pub initial_command: Option<String>,
+    pub terminal_type: String,
 }
 
 impl SshConfig {
@@ -32,6 +33,7 @@ impl SshConfig {
             env: collections::HashMap::default(),
             keepalive_interval: Some(std::time::Duration::from_secs(30)),
             initial_command: None,
+            terminal_type: "xterm-256color".to_string(),
         }
     }
 
@@ -57,6 +59,11 @@ impl SshConfig {
 
     pub fn with_initial_command(mut self, command: impl Into<String>) -> Self {
         self.initial_command = Some(command.into());
+        self
+    }
+
+    pub fn with_terminal_type(mut self, terminal_type: impl Into<String>) -> Self {
+        self.terminal_type = terminal_type.into();
         self
     }
 }
