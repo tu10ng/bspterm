@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use ui::{App, Context, Pixels, Window};
 use util::ResultExt as _;
+use uuid::Uuid;
 
 use db::{
     query,
@@ -430,7 +431,33 @@ impl Domain for TerminalDb {
         sql! (
             ALTER TABLE terminals ADD COLUMN custom_title TEXT;
         ),
+        sql! (
+            ALTER TABLE terminals ADD COLUMN connection_type TEXT;
+            ALTER TABLE terminals ADD COLUMN connection_info TEXT;
+        ),
     ];
+}
+
+/// Connection info that can be serialized to the database for reconnection.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum SerializableConnectionInfo {
+    Ssh {
+        host: String,
+        port: u16,
+        username: Option<String>,
+        password: Option<String>,
+        private_key_path: Option<PathBuf>,
+        passphrase: Option<String>,
+        session_id: Option<Uuid>,
+    },
+    Telnet {
+        host: String,
+        port: u16,
+        username: Option<String>,
+        password: Option<String>,
+        session_id: Option<Uuid>,
+    },
 }
 
 db::static_connection!(TERMINAL_DB, TerminalDb, [WorkspaceDb]);
@@ -520,5 +547,66 @@ impl TerminalDb {
             FROM terminals
             WHERE item_id = ? AND workspace_id = ?
         }
+    }
+
+    pub async fn save_connection_info(
+        &self,
+        item_id: ItemId,
+        workspace_id: WorkspaceId,
+        connection_info: Option<SerializableConnectionInfo>,
+    ) -> Result<()> {
+        let (connection_type, connection_info_json) = match &connection_info {
+            Some(SerializableConnectionInfo::Ssh { .. }) => {
+                let json = serde_json::to_string(&connection_info)?;
+                (Some("ssh".to_string()), Some(json))
+            }
+            Some(SerializableConnectionInfo::Telnet { .. }) => {
+                let json = serde_json::to_string(&connection_info)?;
+                (Some("telnet".to_string()), Some(json))
+            }
+            None => (None, None),
+        };
+
+        log::debug!(
+            "Saving connection info for item {} in workspace {:?}: type={:?}",
+            item_id,
+            workspace_id,
+            connection_type
+        );
+
+        self.write(move |conn| {
+            let query = "INSERT INTO terminals (item_id, workspace_id, connection_type, connection_info)
+                VALUES (?1, ?2, ?3, ?4)
+                ON CONFLICT (workspace_id, item_id) DO UPDATE SET
+                    connection_type = excluded.connection_type,
+                    connection_info = excluded.connection_info";
+            let mut statement = Statement::prepare(conn, query)?;
+            let mut next_index = statement.bind(&item_id, 1)?;
+            next_index = statement.bind(&workspace_id, next_index)?;
+            next_index = statement.bind(&connection_type, next_index)?;
+            statement.bind(&connection_info_json, next_index)?;
+            statement.exec()
+        })
+        .await
+    }
+
+    query! {
+        pub fn get_connection_info_json(item_id: ItemId, workspace_id: WorkspaceId) -> Result<Option<String>> {
+            SELECT connection_info
+            FROM terminals
+            WHERE item_id = ? AND workspace_id = ?
+        }
+    }
+
+    pub fn get_connection_info(
+        item_id: ItemId,
+        workspace_id: WorkspaceId,
+    ) -> Option<SerializableConnectionInfo> {
+        TERMINAL_DB
+            .get_connection_info_json(item_id, workspace_id)
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty())
+            .and_then(|json| serde_json::from_str(&json).ok())
     }
 }

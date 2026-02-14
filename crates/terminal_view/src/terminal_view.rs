@@ -88,6 +88,8 @@ actions!(
     [
         /// Reruns the last executed task in the terminal.
         RerunTask,
+        /// Reconnects a disconnected SSH/Telnet terminal.
+        ReconnectTerminal,
     ]
 );
 
@@ -268,6 +270,8 @@ impl TerminalView {
             cx.observe_global::<SettingsStore>(Self::settings_changed),
         ];
 
+        let has_connection_info = terminal.read(cx).connection_info().is_some();
+
         Self {
             terminal,
             workspace: workspace_handle,
@@ -286,7 +290,7 @@ impl TerminalView {
             block_below_cursor: None,
             scroll_top: Pixels::ZERO,
             scroll_handle,
-            needs_serialize: false,
+            needs_serialize: has_connection_info,
             custom_title: None,
             ime_state: None,
             self_handle: cx.entity().downgrade(),
@@ -943,6 +947,97 @@ impl TerminalView {
         self.terminal = terminal;
     }
 
+    fn reconnect_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(connection_info) = self.terminal.read(cx).connection_info().cloned() else {
+            return;
+        };
+
+        cx.spawn_in(window, async move |this, cx| {
+            let terminal: terminal::TerminalBuilder = match connection_info {
+                terminal::ConnectionInfo::Ssh {
+                    host,
+                    port,
+                    username,
+                    password,
+                    private_key_path,
+                    passphrase,
+                    session_id,
+                } => {
+                    let auth = if let Some(ref key_path) = private_key_path {
+                        terminal::SshAuthConfig::PrivateKey {
+                            path: key_path.clone(),
+                            passphrase: passphrase.clone(),
+                        }
+                    } else if let Some(ref pwd) = password {
+                        terminal::SshAuthConfig::Password(pwd.clone())
+                    } else {
+                        terminal::SshAuthConfig::Auto
+                    };
+
+                    let mut ssh_config = terminal::SshConfig::new(host, port).with_auth(auth);
+                    if let Some(user) = username {
+                        ssh_config = ssh_config.with_username(user);
+                    }
+
+                    let task = cx.update(|window, cx| {
+                        let settings = terminal::terminal_settings::TerminalSettings::get_global(cx);
+                        terminal::TerminalBuilder::new_with_ssh_and_session_id(
+                            ssh_config,
+                            session_id,
+                            settings.cursor_shape,
+                            settings.alternate_scroll,
+                            settings.max_scroll_history_lines,
+                            window.window_handle().window_id().as_u64(),
+                            cx,
+                            util::paths::PathStyle::local(),
+                        )
+                    })?;
+                    task.await?
+                }
+                terminal::ConnectionInfo::Telnet {
+                    host,
+                    port,
+                    username,
+                    password,
+                    session_id,
+                } => {
+                    let mut telnet_config = terminal::TelnetConfig::new(host, port);
+                    if let Some(user) = username {
+                        telnet_config = telnet_config.with_username(user);
+                    }
+                    if let Some(pwd) = password {
+                        telnet_config = telnet_config.with_password(pwd);
+                    }
+
+                    let task = cx.update(|window, cx| {
+                        let settings = terminal::terminal_settings::TerminalSettings::get_global(cx);
+                        terminal::TerminalBuilder::new_with_telnet_and_session_id(
+                            telnet_config,
+                            session_id,
+                            settings.cursor_shape,
+                            settings.alternate_scroll,
+                            settings.max_scroll_history_lines,
+                            window.window_handle().window_id().as_u64(),
+                            cx,
+                            util::paths::PathStyle::local(),
+                        )
+                    })?;
+                    task.await?
+                }
+            };
+
+            this.update_in(cx, |this, window, cx| {
+                let terminal = cx.new(|cx| terminal.subscribe(cx));
+                this.set_terminal(terminal, window, cx);
+                this.needs_serialize = true;
+                cx.notify();
+            })?;
+
+            anyhow::Ok(())
+        })
+        .detach_and_log_err(cx);
+    }
+
     fn rerun_button(task: &TaskState) -> Option<IconButton> {
         if !task.spawned_task.show_rerun {
             return None;
@@ -1226,6 +1321,9 @@ impl Render for TerminalView {
             .on_action(cx.listener(TerminalView::select_all))
             .on_action(cx.listener(TerminalView::rerun_task))
             .on_action(cx.listener(TerminalView::rename_terminal))
+            .on_action(cx.listener(|this, _: &ReconnectTerminal, window, cx| {
+                this.reconnect_terminal(window, cx);
+            }))
             .on_key_down(cx.listener(Self::key_down))
             .on_mouse_down(
                 MouseButton::Right,
@@ -1248,7 +1346,7 @@ impl Render for TerminalView {
                     .size_full()
                     .bg(cx.theme().colors().editor_background)
                     .child(TerminalElement::new(
-                        terminal_handle,
+                        terminal_handle.clone(),
                         terminal_view_handle,
                         self.workspace.clone(),
                         self.focus_handle.clone(),
@@ -1271,6 +1369,65 @@ impl Render for TerminalView {
                         )
                     }),
             )
+            .when(terminal_handle.read(cx).is_disconnected(), |el| {
+                let terminal = terminal_handle.read(cx);
+                let connection_description = terminal.connection_info().map(|info| {
+                    match info {
+                        terminal::ConnectionInfo::Ssh { host, port, username, .. } => {
+                            if let Some(user) = username {
+                                format!("SSH: {}@{}:{}", user, host, port)
+                            } else {
+                                format!("SSH: {}:{}", host, port)
+                            }
+                        }
+                        terminal::ConnectionInfo::Telnet { host, port, username, .. } => {
+                            if let Some(user) = username {
+                                format!("Telnet: {}@{}:{}", user, host, port)
+                            } else {
+                                format!("Telnet: {}:{}", host, port)
+                            }
+                        }
+                    }
+                }).unwrap_or_else(|| "Disconnected".to_string());
+
+                el.child(
+                    div()
+                        .id("disconnected-overlay")
+                        .absolute()
+                        .inset_0()
+                        .bg(cx.theme().colors().editor_background.opacity(0.9))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            v_flex()
+                                .gap_3()
+                                .items_center()
+                                .child(
+                                    Icon::new(IconName::Disconnected)
+                                        .size(IconSize::XLarge)
+                                        .color(Color::Warning),
+                                )
+                                .child(
+                                    Label::new(connection_description)
+                                        .size(LabelSize::Large)
+                                        .color(Color::Default),
+                                )
+                                .child(
+                                    Label::new("Connection closed")
+                                        .size(LabelSize::Default)
+                                        .color(Color::Muted),
+                                )
+                                .child(
+                                    Button::new("reconnect", "Reconnect")
+                                        .style(ButtonStyle::Filled)
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.reconnect_terminal(window, cx);
+                                        })),
+                                ),
+                        ),
+                )
+            })
             .children(self.context_menu.as_ref().map(|(menu, position, _)| {
                 deferred(
                     anchored()
@@ -1287,8 +1444,45 @@ impl Item for TerminalView {
     type Event = ItemEvent;
 
     fn tab_tooltip_content(&self, cx: &App) -> Option<TabTooltipContent> {
+        let terminal = self.terminal().read(cx);
+
+        if terminal.is_disconnected() {
+            let connection_description = terminal.connection_info().map(|info| {
+                match info {
+                    terminal::ConnectionInfo::Ssh { host, port, username, .. } => {
+                        if let Some(user) = username {
+                            format!("SSH: {}@{}:{} (disconnected)", user, host, port)
+                        } else {
+                            format!("SSH: {}:{} (disconnected)", host, port)
+                        }
+                    }
+                    terminal::ConnectionInfo::Telnet { host, port, username, .. } => {
+                        if let Some(user) = username {
+                            format!("Telnet: {}@{}:{} (disconnected)", user, host, port)
+                        } else {
+                            format!("Telnet: {}:{} (disconnected)", host, port)
+                        }
+                    }
+                }
+            }).unwrap_or_else(|| "Disconnected".to_string());
+
+            return Some(TabTooltipContent::Custom(Box::new(Tooltip::element({
+                move |_, _| {
+                    v_flex()
+                        .gap_1()
+                        .child(Label::new(connection_description.clone()))
+                        .child(h_flex().flex_grow().child(Divider::horizontal()))
+                        .child(
+                            Label::new("Click Reconnect to restore the connection")
+                                .color(Color::Muted)
+                                .size(LabelSize::Small),
+                        )
+                        .into_any_element()
+                }
+            }))));
+        }
+
         Some(TabTooltipContent::Custom(Box::new(Tooltip::element({
-            let terminal = self.terminal().read(cx);
             let title = terminal.title(false);
             let pid = terminal.pid_getter()?.fallback_pid();
 
@@ -1309,36 +1503,64 @@ impl Item for TerminalView {
 
     fn tab_content(&self, params: TabContentParams, _window: &Window, cx: &App) -> AnyElement {
         let terminal = self.terminal().read(cx);
+        let is_disconnected = terminal.is_disconnected();
         let title = self
             .custom_title
             .as_ref()
             .filter(|title| !title.trim().is_empty())
             .cloned()
-            .unwrap_or_else(|| terminal.title(true));
-
-        let (icon, icon_color, rerun_button) = match terminal.task() {
-            Some(terminal_task) => match &terminal_task.status {
-                TaskStatus::Running => (
-                    IconName::PlayFilled,
-                    Color::Disabled,
-                    TerminalView::rerun_button(terminal_task),
-                ),
-                TaskStatus::Unknown => (
-                    IconName::Warning,
-                    Color::Warning,
-                    TerminalView::rerun_button(terminal_task),
-                ),
-                TaskStatus::Completed { success } => {
-                    let rerun_button = TerminalView::rerun_button(terminal_task);
-
-                    if *success {
-                        (IconName::Check, Color::Success, rerun_button)
-                    } else {
-                        (IconName::XCircle, Color::Error, rerun_button)
-                    }
+            .unwrap_or_else(|| {
+                if is_disconnected {
+                    terminal.connection_info().map(|info| {
+                        match info {
+                            terminal::ConnectionInfo::Ssh { host, username, .. } => {
+                                if let Some(user) = username {
+                                    format!("{}@{}", user, host)
+                                } else {
+                                    host.clone()
+                                }
+                            }
+                            terminal::ConnectionInfo::Telnet { host, username, .. } => {
+                                if let Some(user) = username {
+                                    format!("{}@{}", user, host)
+                                } else {
+                                    host.clone()
+                                }
+                            }
+                        }
+                    }).unwrap_or_else(|| "Disconnected".to_string())
+                } else {
+                    terminal.title(true)
                 }
-            },
-            None => (IconName::Terminal, Color::Muted, None),
+            });
+
+        let (icon, icon_color, rerun_button) = if is_disconnected {
+            (IconName::Disconnected, Color::Warning, None)
+        } else {
+            match terminal.task() {
+                Some(terminal_task) => match &terminal_task.status {
+                    TaskStatus::Running => (
+                        IconName::PlayFilled,
+                        Color::Disabled,
+                        TerminalView::rerun_button(terminal_task),
+                    ),
+                    TaskStatus::Unknown => (
+                        IconName::Warning,
+                        Color::Warning,
+                        TerminalView::rerun_button(terminal_task),
+                    ),
+                    TaskStatus::Completed { success } => {
+                        let rerun_button = TerminalView::rerun_button(terminal_task);
+
+                        if *success {
+                            (IconName::Check, Color::Success, rerun_button)
+                        } else {
+                            (IconName::XCircle, Color::Error, rerun_button)
+                        }
+                    }
+                },
+                None => (IconName::Terminal, Color::Muted, None),
+            }
         };
 
         h_flex()
@@ -1566,6 +1788,44 @@ impl SerializableItem for TerminalView {
         let workspace_id = self.workspace_id?;
         let cwd = terminal.working_directory();
         let custom_title = self.custom_title.clone();
+
+        let connection_info = terminal.connection_info().map(|info| {
+            use persistence::SerializableConnectionInfo;
+            use terminal::ConnectionInfo;
+            match info {
+                ConnectionInfo::Ssh {
+                    host,
+                    port,
+                    username,
+                    password,
+                    private_key_path,
+                    passphrase,
+                    session_id,
+                } => SerializableConnectionInfo::Ssh {
+                    host: host.clone(),
+                    port: *port,
+                    username: username.clone(),
+                    password: password.clone(),
+                    private_key_path: private_key_path.clone(),
+                    passphrase: passphrase.clone(),
+                    session_id: *session_id,
+                },
+                ConnectionInfo::Telnet {
+                    host,
+                    port,
+                    username,
+                    password,
+                    session_id,
+                } => SerializableConnectionInfo::Telnet {
+                    host: host.clone(),
+                    port: *port,
+                    username: username.clone(),
+                    password: password.clone(),
+                    session_id: *session_id,
+                },
+            }
+        });
+
         self.needs_serialize = false;
 
         Some(cx.background_spawn(async move {
@@ -1576,6 +1836,9 @@ impl SerializableItem for TerminalView {
             }
             TERMINAL_DB
                 .save_custom_title(item_id, workspace_id, custom_title)
+                .await?;
+            TERMINAL_DB
+                .save_connection_info(item_id, workspace_id, connection_info)
                 .await?;
             Ok(())
         }))
@@ -1594,7 +1857,7 @@ impl SerializableItem for TerminalView {
         cx: &mut App,
     ) -> Task<anyhow::Result<Entity<Self>>> {
         window.spawn(cx, async move |cx| {
-            let (cwd, custom_title) = cx
+            let (cwd, custom_title, connection_info) = cx
                 .update(|_window, cx| {
                     let from_db = TERMINAL_DB
                         .get_working_directory(item_id, workspace_id)
@@ -1615,14 +1878,69 @@ impl SerializableItem for TerminalView {
                         .log_err()
                         .flatten()
                         .filter(|title| !title.trim().is_empty());
-                    (cwd, custom_title)
+                    let connection_info =
+                        persistence::TerminalDb::get_connection_info(item_id, workspace_id);
+                    (cwd, custom_title, connection_info)
                 })
                 .ok()
-                .unwrap_or((None, None));
+                .unwrap_or((None, None, None));
 
-            let terminal = project
-                .update(cx, |project, cx| project.create_terminal_shell(cwd, cx))
-                .await?;
+            let terminal = if let Some(conn_info) = connection_info {
+                use persistence::SerializableConnectionInfo;
+                use terminal::{ConnectionInfo, TerminalBuilder};
+
+                let connection_info = match conn_info {
+                    SerializableConnectionInfo::Ssh {
+                        host,
+                        port,
+                        username,
+                        password,
+                        private_key_path,
+                        passphrase,
+                        session_id,
+                    } => ConnectionInfo::Ssh {
+                        host,
+                        port,
+                        username,
+                        password,
+                        private_key_path,
+                        passphrase,
+                        session_id,
+                    },
+                    SerializableConnectionInfo::Telnet {
+                        host,
+                        port,
+                        username,
+                        password,
+                        session_id,
+                    } => ConnectionInfo::Telnet {
+                        host,
+                        port,
+                        username,
+                        password,
+                        session_id,
+                    },
+                };
+
+                cx.update(|window, cx| {
+                    let settings = terminal::terminal_settings::TerminalSettings::get_global(cx);
+                    let builder = TerminalBuilder::new_disconnected_ssh(
+                        connection_info,
+                        settings.cursor_shape,
+                        settings.alternate_scroll,
+                        settings.max_scroll_history_lines,
+                        window.window_handle().window_id().as_u64(),
+                        cx.background_executor(),
+                        util::paths::PathStyle::local(),
+                    )?;
+                    anyhow::Ok(cx.new(|cx| builder.subscribe(cx)))
+                })??
+            } else {
+                project
+                    .update(cx, |project, cx| project.create_terminal_shell(cwd, cx))
+                    .await?
+            };
+
             cx.update(|window, cx| {
                 cx.new(|cx| {
                     let mut view = TerminalView::new(

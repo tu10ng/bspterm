@@ -9,6 +9,9 @@ pub use session_store::{
     SessionStore, SessionStoreEntity, SessionStoreEvent, SshSessionConfig, TelnetSessionConfig,
 };
 
+pub use crate::connection::ssh::{SshAuthConfig, SshConfig};
+pub use crate::connection::telnet::TelnetConfig;
+
 mod pty_info;
 mod terminal_hyperlinks;
 pub mod terminal_settings;
@@ -385,6 +388,7 @@ impl TerminalBuilder {
         let terminal = Terminal {
             task: None,
             terminal_type: TerminalType::DisplayOnly,
+            connection_info: None,
             pty_info: None,
             completion_tx: None,
             term,
@@ -618,6 +622,7 @@ impl TerminalBuilder {
                 terminal_type: TerminalType::Connected {
                     connection: Box::new(pty_connection),
                 },
+                connection_info: None,
                 pty_info: Some(pty_info),
                 completion_tx,
                 term,
@@ -705,8 +710,55 @@ impl TerminalBuilder {
         cx: &App,
         path_style: PathStyle,
     ) -> Task<Result<TerminalBuilder>> {
+        Self::new_with_ssh_inner(ssh_config, None, cursor_shape, alternate_scroll, max_scroll_history_lines, window_id, cx, path_style)
+    }
+
+    /// Create a new terminal connected via SSH with optional session_id.
+    pub fn new_with_ssh_and_session_id(
+        ssh_config: connection::ssh::SshConfig,
+        session_id: Option<uuid::Uuid>,
+        cursor_shape: CursorShape,
+        alternate_scroll: AlternateScroll,
+        max_scroll_history_lines: Option<usize>,
+        window_id: u64,
+        cx: &App,
+        path_style: PathStyle,
+    ) -> Task<Result<TerminalBuilder>> {
+        Self::new_with_ssh_inner(ssh_config, session_id, cursor_shape, alternate_scroll, max_scroll_history_lines, window_id, cx, path_style)
+    }
+
+    fn new_with_ssh_inner(
+        ssh_config: connection::ssh::SshConfig,
+        session_id: Option<uuid::Uuid>,
+        cursor_shape: CursorShape,
+        alternate_scroll: AlternateScroll,
+        max_scroll_history_lines: Option<usize>,
+        window_id: u64,
+        cx: &App,
+        path_style: PathStyle,
+    ) -> Task<Result<TerminalBuilder>> {
         let background_executor = cx.background_executor().clone();
         let tokio_handle = gpui_tokio::Tokio::handle(cx);
+
+        let connection_info = ConnectionInfo::Ssh {
+            host: ssh_config.host.clone(),
+            port: ssh_config.port,
+            username: ssh_config.username.clone(),
+            password: match &ssh_config.auth {
+                connection::ssh::SshAuthConfig::Password(p) => Some(p.clone()),
+                _ => None,
+            },
+            private_key_path: match &ssh_config.auth {
+                connection::ssh::SshAuthConfig::PrivateKey { path, .. } => Some(path.clone()),
+                _ => None,
+            },
+            passphrase: match &ssh_config.auth {
+                connection::ssh::SshAuthConfig::PrivateKey { passphrase, .. } => passphrase.clone(),
+                _ => None,
+            },
+            session_id,
+        };
+
         cx.spawn(async move |_| {
             let default_cursor_style = AlacCursorStyle::from(cursor_shape);
             let scrolling_history = max_scroll_history_lines
@@ -761,6 +813,7 @@ impl TerminalBuilder {
                 terminal_type: TerminalType::Connected {
                     connection: Box::new(ssh_connection),
                 },
+                connection_info: Some(connection_info),
                 pty_info: None,
                 completion_tx: None,
                 term,
@@ -817,8 +870,44 @@ impl TerminalBuilder {
         cx: &App,
         path_style: PathStyle,
     ) -> Task<Result<TerminalBuilder>> {
+        Self::new_with_telnet_inner(telnet_config, None, cursor_shape, alternate_scroll, max_scroll_history_lines, window_id, cx, path_style)
+    }
+
+    /// Create a new terminal connected via Telnet with optional session_id.
+    pub fn new_with_telnet_and_session_id(
+        telnet_config: connection::telnet::TelnetConfig,
+        session_id: Option<uuid::Uuid>,
+        cursor_shape: CursorShape,
+        alternate_scroll: AlternateScroll,
+        max_scroll_history_lines: Option<usize>,
+        window_id: u64,
+        cx: &App,
+        path_style: PathStyle,
+    ) -> Task<Result<TerminalBuilder>> {
+        Self::new_with_telnet_inner(telnet_config, session_id, cursor_shape, alternate_scroll, max_scroll_history_lines, window_id, cx, path_style)
+    }
+
+    fn new_with_telnet_inner(
+        telnet_config: connection::telnet::TelnetConfig,
+        session_id: Option<uuid::Uuid>,
+        cursor_shape: CursorShape,
+        alternate_scroll: AlternateScroll,
+        max_scroll_history_lines: Option<usize>,
+        window_id: u64,
+        cx: &App,
+        path_style: PathStyle,
+    ) -> Task<Result<TerminalBuilder>> {
         let background_executor = cx.background_executor().clone();
         let tokio_handle = gpui_tokio::Tokio::handle(cx);
+
+        let connection_info = ConnectionInfo::Telnet {
+            host: telnet_config.host.clone(),
+            port: telnet_config.port,
+            username: telnet_config.username.clone(),
+            password: telnet_config.password.clone(),
+            session_id,
+        };
+
         cx.spawn(async move |_| {
             let default_cursor_style = AlacCursorStyle::from(cursor_shape);
             let scrolling_history = max_scroll_history_lines
@@ -875,6 +964,7 @@ impl TerminalBuilder {
                 terminal_type: TerminalType::Connected {
                     connection: Box::new(telnet_connection),
                 },
+                connection_info: Some(connection_info),
                 pty_info: None,
                 completion_tx: None,
                 term,
@@ -1002,6 +1092,109 @@ impl TerminalBuilder {
 
         Ok(String::from_utf16(&buf[..size as usize])?)
     }
+
+    /// Create a disconnected SSH terminal that shows connection info and can be reconnected.
+    pub fn new_disconnected_ssh(
+        connection_info: ConnectionInfo,
+        cursor_shape: CursorShape,
+        alternate_scroll: AlternateScroll,
+        max_scroll_history_lines: Option<usize>,
+        window_id: u64,
+        background_executor: &BackgroundExecutor,
+        path_style: PathStyle,
+    ) -> Result<TerminalBuilder> {
+        let default_cursor_style = AlacCursorStyle::from(cursor_shape);
+        let scrolling_history = max_scroll_history_lines
+            .unwrap_or(DEFAULT_SCROLL_HISTORY_LINES)
+            .min(MAX_SCROLL_HISTORY_LINES);
+        let config = Config {
+            scrolling_history,
+            default_cursor_style,
+            ..Config::default()
+        };
+
+        let (events_tx, events_rx) = unbounded();
+        let mut term = Term::new(
+            config.clone(),
+            &TerminalBounds::default(),
+            ZedListener(events_tx),
+        );
+
+        if let AlternateScroll::Off = alternate_scroll {
+            term.unset_private_mode(PrivateMode::Named(NamedPrivateMode::AlternateScroll));
+        }
+
+        let term = Arc::new(FairMutex::new(term));
+
+        let terminal = Terminal {
+            task: None,
+            terminal_type: TerminalType::Disconnected,
+            connection_info: Some(connection_info),
+            pty_info: None,
+            completion_tx: None,
+            term,
+            term_config: config,
+            title_override: None,
+            events: VecDeque::with_capacity(10),
+            last_content: Default::default(),
+            last_mouse: None,
+            matches: Vec::new(),
+            selection_head: None,
+            breadcrumb_text: String::new(),
+            scroll_px: px(0.),
+            next_link_id: 0,
+            selection_phase: SelectionPhase::Ended,
+            hyperlink_regex_searches: RegexSearches::default(),
+            vi_mode_enabled: false,
+            is_remote_terminal: true,
+            last_mouse_move_time: Instant::now(),
+            last_hyperlink_search_position: None,
+            mouse_down_hyperlink: None,
+            #[cfg(windows)]
+            shell_program: None,
+            activation_script: Vec::new(),
+            template: CopyTemplate {
+                shell: Shell::System,
+                env: HashMap::default(),
+                cursor_shape,
+                alternate_scroll,
+                max_scroll_history_lines,
+                path_hyperlink_regexes: Vec::default(),
+                path_hyperlink_timeout_ms: 0,
+                window_id,
+            },
+            child_exited: None,
+            event_loop_task: Task::ready(Ok(())),
+            background_executor: background_executor.clone(),
+            path_style,
+        };
+
+        Ok(TerminalBuilder {
+            terminal,
+            events_rx,
+        })
+    }
+
+    /// Create a disconnected Telnet terminal that shows connection info and can be reconnected.
+    pub fn new_disconnected_telnet(
+        connection_info: ConnectionInfo,
+        cursor_shape: CursorShape,
+        alternate_scroll: AlternateScroll,
+        max_scroll_history_lines: Option<usize>,
+        window_id: u64,
+        background_executor: &BackgroundExecutor,
+        path_style: PathStyle,
+    ) -> Result<TerminalBuilder> {
+        Self::new_disconnected_ssh(
+            connection_info,
+            cursor_shape,
+            alternate_scroll,
+            max_scroll_history_lines,
+            window_id,
+            background_executor,
+            path_style,
+        )
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -1073,11 +1266,34 @@ enum TerminalType {
     Connected {
         connection: Box<dyn connection::TerminalConnection>,
     },
+    Disconnected,
     DisplayOnly,
+}
+
+/// Information about a remote connection that can be used for reconnection.
+#[derive(Clone, Debug)]
+pub enum ConnectionInfo {
+    Ssh {
+        host: String,
+        port: u16,
+        username: Option<String>,
+        password: Option<String>,
+        private_key_path: Option<PathBuf>,
+        passphrase: Option<String>,
+        session_id: Option<uuid::Uuid>,
+    },
+    Telnet {
+        host: String,
+        port: u16,
+        username: Option<String>,
+        password: Option<String>,
+        session_id: Option<uuid::Uuid>,
+    },
 }
 
 pub struct Terminal {
     terminal_type: TerminalType,
+    connection_info: Option<ConnectionInfo>,
     pty_info: Option<Arc<PtyProcessInfo>>,
     completion_tx: Option<Sender<Option<ExitStatus>>>,
     term: Arc<FairMutex<Term<ZedListener>>>,
@@ -2520,6 +2736,14 @@ impl Terminal {
 
     pub fn vi_mode_enabled(&self) -> bool {
         self.vi_mode_enabled
+    }
+
+    pub fn connection_info(&self) -> Option<&ConnectionInfo> {
+        self.connection_info.as_ref()
+    }
+
+    pub fn is_disconnected(&self) -> bool {
+        matches!(self.terminal_type, TerminalType::Disconnected)
     }
 
     pub fn clone_builder(&self, cx: &App, cwd: Option<PathBuf>) -> Task<Result<TerminalBuilder>> {
