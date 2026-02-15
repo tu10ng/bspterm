@@ -171,6 +171,16 @@ pub struct TerminalSettingsContent {
     /// Default: 45
     #[serde(serialize_with = "crate::serialize_optional_f32_with_two_decimal_places")]
     pub minimum_contrast: Option<f32>,
+    /// When enabled, most keybindings will be sent directly to the terminal
+    /// instead of triggering Zed actions. Similar to VS Code's sendKeybindingsToShell.
+    ///
+    /// Default: true
+    pub send_keybindings_to_shell: Option<bool>,
+    /// Keybindings that should NOT be sent to the shell even when
+    /// send_keybindings_to_shell is enabled. These will trigger Zed actions instead.
+    ///
+    /// Default: ["cmd-w", "cmd-q", "cmd-,", "ctrl-`"]
+    pub keybindings_to_skip_shell: Option<Vec<String>>,
 }
 
 /// Shell configuration to open the terminal with.

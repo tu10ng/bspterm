@@ -10,9 +10,9 @@ use assistant_slash_command::SlashCommandRegistry;
 use editor::{Editor, EditorSettings, actions::SelectAll, blink_manager::BlinkManager};
 use gpui::{
     Action, AnyElement, App, ClipboardEntry, DismissEvent, Entity, EventEmitter, FocusHandle,
-    Focusable, KeyContext, KeyDownEvent, Keystroke, MouseButton, MouseDownEvent, Pixels, Point,
-    Render, ScrollWheelEvent, Styled, Subscription, Task, WeakEntity, actions, anchored, deferred,
-    div,
+    Focusable, KeyContext, KeyDownEvent, KeybindingKeystroke, Keystroke, KeystrokeEvent,
+    MouseButton, MouseDownEvent, Pixels, Point, Render, ScrollWheelEvent, Styled, Subscription,
+    Task, WeakEntity, actions, anchored, deferred, div,
 };
 use menu;
 use persistence::TERMINAL_DB;
@@ -148,6 +148,7 @@ pub struct TerminalView {
     self_handle: WeakEntity<Self>,
     rename_editor: Option<Entity<Editor>>,
     rename_editor_subscription: Option<Subscription>,
+    keystroke_intercept_subscription: Option<Subscription>,
     _subscriptions: Vec<Subscription>,
     _terminal_subscriptions: Vec<Subscription>,
 }
@@ -296,6 +297,7 @@ impl TerminalView {
             self_handle: cx.entity().downgrade(),
             rename_editor: None,
             rename_editor_subscription: None,
+            keystroke_intercept_subscription: None,
             _subscriptions: subscriptions,
             _terminal_subscriptions: terminal_subscriptions,
         }
@@ -553,16 +555,25 @@ impl TerminalView {
     }
 
     fn settings_changed(&mut self, cx: &mut Context<Self>) {
-        let settings = TerminalSettings::get_global(cx);
-        let breadcrumb_visibility_changed = self.show_breadcrumbs != settings.toolbar.breadcrumbs;
-        self.show_breadcrumbs = settings.toolbar.breadcrumbs;
+        let (breadcrumb_visibility_changed, should_blink, new_cursor_shape, send_keybindings_to_shell) = {
+            let settings = TerminalSettings::get_global(cx);
+            let breadcrumb_visibility_changed = self.show_breadcrumbs != settings.toolbar.breadcrumbs;
+            self.show_breadcrumbs = settings.toolbar.breadcrumbs;
 
-        let should_blink = match settings.blinking {
-            TerminalBlink::Off => false,
-            TerminalBlink::On => true,
-            TerminalBlink::TerminalControlled => self.blinking_terminal_enabled,
+            let should_blink = match settings.blinking {
+                TerminalBlink::Off => false,
+                TerminalBlink::On => true,
+                TerminalBlink::TerminalControlled => self.blinking_terminal_enabled,
+            };
+
+            (
+                breadcrumb_visibility_changed,
+                should_blink,
+                settings.cursor_shape,
+                settings.send_keybindings_to_shell,
+            )
         };
-        let new_cursor_shape = settings.cursor_shape;
+
         let old_cursor_shape = self.cursor_shape;
         if old_cursor_shape != new_cursor_shape {
             self.cursor_shape = new_cursor_shape;
@@ -579,6 +590,12 @@ impl TerminalView {
                 BlinkManager::disable
             },
         );
+
+        if !send_keybindings_to_shell {
+            self.keystroke_intercept_subscription.take();
+        } else {
+            self.register_keystroke_interceptor(cx);
+        }
 
         if breadcrumb_visibility_changed {
             cx.emit(ItemEvent::UpdateBreadcrumbs);
@@ -1248,6 +1265,60 @@ impl TerminalView {
         }
     }
 
+    fn handle_intercepted_keystroke(
+        &mut self,
+        event: &KeystrokeEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.focus_handle.is_focused(window) {
+            return;
+        }
+
+        let settings = TerminalSettings::get_global(cx);
+
+        if self.should_skip_shell(&event.keystroke, &settings) {
+            return;
+        }
+
+        if self.context_menu.is_some() {
+            return;
+        }
+
+        self.clear_bell(cx);
+        self.pause_cursor_blinking(window, cx);
+
+        // Only stop propagation if we successfully processed the keystroke.
+        // For plain text input, process_keystroke returns false (to_esc_str returns None),
+        // so we let the normal on_key_down handler process it instead.
+        if self.process_keystroke(&event.keystroke, cx) {
+            cx.stop_propagation();
+        }
+    }
+
+    fn should_skip_shell(&self, keystroke: &Keystroke, settings: &TerminalSettings) -> bool {
+        for pattern in &settings.keybindings_to_skip_shell {
+            if let Ok(skip_ks) = Keystroke::parse(pattern) {
+                let skip_keybinding = KeybindingKeystroke::from_keystroke(skip_ks);
+                if keystroke.should_match(&skip_keybinding) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn register_keystroke_interceptor(&mut self, cx: &mut Context<Self>) {
+        let settings = TerminalSettings::get_global(cx);
+
+        if settings.send_keybindings_to_shell && self.keystroke_intercept_subscription.is_none() {
+            let listener = cx.listener(|this, event: &KeystrokeEvent, window, cx| {
+                this.handle_intercepted_keystroke(event, window, cx);
+            });
+            self.keystroke_intercept_subscription = Some(cx.intercept_keystrokes(listener));
+        }
+    }
+
     fn focus_in(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.terminal.update(cx, |terminal, _| {
             terminal.set_cursor_shape(self.cursor_shape);
@@ -1264,6 +1335,8 @@ impl TerminalView {
             self.blink_manager.update(cx, BlinkManager::enable);
         }
 
+        self.register_keystroke_interceptor(cx);
+
         window.invalidate_character_coordinates();
         cx.notify();
     }
@@ -1274,6 +1347,9 @@ impl TerminalView {
             terminal.focus_out();
             terminal.set_cursor_shape(CursorShape::Hollow);
         });
+
+        self.keystroke_intercept_subscription.take();
+
         cx.notify();
     }
 }

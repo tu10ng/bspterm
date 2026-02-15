@@ -50,6 +50,8 @@ pub struct TerminalSettings {
     pub minimum_contrast: f32,
     pub path_hyperlink_regexes: Vec<String>,
     pub path_hyperlink_timeout_ms: u64,
+    pub send_keybindings_to_shell: bool,
+    pub keybindings_to_skip_shell: Vec<String>,
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -129,6 +131,8 @@ impl settings::Settings for TerminalSettings {
                 })
                 .collect(),
             path_hyperlink_timeout_ms: project_content.path_hyperlink_timeout_ms.unwrap(),
+            send_keybindings_to_shell: user_content.send_keybindings_to_shell.unwrap(),
+            keybindings_to_skip_shell: user_content.keybindings_to_skip_shell.unwrap(),
         }
     }
 }

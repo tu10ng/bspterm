@@ -217,6 +217,155 @@ Actions with no data defined with the `actions!(some_namespace, [SomeAction, Ano
 
 Action handlers can be registered on an element via the event handler `.on_action(|action, window, cx| ...)`. Like other event handlers, this is often used with `cx.listener`.
 
+## Keyboard Shortcuts and Key Bindings
+
+GPUI provides a comprehensive system for handling keyboard shortcuts, from single keys to multi-keystroke sequences.
+
+### Key Files
+
+| Purpose | File Path |
+|---------|-----------|
+| Keystroke parsing | `crates/gpui/src/platform/keystroke.rs` |
+| KeyBinding structure | `crates/gpui/src/keymap/binding.rs` |
+| Keymap management | `crates/gpui/src/keymap.rs` |
+| Context matching | `crates/gpui/src/keymap/context.rs` |
+| Key dispatch tree | `crates/gpui/src/key_dispatch.rs` |
+| Action definition | `crates/gpui/src/action.rs` |
+| Window event handling | `crates/gpui/src/window.rs` |
+| Element interaction | `crates/gpui/src/elements/div.rs` |
+
+### Keystroke Format
+
+```
+Format: [secondary-][ctrl-][alt-][shift-][cmd-][fn-]key
+Examples: "a", "ctrl-a", "shift-enter", "cmd-k left" (multi-keystroke sequence)
+```
+
+### Defining Actions
+
+**Simple actions (no data):**
+```rust
+actions!(editor, [MoveUp, MoveDown, MoveLeft, MoveRight]);
+```
+
+**Actions with data:**
+```rust
+#[derive(Clone, PartialEq, Deserialize, JsonSchema, Action)]
+#[action(namespace = editor)]
+#[serde(deny_unknown_fields)]
+pub struct SelectNext {
+    #[serde(default)]
+    pub replace_newest: bool,
+}
+```
+
+### Registering Key Bindings
+
+```rust
+KeyBinding::new("cmd-z", UndoAction, Some("Editor"))  // With context
+KeyBinding::new("ctrl-k left", SomeAction, None)       // Multi-keystroke, no context
+```
+
+**Context predicate syntax:**
+- `"Editor"` - simple component name
+- `"editor && vim_mode == normal"` - AND combination
+- `"!(editor)"` - negation
+- `"Workspace > Editor"` - ancestor-descendant relationship
+
+### Registering Action Handlers on Elements
+
+**Named action handlers:**
+```rust
+div()
+    .key_context("Editor")  // Scope bindings to this context
+    .on_action(cx.listener(Self::handle_undo))
+    .on_action(cx.listener(Self::handle_redo))
+```
+
+**Raw key event handlers:**
+```rust
+div()
+    .on_key_down(cx.listener(|this, event, window, cx| {
+        // Handle KeyDownEvent
+        if should_consume {
+            cx.stop_propagation();  // Prevent bubbling
+        }
+    }))
+    .capture_key_down(cx.listener(|this, event, window, cx| {
+        // Capture phase handler (fires before bubble)
+    }))
+```
+
+### Handler Context Types
+
+| Context Type | Purpose | Available In |
+|-------------|---------|--------------|
+| `&A` | Action data | All handlers |
+| `&mut Window` | Window operations | All handlers |
+| `&mut App` | Global state, spawn tasks | All handlers |
+| `&mut Context<T>` | Entity-specific: notify, subscribe | Via `cx.listener()` |
+| `DispatchPhase` | Capture or Bubble phase | Window-level `on_action` only |
+
+### Event Dispatch Phases
+
+```rust
+pub enum DispatchPhase {
+    Capture,  // Root → Focused element (fires first)
+    Bubble,   // Focused element → Root (default)
+}
+```
+
+Events propagate in two phases:
+1. **Capture**: From root down to focused element
+2. **Bubble**: From focused element up to root
+
+Call `cx.stop_propagation()` to prevent further propagation.
+
+### Multi-Keystroke Sequences
+
+Multi-keystroke bindings (e.g., `"ctrl-k left"`) use a pending state machine:
+1. First keystroke partially matches → stored in pending state
+2. Subsequent keystrokes complete the sequence → action executed
+3. 1-second timeout → pending keystrokes replayed as individual events
+
+### Tab Key Handling
+
+Tab is **not** automatically handled. Explicit binding required:
+
+```rust
+actions!(example, [Tab, TabPrev]);
+
+cx.bind_keys([
+    KeyBinding::new("tab", Tab, None),
+    KeyBinding::new("shift-tab", TabPrev, None),
+]);
+
+fn on_tab(&mut self, _: &Tab, window: &mut Window, cx: &mut Context<Self>) {
+    window.focus_next(cx);
+}
+
+fn on_tab_prev(&mut self, _: &TabPrev, window: &mut Window, cx: &mut Context<Self>) {
+    window.focus_prev(cx);
+}
+```
+
+### Complete Event Flow
+
+```
+Platform Key Event
+    ↓
+window.dispatch_key_event()
+    ├─ Build dispatch path (root → focused element)
+    ├─ Check keystroke interceptors
+    ├─ Attempt multi-keystroke binding match
+    ├─ If pending: Store and wait for timeout
+    ├─ If matched: Execute binding
+    │   └─ dispatch_action_on_node()
+    │       ├─ Capture phase (root → focused)
+    │       └─ Bubble phase (focused → root)
+    └─ Else: Dispatch raw key events to listeners
+```
+
 ## Notify
 
 When a view's state has changed in a way that may affect its rendering, it should call `cx.notify()`. This will cause the view to be rerendered. It will also cause any observe callbacks registered for the entity with `cx.observe` to be called.

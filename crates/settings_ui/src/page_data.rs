@@ -6105,7 +6105,7 @@ fn terminal_page() -> SettingsPage {
         ]
     }
 
-    fn behavior_settings_section() -> [SettingsPageItem; 4] {
+    fn behavior_settings_section() -> [SettingsPageItem; 6] {
         [
             SettingsPageItem::SectionHeader("Behavior Settings"),
             SettingsPageItem::SettingItem(SettingItem {
@@ -6163,6 +6163,53 @@ fn terminal_page() -> SettingsPage {
                             .keep_selection_on_copy = value;
                     },
                 }),
+                metadata: None,
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Send Keybindings To Shell",
+                description: "When enabled, most keybindings are sent directly to the terminal instead of triggering Zed actions. Useful for terminal applications that use keybindings like ctrl-p.",
+                field: Box::new(SettingField {
+                    json_path: Some("terminal.send_keybindings_to_shell"),
+                    pick: |settings_content| {
+                        settings_content
+                            .terminal
+                            .as_ref()?
+                            .send_keybindings_to_shell
+                            .as_ref()
+                    },
+                    write: |settings_content, value| {
+                        settings_content
+                            .terminal
+                            .get_or_insert_default()
+                            .send_keybindings_to_shell = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Keybindings To Skip Shell",
+                description: "Keybindings that should NOT be sent to the shell when 'Send Keybindings To Shell' is enabled. These will trigger Zed actions instead.",
+                field: Box::new(
+                    SettingField {
+                        json_path: Some("terminal.keybindings_to_skip_shell"),
+                        pick: |settings_content| {
+                            settings_content
+                                .terminal
+                                .as_ref()?
+                                .keybindings_to_skip_shell
+                                .as_ref()
+                        },
+                        write: |settings_content, value| {
+                            settings_content
+                                .terminal
+                                .get_or_insert_default()
+                                .keybindings_to_skip_shell = value;
+                        },
+                    }
+                    .unimplemented(),
+                ),
                 metadata: None,
                 files: USER,
             }),

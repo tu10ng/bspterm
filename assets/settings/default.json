@@ -1795,6 +1795,18 @@
     // Timeout for hover and Cmd-click path hyperlink discovery in milliseconds. Specifying a
     // timeout of `0` will disable path hyperlinking in terminal.
     "path_hyperlink_timeout_ms": 1,
+    // When enabled, most keybindings are sent to the terminal instead of
+    // triggering Zed actions. Similar to VS Code's sendKeybindingsToShell.
+    // Useful for terminal applications that rely on keybindings like ctrl-p.
+    "send_keybindings_to_shell": true,
+    // Keybindings that should NOT be sent to the shell when
+    // send_keybindings_to_shell is enabled. These will trigger Zed actions.
+    "keybindings_to_skip_shell": [
+      "cmd-w",
+      "cmd-q",
+      "cmd-,",
+      "ctrl-`"
+    ],
   },
   "code_actions_on_format": {},
   // Settings related to running tasks.
