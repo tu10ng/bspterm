@@ -689,6 +689,21 @@ impl SessionStoreEntity {
         }
     }
 
+    /// Update a group and trigger save.
+    pub fn update_group(
+        &mut self,
+        id: Uuid,
+        update_fn: impl FnOnce(&mut SessionGroup),
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(SessionNode::Group(group)) = self.store.find_node_mut(id) {
+            update_fn(group);
+            self.schedule_save(cx);
+            cx.emit(SessionStoreEvent::Changed);
+            cx.notify();
+        }
+    }
+
     /// Toggle group expanded state.
     pub fn toggle_group_expanded(&mut self, id: Uuid, cx: &mut Context<Self>) {
         if let Some(SessionNode::Group(group)) = self.store.find_node_mut(id) {

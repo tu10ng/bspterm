@@ -1,3 +1,4 @@
+mod group_edit_modal;
 mod quick_add;
 mod session_edit_modal;
 
@@ -8,8 +9,9 @@ use anyhow::Result;
 use gpui::{
     Action, AnyElement, App, AppContext as _, AsyncWindowContext, ClickEvent, Context,
     DismissEvent, DragMoveEvent, Entity, EventEmitter, FocusHandle, Focusable, IntoElement,
-    ListSizingBehavior, MouseDownEvent, ParentElement, Point, Render, Styled, Subscription, Task,
-    UniformListScrollHandle, WeakEntity, Window, anchored, deferred, px, uniform_list,
+    ListSizingBehavior, MouseButton, MouseDownEvent, ParentElement, Point, Render, Styled,
+    Subscription, Task, UniformListScrollHandle, WeakEntity, Window, anchored, deferred, px,
+    uniform_list,
 };
 use terminal::{ProtocolConfig, SessionNode, SessionStoreEntity, SessionStoreEvent};
 use ui::{
@@ -23,6 +25,7 @@ use workspace::{
 };
 use bspterm_actions::remote_explorer::ToggleFocus;
 
+use group_edit_modal::GroupEditModal;
 pub use quick_add::*;
 pub use session_edit_modal::SessionEditModal;
 
@@ -262,29 +265,78 @@ impl RemoteExplorer {
             return;
         };
 
-        let SessionNode::Session(_session) = node else {
-            return;
-        };
-
         let workspace = self.workspace.clone();
         let session_store_entity = self.session_store.clone();
 
-        let context_menu = ContextMenu::build(window, cx, move |menu, _window, _cx| {
-            let workspace_for_edit = workspace.clone();
+        let context_menu = match node {
+            SessionNode::Session(_) => {
+                ContextMenu::build(window, cx, move |menu, _window, _cx| {
+                    let workspace_for_edit = workspace.clone();
 
-            menu.entry("Edit Session", None, move |window, cx| {
-                if let Some(workspace) = workspace_for_edit.upgrade() {
+                    menu.entry("Edit Session", None, move |window, cx| {
+                        if let Some(workspace) = workspace_for_edit.upgrade() {
+                            workspace.update(cx, |ws, cx| {
+                                ws.toggle_modal(window, cx, |window, cx| {
+                                    SessionEditModal::new(entry_id, window, cx)
+                                });
+                            });
+                        }
+                    })
+                    .entry("Delete Session", None, move |_window, cx| {
+                        session_store_entity.update(cx, |store, cx| {
+                            store.remove_node(entry_id, cx);
+                        });
+                    })
+                })
+            }
+            SessionNode::Group(_) => {
+                ContextMenu::build(window, cx, move |menu, _window, _cx| {
+                    let workspace_for_edit = workspace.clone();
+
+                    menu.entry("Rename Group", None, move |window, cx| {
+                        if let Some(workspace) = workspace_for_edit.upgrade() {
+                            workspace.update(cx, |ws, cx| {
+                                ws.toggle_modal(window, cx, |window, cx| {
+                                    GroupEditModal::new_edit(entry_id, window, cx)
+                                });
+                            });
+                        }
+                    })
+                    .entry("Delete Group", None, move |_window, cx| {
+                        session_store_entity.update(cx, |store, cx| {
+                            store.remove_node(entry_id, cx);
+                        });
+                    })
+                })
+            }
+        };
+
+        window.focus(&context_menu.focus_handle(cx), cx);
+        let subscription = cx.subscribe(&context_menu, |this, _, _: &DismissEvent, cx| {
+            this.context_menu.take();
+            cx.notify();
+        });
+        self.context_menu = Some((context_menu, position, subscription));
+        cx.notify();
+    }
+
+    fn deploy_blank_area_context_menu(
+        &mut self,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let workspace = self.workspace.clone();
+
+        let context_menu = ContextMenu::build(window, cx, move |menu, _window, _cx| {
+            menu.entry("New Group", None, move |window, cx| {
+                if let Some(workspace) = workspace.upgrade() {
                     workspace.update(cx, |ws, cx| {
                         ws.toggle_modal(window, cx, |window, cx| {
-                            SessionEditModal::new(entry_id, window, cx)
+                            GroupEditModal::new_create(None, window, cx)
                         });
                     });
                 }
-            })
-            .entry("Delete Session", None, move |_window, cx| {
-                session_store_entity.update(cx, |store, cx| {
-                    store.remove_node(entry_id, cx);
-                });
             })
         });
 
@@ -827,6 +879,13 @@ impl RemoteExplorer {
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.toggle_expanded(id, window, cx);
                 }))
+                .on_secondary_mouse_down(cx.listener(
+                    move |this, event: &MouseDownEvent, window, cx| {
+                        cx.stop_propagation();
+                        this.select_entry(id, cx);
+                        this.deploy_context_menu(event.position, id, window, cx);
+                    },
+                ))
             })
             .when(!is_group, |this| {
                 this.on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
@@ -1001,6 +1060,12 @@ impl Render for RemoteExplorer {
                                     .when(show_root_indicator, |this| this.bg(accent_color)),
                             )
                             .when(show_root_indicator, |this| this.bg(drop_bg))
+                            .on_mouse_down(
+                                MouseButton::Right,
+                                cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                                    this.deploy_blank_area_context_menu(event.position, window, cx);
+                                }),
+                            )
                             .on_drag_move::<DraggedSessionEntry>(cx.listener(
                                 |this, event: &DragMoveEvent<DraggedSessionEntry>, _window, cx| {
                                     if event.bounds.contains(&event.event.position) {
