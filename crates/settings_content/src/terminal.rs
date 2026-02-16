@@ -118,7 +118,7 @@ pub struct TerminalSettingsContent {
     /// Whether or not selecting text in the terminal will automatically
     /// copy to the system clipboard.
     ///
-    /// Default: false
+    /// Default: true
     pub copy_on_select: Option<bool>,
     /// Whether to keep the text selection after copying it to the clipboard.
     ///

@@ -1650,7 +1650,7 @@
     "option_as_meta": false,
     // Whether or not selecting text in the terminal will automatically
     // copy to the system clipboard.
-    "copy_on_select": false,
+    "copy_on_select": true,
     // Whether to keep the text selection after copying it to the clipboard.
     "keep_selection_on_copy": true,
     // Whether to show the terminal button in the status bar
