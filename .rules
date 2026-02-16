@@ -537,18 +537,34 @@ The Remote Explorer panel includes a Quick Add area (`crates/remote_explorer/src
 
 #### Auto-Recognize Input
 
-The auto-recognize input field (`auto_recognize.rs`) supports multiple formats:
+The auto-recognize input field (`auto_recognize.rs`) supports flexible parsing with IP detection anywhere in the input string.
 
-| Format | Example | Result |
-|--------|---------|--------|
-| IP only | `192.168.1.1` | Telnet on port 23 |
-| IP:port | `192.168.1.1:22` | SSH on port 22 |
-| IP user pass | `192.168.1.1 root password` | Telnet with credentials |
-| IP user pass port | `192.168.1.1 root password 2323` | Telnet on custom port |
-| Multiple (comma) | `192.168.1.1, 192.168.1.2` | Multiple connections |
-| Multiple (newline) | Line-separated IPs | Multiple connections |
-| Session env info | `环境192.168.1.1\troot\tpass` | Telnet (see below) |
-| Session env info | `后台192.168.1.1\tadmin\tpass` | SSH (see below) |
+| Format | Example | Session Name | Result |
+|--------|---------|--------------|--------|
+| IP only | `192.168.1.1` | "192.168.1.1" | Telnet on port 23 |
+| IP:port | `192.168.1.1:22` | "192.168.1.1:22" | SSH on port 22 |
+| IP user pass | `192.168.1.1 root password` | "192.168.1.1" | Telnet with credentials |
+| IP user pass port | `192.168.1.1 root password 2323` | "192.168.1.1" | Telnet on custom port |
+| Slash credentials | `192.168.1.1 user/pass` | "192.168.1.1" | Telnet, user/pass parsed |
+| Name prefix | `管理网口127.0.0.1` | "管理网口127.0.0.1" | Telnet, name includes prefix |
+| Name + credentials | `管理网口127.0.0.1 root/Root@123` | "管理网口127.0.0.1" | Telnet with credentials |
+| Name with spaces | `dev server 192.168.1.1 root/pass` | "dev server 192.168.1.1" | Telnet with credentials |
+| Name + port | `测试10.0.0.1:22 admin pass` | "测试10.0.0.1:22" | SSH with credentials |
+| Multiple (comma) | `192.168.1.1, 192.168.1.2` | — | Multiple connections |
+| Multiple (newline) | Line-separated IPs | — | Multiple connections |
+| Session env info | `环境192.168.1.1\troot\tpass` | — | Telnet (see below) |
+| Session env info | `后台192.168.1.1\tadmin\tpass` | — | SSH (see below) |
+
+**Parsing Algorithm:**
+1. Scans input to find IPv4 address anywhere in the string
+2. Session name = everything from start up to and including IP:port
+3. Credentials parsed from remaining text after IP:port
+4. Supports multiple credential separators: tab (`\t`), slash (`/`), or space
+
+**Credential Formats:**
+- Tab-separated: `user\tpass`
+- Slash-separated: `user/pass`
+- Space-separated: `user pass` or `user pass port`
 
 #### Session Env Info Format (环境/后台)
 
@@ -579,6 +595,9 @@ Special format for bulk importing sessions from "复制环境信息" (Copy Envir
 #### Key Functions
 
 - `parse_connection_text()`: Main parser for all input formats
+- `parse_single_entry()`: Parses one connection entry with IP scanning
+- `find_ipv4_position()`: Scans string to locate IPv4 address position
+- `parse_credentials_flexible()`: Parses credentials with tab/slash/space separators
 - `is_session_env_info_format()`: Detects 环境/后台 format
 - `parse_session_env_info_entry()`: Parses single 环境/后台 entry
 - `import_session_env_info()`: Handles grouping and saving for bulk import

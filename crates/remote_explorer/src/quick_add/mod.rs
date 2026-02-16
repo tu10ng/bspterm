@@ -195,11 +195,13 @@ impl QuickAddArea {
                     config
                 };
 
-                let session_name = if port == 23 {
-                    connection.host
-                } else {
-                    format!("{}:{}", connection.host, port)
-                };
+                let session_name = connection.name.clone().unwrap_or_else(|| {
+                    if port == 23 {
+                        connection.host.clone()
+                    } else {
+                        format!("{}:{}", connection.host, port)
+                    }
+                });
                 let session_config =
                     terminal::SessionConfig::new_telnet(session_name, config.clone());
 
@@ -223,11 +225,13 @@ impl QuickAddArea {
                     .with_username(&username)
                     .with_auth(terminal::AuthMethod::Password { password });
 
-                let session_name = if port == 22 {
-                    connection.host
-                } else {
-                    format!("{}:{}", connection.host, port)
-                };
+                let session_name = connection.name.clone().unwrap_or_else(|| {
+                    if port == 22 {
+                        connection.host.clone()
+                    } else {
+                        format!("{}:{}", connection.host, port)
+                    }
+                });
                 let session_config =
                     terminal::SessionConfig::new_ssh(session_name, ssh_config.clone());
 
@@ -379,7 +383,7 @@ fn create_session_config(conn: &ParsedConnection) -> SessionConfig {
                 config
             };
 
-            let session_name = format_session_name(host, port, &None, 23);
+            let session_name = conn.name.clone().unwrap_or_else(|| format_session_name(host, port, &None, 23));
             SessionConfig::new_telnet(session_name, config)
         }
         ConnectionProtocol::Ssh => {
@@ -392,7 +396,7 @@ fn create_session_config(conn: &ParsedConnection) -> SessionConfig {
                 .with_username(&username)
                 .with_auth(terminal::AuthMethod::Password { password });
 
-            let session_name = format_session_name(host, port, &conn.username, 22);
+            let session_name = conn.name.clone().unwrap_or_else(|| format_session_name(host, port, &conn.username, 22));
             SessionConfig::new_ssh(session_name, ssh_config)
         }
     }

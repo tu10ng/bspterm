@@ -13,6 +13,7 @@ pub enum ConnectionProtocol {
 
 #[derive(Clone, Debug)]
 pub struct ParsedConnection {
+    pub name: Option<String>,
     pub host: String,
     pub port: u16,
     pub protocol: ConnectionProtocol,
@@ -23,6 +24,7 @@ pub struct ParsedConnection {
 impl ParsedConnection {
     pub fn telnet(host: String, port: u16) -> Self {
         Self {
+            name: None,
             host,
             port,
             protocol: ConnectionProtocol::Telnet,
@@ -38,6 +40,7 @@ impl ParsedConnection {
         password: String,
     ) -> Self {
         Self {
+            name: None,
             host,
             port,
             protocol: ConnectionProtocol::Telnet,
@@ -48,12 +51,18 @@ impl ParsedConnection {
 
     pub fn ssh(host: String, port: u16) -> Self {
         Self {
+            name: None,
             host,
             port,
             protocol: ConnectionProtocol::Ssh,
             username: None,
             password: None,
         }
+    }
+
+    pub fn with_name(mut self, name: String) -> Self {
+        self.name = Some(name);
+        self
     }
 
     pub fn with_username(mut self, username: String) -> Self {
@@ -205,6 +214,7 @@ fn parse_session_env_info_entry(entry: &str) -> Option<ParsedConnection> {
     let password = parts.get(2).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
 
     Some(ParsedConnection {
+        name: None,
         host,
         port,
         protocol,
@@ -226,54 +236,141 @@ fn parse_single_entry(entry: &str) -> Option<ParsedConnection> {
         return parse_session_env_info_entry(trimmed);
     }
 
-    let parts: Vec<&str> = entry.split_whitespace().collect();
-    if parts.is_empty() {
+    let (ip_start, ip_end) = find_ipv4_position(trimmed)?;
+
+    let host = &trimmed[ip_start..ip_end];
+    if !is_valid_ipv4(host) {
         return None;
     }
 
-    let host_port = parts[0];
-    let (host, port) = parse_host_port(host_port)?;
+    let mut host_port_end = ip_end;
+    let mut port = 23u16;
 
-    if !is_valid_ipv4(&host) && !is_valid_hostname(&host) {
-        return None;
-    }
+    let remaining_after_ip = &trimmed[ip_end..];
+    if remaining_after_ip.starts_with(':') {
+        let port_start = 1;
+        let port_end = remaining_after_ip[port_start..]
+            .find(|c: char| !c.is_ascii_digit())
+            .map(|i| port_start + i)
+            .unwrap_or(remaining_after_ip.len());
 
-    let default_port = if port == 22 { 22 } else { port };
-
-    match parts.len() {
-        1 => {
-            if port == 22 {
-                Some(ParsedConnection::ssh(host, port))
-            } else {
-                Some(ParsedConnection::telnet(host, default_port.max(23)))
+        if port_end > port_start {
+            if let Ok(parsed_port) = remaining_after_ip[port_start..port_end].parse::<u16>() {
+                port = parsed_port;
+                host_port_end = ip_end + port_end;
             }
         }
-        2 => Some(ParsedConnection::telnet(host, default_port.max(23)).with_username(parts[1].to_string())),
-        3 => Some(ParsedConnection::telnet_with_credentials(
-            host,
-            default_port.max(23),
-            parts[1].to_string(),
-            parts[2].to_string(),
-        )),
-        4 => {
-            let custom_port = parts[3].parse::<u16>().unwrap_or(23);
-            Some(ParsedConnection::telnet_with_credentials(
-                host,
-                custom_port,
-                parts[1].to_string(),
-                parts[2].to_string(),
-            ))
-        }
-        _ => None,
     }
+
+    let name = trimmed[..host_port_end].trim().to_string();
+
+    let remaining = trimmed[host_port_end..].trim();
+    let (username, password, custom_port) = parse_credentials_flexible(remaining);
+
+    if let Some(p) = custom_port {
+        port = p;
+    }
+
+    let protocol = if port == 22 {
+        ConnectionProtocol::Ssh
+    } else {
+        ConnectionProtocol::Telnet
+    };
+
+    Some(ParsedConnection {
+        name: Some(name),
+        host: host.to_string(),
+        port,
+        protocol,
+        username,
+        password,
+    })
 }
 
-fn parse_host_port(input: &str) -> Option<(String, u16)> {
-    if let Some((host, port_str)) = input.rsplit_once(':') {
-        let port = port_str.parse::<u16>().ok()?;
-        Some((host.to_string(), port))
-    } else {
-        Some((input.to_string(), 23))
+fn find_ipv4_position(input: &str) -> Option<(usize, usize)> {
+    let bytes = input.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+
+    while i < len {
+        if bytes[i].is_ascii_digit() {
+            let start = i;
+            let mut octet_count = 0;
+            let mut valid = true;
+
+            while i < len && octet_count < 4 {
+                let octet_start = i;
+                while i < len && bytes[i].is_ascii_digit() {
+                    i += 1;
+                }
+
+                if i == octet_start {
+                    valid = false;
+                    break;
+                }
+
+                let octet_str = &input[octet_start..i];
+                if octet_str.parse::<u8>().is_err() {
+                    valid = false;
+                    break;
+                }
+
+                octet_count += 1;
+
+                if octet_count < 4 {
+                    if i < len && bytes[i] == b'.' {
+                        i += 1;
+                    } else {
+                        valid = false;
+                        break;
+                    }
+                }
+            }
+
+            if valid && octet_count == 4 {
+                return Some((start, i));
+            }
+
+            i = start + 1;
+        } else {
+            i += 1;
+        }
+    }
+
+    None
+}
+
+fn parse_credentials_flexible(input: &str) -> (Option<String>, Option<String>, Option<u16>) {
+    let input = input.trim();
+    if input.is_empty() {
+        return (None, None, None);
+    }
+
+    if input.contains('\t') {
+        let parts: Vec<&str> = input.split('\t').collect();
+        let username = parts.first().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        let password = parts.get(1).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        return (username, password, None);
+    }
+
+    if let Some((user, pass)) = input.split_once('/') {
+        let user = user.trim();
+        let pass = pass.trim();
+        if !user.is_empty() {
+            return (Some(user.to_string()), if pass.is_empty() { None } else { Some(pass.to_string()) }, None);
+        }
+    }
+
+    let parts: Vec<&str> = input.split_whitespace().collect();
+    match parts.len() {
+        0 => (None, None, None),
+        1 => (Some(parts[0].to_string()), None, None),
+        2 => (Some(parts[0].to_string()), Some(parts[1].to_string()), None),
+        3 => {
+            let port = parts[2].parse::<u16>().ok();
+            (Some(parts[0].to_string()), Some(parts[1].to_string()), port)
+        }
+        _ => (Some(parts[0].to_string()), Some(parts[1].to_string()), None),
     }
 }
 
@@ -456,5 +553,86 @@ mod tests {
         assert_eq!(result[0].host, "192.168.1.1");
         assert_eq!(result[0].username, Some("root".to_string()));
         assert_eq!(result[0].password, None);
+    }
+
+    #[test]
+    fn test_parse_with_name_prefix() {
+        let result = parse_connection_text("管理网口127.0.0.1");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, Some("管理网口127.0.0.1".to_string()));
+        assert_eq!(result[0].host, "127.0.0.1");
+        assert_eq!(result[0].port, 23);
+        assert_eq!(result[0].protocol, ConnectionProtocol::Telnet);
+    }
+
+    #[test]
+    fn test_parse_slash_separator() {
+        let result = parse_connection_text("192.168.1.1 user/pass");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, Some("192.168.1.1".to_string()));
+        assert_eq!(result[0].host, "192.168.1.1");
+        assert_eq!(result[0].port, 23);
+        assert_eq!(result[0].username, Some("user".to_string()));
+        assert_eq!(result[0].password, Some("pass".to_string()));
+    }
+
+    #[test]
+    fn test_parse_mixed_format() {
+        let result = parse_connection_text("管理网口127.0.0.1 root123/Root@123");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, Some("管理网口127.0.0.1".to_string()));
+        assert_eq!(result[0].host, "127.0.0.1");
+        assert_eq!(result[0].port, 23);
+        assert_eq!(result[0].username, Some("root123".to_string()));
+        assert_eq!(result[0].password, Some("Root@123".to_string()));
+    }
+
+    #[test]
+    fn test_parse_name_with_spaces() {
+        let result = parse_connection_text("dev server 192.168.1.1 root/pass");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, Some("dev server 192.168.1.1".to_string()));
+        assert_eq!(result[0].host, "192.168.1.1");
+        assert_eq!(result[0].port, 23);
+        assert_eq!(result[0].username, Some("root".to_string()));
+        assert_eq!(result[0].password, Some("pass".to_string()));
+    }
+
+    #[test]
+    fn test_parse_name_includes_ip() {
+        let result = parse_connection_text("192.168.1.1");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, Some("192.168.1.1".to_string()));
+        assert_eq!(result[0].host, "192.168.1.1");
+    }
+
+    #[test]
+    fn test_parse_name_with_port() {
+        let result = parse_connection_text("测试10.0.0.1:22 admin pass");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, Some("测试10.0.0.1:22".to_string()));
+        assert_eq!(result[0].host, "10.0.0.1");
+        assert_eq!(result[0].port, 22);
+        assert_eq!(result[0].protocol, ConnectionProtocol::Ssh);
+        assert_eq!(result[0].username, Some("admin".to_string()));
+        assert_eq!(result[0].password, Some("pass".to_string()));
+    }
+
+    #[test]
+    fn test_find_ipv4_position() {
+        assert_eq!(find_ipv4_position("192.168.1.1"), Some((0, 11)));
+        assert_eq!(find_ipv4_position("管理网口127.0.0.1"), Some((12, 21)));
+        assert_eq!(find_ipv4_position("no ip here"), None);
+        assert_eq!(find_ipv4_position("prefix 10.0.0.1 suffix"), Some((7, 15)));
+    }
+
+    #[test]
+    fn test_parse_credentials_flexible() {
+        assert_eq!(parse_credentials_flexible(""), (None, None, None));
+        assert_eq!(parse_credentials_flexible("user/pass"), (Some("user".to_string()), Some("pass".to_string()), None));
+        assert_eq!(parse_credentials_flexible("user\tpass"), (Some("user".to_string()), Some("pass".to_string()), None));
+        assert_eq!(parse_credentials_flexible("user pass"), (Some("user".to_string()), Some("pass".to_string()), None));
+        assert_eq!(parse_credentials_flexible("user"), (Some("user".to_string()), None, None));
+        assert_eq!(parse_credentials_flexible("user pass 2323"), (Some("user".to_string()), Some("pass".to_string()), Some(2323)));
     }
 }
