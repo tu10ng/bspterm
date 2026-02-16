@@ -1799,6 +1799,13 @@ impl Item for TerminalView {
     }
 
     fn is_dirty(&self, cx: &App) -> bool {
+        if self.needs_serialize {
+            return true;
+        }
+        // Always treat terminals with connection_info as dirty to ensure serialization during close
+        if self.terminal.read(cx).connection_info().is_some() {
+            return true;
+        }
         match self.terminal.read(cx).task() {
             Some(task) => task.status == TaskStatus::Running,
             None => self.has_bell(),
@@ -1882,7 +1889,7 @@ impl SerializableItem for TerminalView {
         &mut self,
         _workspace: &mut Workspace,
         item_id: workspace::ItemId,
-        _closing: bool,
+        closing: bool,
         _: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<Task<anyhow::Result<()>>> {
@@ -1891,7 +1898,14 @@ impl SerializableItem for TerminalView {
             return None;
         }
 
-        if !self.needs_serialize {
+        let has_connection_info = terminal.connection_info().is_some();
+
+        // During close, always serialize if we have connection_info
+        // During periodic serialization, only serialize if needs_serialize is true
+        if !closing && !self.needs_serialize {
+            return None;
+        }
+        if closing && !has_connection_info && !self.needs_serialize {
             return None;
         }
 
