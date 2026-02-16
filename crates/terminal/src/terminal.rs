@@ -2764,6 +2764,14 @@ impl Terminal {
         matches!(self.terminal_type, TerminalType::Disconnected)
     }
 
+    pub fn disconnect(&mut self) {
+        if let TerminalType::Connected { connection } =
+            std::mem::replace(&mut self.terminal_type, TerminalType::Disconnected)
+        {
+            connection.shutdown().ok();
+        }
+    }
+
     pub fn clone_builder(&self, cx: &App, cwd: Option<PathBuf>) -> Task<Result<TerminalBuilder>> {
         let working_directory = self.working_directory().or_else(|| cwd);
         TerminalBuilder::new(

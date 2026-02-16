@@ -2978,12 +2978,15 @@ impl Pane {
         let menu_context = item.item_focus_handle(cx);
         let item_handle = item.boxed_clone();
 
+        let menu_options = item.tab_context_menu_options(cx);
+
         right_click_menu(ix)
             .trigger(|_, _, _| tab)
             .menu(move |window, cx| {
                 let pane = pane.clone();
                 let menu_context = menu_context.clone();
                 let extra_actions = item_handle.tab_extra_context_menu_actions(window, cx);
+                let menu_options = menu_options.clone();
                 ContextMenu::build(window, cx, move |mut menu, window, cx| {
                     let close_active_item_action = CloseActiveItem {
                         save_intent: None,
@@ -3011,6 +3014,14 @@ impl Pane {
                         close_pinned: false,
                     };
                     if let Some(pane) = pane.upgrade() {
+                        // Add extra actions at top if requested
+                        if menu_options.extra_actions_at_top && !extra_actions.is_empty() {
+                            for (label, action) in extra_actions.iter() {
+                                menu = menu.action(label.clone(), action.boxed_clone());
+                            }
+                            menu = menu.separator();
+                        }
+
                         menu = menu
                             .entry(
                                 "Close",
@@ -3052,21 +3063,6 @@ impl Pane {
                                         )),
                                 )
                             }))
-                            .separator()
-                            .item(ContextMenuItem::Entry(
-                                ContextMenuEntry::new("Close Left")
-                                    .action(Box::new(close_items_to_the_left_action.clone()))
-                                    .disabled(!has_items_to_left)
-                                    .handler(window.handler_for(&pane, move |pane, window, cx| {
-                                        pane.close_items_to_the_left_by_id(
-                                            Some(item_id),
-                                            &close_items_to_the_left_action,
-                                            window,
-                                            cx,
-                                        )
-                                        .detach_and_log_err(cx);
-                                    })),
-                            ))
                             .item(ContextMenuItem::Entry(
                                 ContextMenuEntry::new("Close Right")
                                     .action(Box::new(close_items_to_the_right_action.clone()))
@@ -3080,29 +3076,59 @@ impl Pane {
                                         )
                                         .detach_and_log_err(cx);
                                     })),
-                            ))
-                            .separator()
-                            .item(ContextMenuItem::Entry(
-                                ContextMenuEntry::new("Close Clean")
-                                    .action(Box::new(close_clean_items_action.clone()))
-                                    .disabled(!has_clean_items)
-                                    .handler(window.handler_for(&pane, move |pane, window, cx| {
-                                        pane.close_clean_items(
-                                            &close_clean_items_action,
-                                            window,
-                                            cx,
-                                        )
-                                        .detach_and_log_err(cx)
-                                    })),
-                            ))
-                            .entry(
-                                "Close All",
-                                Some(Box::new(close_all_items_action.clone())),
-                                window.handler_for(&pane, move |pane, window, cx| {
-                                    pane.close_all_items(&close_all_items_action, window, cx)
-                                        .detach_and_log_err(cx)
-                                }),
-                            );
+                            ));
+
+                        // Add Close Left if not hidden
+                        if !menu_options.hide_close_left {
+                            menu = menu
+                                .separator()
+                                .item(ContextMenuItem::Entry(
+                                    ContextMenuEntry::new("Close Left")
+                                        .action(Box::new(close_items_to_the_left_action.clone()))
+                                        .disabled(!has_items_to_left)
+                                        .handler(window.handler_for(&pane, move |pane, window, cx| {
+                                            pane.close_items_to_the_left_by_id(
+                                                Some(item_id),
+                                                &close_items_to_the_left_action,
+                                                window,
+                                                cx,
+                                            )
+                                            .detach_and_log_err(cx);
+                                        })),
+                                ));
+                        }
+
+                        // Add Close Clean if not hidden
+                        if !menu_options.hide_close_clean {
+                            menu = menu
+                                .separator()
+                                .item(ContextMenuItem::Entry(
+                                    ContextMenuEntry::new("Close Clean")
+                                        .action(Box::new(close_clean_items_action.clone()))
+                                        .disabled(!has_clean_items)
+                                        .handler(window.handler_for(&pane, move |pane, window, cx| {
+                                            pane.close_clean_items(
+                                                &close_clean_items_action,
+                                                window,
+                                                cx,
+                                            )
+                                            .detach_and_log_err(cx)
+                                        })),
+                                ));
+                        }
+
+                        // Add Close All if not hidden
+                        if !menu_options.hide_close_all {
+                            menu = menu
+                                .entry(
+                                    "Close All",
+                                    Some(Box::new(close_all_items_action.clone())),
+                                    window.handler_for(&pane, move |pane, window, cx| {
+                                        pane.close_all_items(&close_all_items_action, window, cx)
+                                            .detach_and_log_err(cx)
+                                    }),
+                                );
+                        }
 
                         let pin_tab_entries = |menu: ContextMenu| {
                             menu.separator().map(|this| {
@@ -3126,7 +3152,8 @@ impl Pane {
                             })
                         };
 
-                        if capability != Capability::ReadOnly {
+                        // Add Read-Only toggle if not hidden and capability is not ReadOnly
+                        if !menu_options.hide_read_only_toggle && capability != Capability::ReadOnly {
                             let read_only_label = if capability.editable() {
                                 "Make File Read-Only"
                             } else {
@@ -3242,8 +3269,8 @@ impl Pane {
                         }
                     };
 
-                    // Add custom item-specific actions
-                    if !extra_actions.is_empty() {
+                    // Add custom item-specific actions at bottom (if not already added at top)
+                    if !menu_options.extra_actions_at_top && !extra_actions.is_empty() {
                         menu = menu.separator();
                         for (label, action) in extra_actions {
                             menu = menu.action(label, action);

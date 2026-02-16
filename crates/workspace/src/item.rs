@@ -169,6 +169,21 @@ pub enum ItemBufferKind {
     None,
 }
 
+/// Options for customizing the tab context menu
+#[derive(Default, Clone)]
+pub struct TabContextMenuOptions {
+    /// Place extra actions at the top of the menu instead of bottom
+    pub extra_actions_at_top: bool,
+    /// Hide "Close Left" menu item
+    pub hide_close_left: bool,
+    /// Hide "Close Clean" menu item
+    pub hide_close_clean: bool,
+    /// Hide "Close All" menu item
+    pub hide_close_all: bool,
+    /// Hide "Make File Read-Only" menu item
+    pub hide_read_only_toggle: bool,
+}
+
 pub trait Item: Focusable + EventEmitter<Self::Event> + Render + Sized {
     type Event;
 
@@ -373,6 +388,11 @@ pub trait Item: Focusable + EventEmitter<Self::Event> + Render + Sized {
     ) -> Vec<(SharedString, Box<dyn Action>)> {
         Vec::new()
     }
+
+    /// Returns options for customizing the tab context menu.
+    fn tab_context_menu_options(&self, _cx: &App) -> TabContextMenuOptions {
+        TabContextMenuOptions::default()
+    }
 }
 
 pub trait SerializableItem: Item {
@@ -548,6 +568,7 @@ pub trait ItemHandle: 'static + Send {
         window: &mut Window,
         cx: &mut App,
     ) -> Vec<(SharedString, Box<dyn Action>)>;
+    fn tab_context_menu_options(&self, cx: &App) -> TabContextMenuOptions;
     fn can_autosave(&self, cx: &App) -> bool {
         let is_deleted = self.project_entry_ids(cx).is_empty();
         self.is_dirty(cx) && !self.has_conflict(cx) && self.can_save(cx) && !is_deleted
@@ -1105,6 +1126,10 @@ impl<T: Item> ItemHandle for Entity<T> {
         self.update(cx, |this, cx| {
             this.tab_extra_context_menu_actions(window, cx)
         })
+    }
+
+    fn tab_context_menu_options(&self, cx: &App) -> TabContextMenuOptions {
+        self.read(cx).tab_context_menu_options(cx)
     }
 }
 

@@ -90,6 +90,8 @@ actions!(
         RerunTask,
         /// Reconnects a disconnected SSH/Telnet terminal.
         ReconnectTerminal,
+        /// Disconnects a connected SSH/Telnet terminal.
+        DisconnectTerminal,
     ]
 );
 
@@ -1055,6 +1057,15 @@ impl TerminalView {
         .detach_and_log_err(cx);
     }
 
+    fn disconnect_terminal(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.terminal.read(cx).connection_info().is_some() {
+            self.terminal.update(cx, |terminal, _| {
+                terminal.disconnect();
+            });
+            cx.notify();
+        }
+    }
+
     fn rerun_button(task: &TaskState) -> Option<IconButton> {
         if !task.spawned_task.show_rerun {
             return None;
@@ -1400,6 +1411,9 @@ impl Render for TerminalView {
             .on_action(cx.listener(|this, _: &ReconnectTerminal, window, cx| {
                 this.reconnect_terminal(window, cx);
             }))
+            .on_action(cx.listener(|this, _: &DisconnectTerminal, window, cx| {
+                this.disconnect_terminal(window, cx);
+            }))
             .on_key_down(cx.listener(Self::key_down))
             .on_mouse_down(
                 MouseButton::Right,
@@ -1717,10 +1731,30 @@ impl Item for TerminalView {
         cx: &mut Context<Self>,
     ) -> Vec<(SharedString, Box<dyn gpui::Action>)> {
         let terminal = self.terminal.read(cx);
+        let mut actions = Vec::new();
+
+        if terminal.connection_info().is_some() {
+            if terminal.is_disconnected() {
+                actions.push(("Reconnect".into(), Box::new(ReconnectTerminal) as Box<dyn gpui::Action>));
+            } else {
+                actions.push(("Disconnect".into(), Box::new(DisconnectTerminal) as Box<dyn gpui::Action>));
+            }
+        }
+
         if terminal.task().is_none() {
-            vec![("Rename".into(), Box::new(RenameTerminal))]
-        } else {
-            Vec::new()
+            actions.push(("Rename".into(), Box::new(RenameTerminal) as Box<dyn gpui::Action>));
+        }
+
+        actions
+    }
+
+    fn tab_context_menu_options(&self, _cx: &App) -> workspace::item::TabContextMenuOptions {
+        workspace::item::TabContextMenuOptions {
+            extra_actions_at_top: true,
+            hide_close_left: true,
+            hide_close_clean: true,
+            hide_close_all: true,
+            hide_read_only_toggle: true,
         }
     }
 
