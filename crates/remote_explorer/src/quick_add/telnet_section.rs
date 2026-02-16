@@ -12,6 +12,7 @@ pub struct TelnetSection {
     pub username_editor: Entity<Editor>,
     pub password_editor: Entity<Editor>,
     selected_credential: Option<(String, String)>,
+    pub programmatic_change_count: usize,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -51,6 +52,7 @@ impl TelnetSection {
             username_editor,
             password_editor,
             selected_credential: None,
+            programmatic_change_count: 0,
             _subscriptions: Vec::new(),
         }
     }
@@ -65,6 +67,7 @@ impl TelnetSection {
     }
 
     pub fn clear_fields(&mut self, window: &mut Window, cx: &mut App) {
+        self.programmatic_change_count += 2;
         self.ip_editor.update(cx, |editor, cx| {
             editor.set_text("", window, cx);
         });
@@ -89,6 +92,7 @@ impl TelnetSection {
         self.selected_credential = credential.clone();
 
         if let Some((username, password)) = credential {
+            self.programmatic_change_count += 2;
             self.username_editor.update(cx, |editor, cx| {
                 editor.set_text(username, window, cx);
             });

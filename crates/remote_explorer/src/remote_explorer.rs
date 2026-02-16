@@ -189,16 +189,24 @@ impl RemoteExplorer {
         let username_subscription =
             cx.subscribe(&username_editor, |this, _, event: &editor::EditorEvent, cx| {
                 if matches!(event, editor::EditorEvent::BufferEdited { .. }) {
-                    this.quick_add_area.telnet_section.clear_credential_selection();
-                    cx.notify();
+                    if this.quick_add_area.telnet_section.programmatic_change_count > 0 {
+                        this.quick_add_area.telnet_section.programmatic_change_count -= 1;
+                    } else {
+                        this.quick_add_area.telnet_section.clear_credential_selection();
+                        cx.notify();
+                    }
                 }
             });
 
         let password_subscription =
             cx.subscribe(&password_editor, |this, _, event: &editor::EditorEvent, cx| {
                 if matches!(event, editor::EditorEvent::BufferEdited { .. }) {
-                    this.quick_add_area.telnet_section.clear_credential_selection();
-                    cx.notify();
+                    if this.quick_add_area.telnet_section.programmatic_change_count > 0 {
+                        this.quick_add_area.telnet_section.programmatic_change_count -= 1;
+                    } else {
+                        this.quick_add_area.telnet_section.clear_credential_selection();
+                        cx.notify();
+                    }
                 }
             });
 

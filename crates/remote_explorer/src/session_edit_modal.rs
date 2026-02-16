@@ -1,7 +1,7 @@
 use editor::Editor;
 use gpui::{
     App, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable, IntoElement,
-    ParentElement, Render, Styled, Window,
+    ParentElement, Render, Styled, Subscription, Window,
 };
 use terminal::{
     AuthMethod, ProtocolConfig, SessionConfig, SessionNode, SessionStoreEntity,
@@ -23,8 +23,11 @@ pub struct SessionEditModal {
     username_editor: Entity<Editor>,
     password_editor: Entity<Editor>,
     selected_terminal_type: Option<String>,
+    selected_credential: Option<(String, String)>,
+    programmatic_change_count: usize,
     protocol: ProtocolType,
     focus_handle: FocusHandle,
+    _subscriptions: Vec<Subscription>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -76,6 +79,9 @@ impl SessionEditModal {
             editor
         });
 
+        let username_for_cred = username.clone();
+        let password_for_cred = password.clone();
+
         let username_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
             editor.set_text(username, window, cx);
@@ -90,6 +96,47 @@ impl SessionEditModal {
             editor
         });
 
+        let selected_credential = if protocol == ProtocolType::Telnet
+            && !username_for_cred.is_empty()
+            && !password_for_cred.is_empty()
+        {
+            let credentials = session_store.read(cx).store().collect_telnet_credentials();
+            if credentials
+                .iter()
+                .any(|(u, p)| u == &username_for_cred && p == &password_for_cred)
+            {
+                Some((username_for_cred, password_for_cred))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let username_subscription =
+            cx.subscribe(&username_editor, |this: &mut Self, _, event: &editor::EditorEvent, cx| {
+                if matches!(event, editor::EditorEvent::BufferEdited { .. }) {
+                    if this.programmatic_change_count > 0 {
+                        this.programmatic_change_count -= 1;
+                    } else {
+                        this.selected_credential = None;
+                        cx.notify();
+                    }
+                }
+            });
+
+        let password_subscription =
+            cx.subscribe(&password_editor, |this: &mut Self, _, event: &editor::EditorEvent, cx| {
+                if matches!(event, editor::EditorEvent::BufferEdited { .. }) {
+                    if this.programmatic_change_count > 0 {
+                        this.programmatic_change_count -= 1;
+                    } else {
+                        this.selected_credential = None;
+                        cx.notify();
+                    }
+                }
+            });
+
         Self {
             session_id,
             session_store,
@@ -99,8 +146,11 @@ impl SessionEditModal {
             username_editor,
             password_editor,
             selected_terminal_type: terminal_type,
+            selected_credential,
+            programmatic_change_count: 0,
             protocol,
             focus_handle,
+            _subscriptions: vec![username_subscription, password_subscription],
         }
     }
 
@@ -173,6 +223,32 @@ impl SessionEditModal {
 
     fn cancel(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         cx.emit(DismissEvent);
+    }
+
+    fn select_credential(
+        &mut self,
+        credential: Option<(String, String)>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.selected_credential = credential.clone();
+        if let Some((username, password)) = credential {
+            self.programmatic_change_count += 2;
+            self.username_editor.update(cx, |editor, cx| {
+                editor.set_text(username, window, cx);
+            });
+            self.password_editor.update(cx, |editor, cx| {
+                editor.set_text(password, window, cx);
+            });
+        }
+        cx.notify();
+    }
+
+    fn get_credential_label(&self) -> String {
+        match &self.selected_credential {
+            None => "Custom".to_string(),
+            Some((username, password)) => format!("{}/{}", username, password),
+        }
     }
 }
 
@@ -253,6 +329,38 @@ impl Render for SessionEditModal {
             }
             menu
         });
+
+        let credential_dropdown = if self.protocol == ProtocolType::Telnet {
+            let credentials = self.session_store.read(cx).store().collect_telnet_credentials();
+            let credential_label = self.get_credential_label();
+            let weak_self = cx.weak_entity();
+            let credential_menu = ContextMenu::build(window, cx, move |mut menu, _, _| {
+                let weak_for_custom = weak_self.clone();
+                menu = menu.entry("Custom", None, move |window, cx| {
+                    weak_for_custom
+                        .update(cx, |this, cx| {
+                            this.select_credential(None, window, cx);
+                        })
+                        .ok();
+                });
+                for (username, password) in &credentials {
+                    let label = format!("{}/{}", username, password);
+                    let credential = (username.clone(), password.clone());
+                    let weak = weak_self.clone();
+                    menu = menu.entry(label, None, move |window, cx| {
+                        let cred = credential.clone();
+                        weak.update(cx, |this, cx| {
+                            this.select_credential(Some(cred), window, cx);
+                        })
+                        .ok();
+                    });
+                }
+                menu
+            });
+            Some((credential_label, credential_menu))
+        } else {
+            None
+        };
 
         v_flex()
             .key_context("SessionEditModal")
@@ -385,6 +493,28 @@ impl Render for SessionEditModal {
                                             .child(self.password_editor.clone()),
                                     ),
                             ),
+                    )
+                    .when_some(
+                        credential_dropdown,
+                        |this, (credential_label, credential_menu)| {
+                            this.child(
+                                h_flex()
+                                    .gap_2()
+                                    .child(
+                                        Label::new("Credential:")
+                                            .size(LabelSize::Small)
+                                            .color(Color::Muted),
+                                    )
+                                    .child(
+                                        DropdownMenu::new(
+                                            "credential",
+                                            credential_label,
+                                            credential_menu,
+                                        )
+                                        .trigger_size(ButtonSize::Compact),
+                                    ),
+                            )
+                        },
                     )
                     .child(
                         v_flex()
