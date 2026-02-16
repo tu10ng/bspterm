@@ -25,7 +25,7 @@ use workspace::{
     notifications::NotifyResultExt as _,
     open_new, register_serializable_item, with_active_or_new_workspace,
 };
-use zed_actions::OpenOnboarding;
+use bspterm_actions::OpenOnboarding;
 
 mod base_keymap_picker;
 mod basics_page;

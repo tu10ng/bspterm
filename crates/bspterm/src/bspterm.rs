@@ -99,7 +99,7 @@ use workspace::{
     with_active_or_new_workspace,
 };
 use workspace::{Pane, notifications::DetachAndPromptErr};
-use zed_actions::{
+use bspterm_actions::{
     OpenAccountSettings, OpenBrowser, OpenDocs, OpenServerSettings, OpenSettingsFile, OpenZedUrl,
     Quit,
 };
@@ -189,7 +189,7 @@ pub fn init(cx: &mut App) {
     .on_action(|_: &workspace::RevealLogInFileManager, cx| {
         cx.reveal_path(paths::log_file().as_path());
     })
-    .on_action(|_: &zed_actions::OpenLicenses, cx| {
+    .on_action(|_: &bspterm_actions::OpenLicenses, cx| {
         with_active_or_new_workspace(cx, |workspace, window, cx| {
             open_bundled_file(
                 workspace,
@@ -201,7 +201,7 @@ pub fn init(cx: &mut App) {
             );
         });
     })
-    .on_action(|&zed_actions::OpenKeymapFile, cx| {
+    .on_action(|&bspterm_actions::OpenKeymapFile, cx| {
         with_active_or_new_workspace(cx, |_, window, cx| {
             open_settings_file(
                 paths::keymap_file(),
@@ -270,7 +270,7 @@ pub fn init(cx: &mut App) {
             );
         });
     })
-    .on_action(|_: &zed_actions::OpenDefaultKeymap, cx| {
+    .on_action(|_: &bspterm_actions::OpenDefaultKeymap, cx| {
         with_active_or_new_workspace(cx, |workspace, window, cx| {
             open_bundled_file(
                 workspace,
@@ -282,7 +282,7 @@ pub fn init(cx: &mut App) {
             );
         });
     })
-    .on_action(|_: &zed_actions::About, cx| {
+    .on_action(|_: &bspterm_actions::About, cx| {
         with_active_or_new_workspace(cx, |workspace, window, cx| {
             about(workspace, window, cx);
         });
@@ -533,7 +533,7 @@ fn unstable_version_notification(cx: &mut App) {
                 .primary_icon(IconName::Download)
                 .primary_on_click(|window, cx| {
                     window.dispatch_action(
-                        zed_actions::OpenBrowser {
+                        bspterm_actions::OpenBrowser {
                             url: "https://zed.dev/download".to_string(),
                         }
                         .boxed_clone(),
@@ -897,7 +897,7 @@ fn register_actions(
             })
             .detach()
         })
-        .register_action(|workspace, action: &zed_actions::OpenRemote, window, cx| {
+        .register_action(|workspace, action: &bspterm_actions::OpenRemote, window, cx| {
             if !action.from_existing_connection {
                 cx.propagate();
                 return;
@@ -935,7 +935,7 @@ fn register_actions(
         })
         .register_action({
             let fs = app_state.fs.clone();
-            move |_, action: &zed_actions::IncreaseUiFontSize, _window, cx| {
+            move |_, action: &bspterm_actions::IncreaseUiFontSize, _window, cx| {
                 if action.persist {
                     update_settings_file(fs.clone(), cx, move |settings, cx| {
                         let ui_font_size = ThemeSettings::get_global(cx).ui_font_size(cx) + px(1.0);
@@ -951,7 +951,7 @@ fn register_actions(
         })
         .register_action({
             let fs = app_state.fs.clone();
-            move |_, action: &zed_actions::DecreaseUiFontSize, _window, cx| {
+            move |_, action: &bspterm_actions::DecreaseUiFontSize, _window, cx| {
                 if action.persist {
                     update_settings_file(fs.clone(), cx, move |settings, cx| {
                         let ui_font_size = ThemeSettings::get_global(cx).ui_font_size(cx) - px(1.0);
@@ -967,7 +967,7 @@ fn register_actions(
         })
         .register_action({
             let fs = app_state.fs.clone();
-            move |_, action: &zed_actions::ResetUiFontSize, _window, cx| {
+            move |_, action: &bspterm_actions::ResetUiFontSize, _window, cx| {
                 if action.persist {
                     update_settings_file(fs.clone(), cx, move |settings, _| {
                         settings.theme.ui_font_size = None;
@@ -979,7 +979,7 @@ fn register_actions(
         })
         .register_action({
             let fs = app_state.fs.clone();
-            move |_, action: &zed_actions::IncreaseBufferFontSize, _window, cx| {
+            move |_, action: &bspterm_actions::IncreaseBufferFontSize, _window, cx| {
                 if action.persist {
                     update_settings_file(fs.clone(), cx, move |settings, cx| {
                         let buffer_font_size =
@@ -996,7 +996,7 @@ fn register_actions(
         })
         .register_action({
             let fs = app_state.fs.clone();
-            move |_, action: &zed_actions::DecreaseBufferFontSize, _window, cx| {
+            move |_, action: &bspterm_actions::DecreaseBufferFontSize, _window, cx| {
                 if action.persist {
                     update_settings_file(fs.clone(), cx, move |settings, cx| {
                         let buffer_font_size =
@@ -1013,7 +1013,7 @@ fn register_actions(
         })
         .register_action({
             let fs = app_state.fs.clone();
-            move |_, action: &zed_actions::ResetBufferFontSize, _window, cx| {
+            move |_, action: &bspterm_actions::ResetBufferFontSize, _window, cx| {
                 if action.persist {
                     update_settings_file(fs.clone(), cx, move |settings, _| {
                         settings.theme.buffer_font_size = None;
@@ -1025,7 +1025,7 @@ fn register_actions(
         })
         .register_action({
             let fs = app_state.fs.clone();
-            move |_, action: &zed_actions::ResetAllZoom, _window, cx| {
+            move |_, action: &bspterm_actions::ResetAllZoom, _window, cx| {
                 if action.persist {
                     update_settings_file(fs.clone(), cx, move |settings, _| {
                         settings.theme.ui_font_size = None;
@@ -1072,7 +1072,7 @@ fn register_actions(
         .register_action(open_project_debug_tasks_file)
         .register_action(
             |workspace: &mut Workspace,
-             _: &zed_actions::project_panel::ToggleFocus,
+             _: &bspterm_actions::project_panel::ToggleFocus,
              window: &mut Window,
              cx: &mut Context<Workspace>| {
                 workspace.toggle_panel_focus::<ProjectPanel>(window, cx);
@@ -1114,7 +1114,7 @@ fn register_actions(
         )
         .register_action(
             |workspace: &mut Workspace,
-             _: &zed_actions::agent::ToggleAgentPane,
+             _: &bspterm_actions::agent::ToggleAgentPane,
              window: &mut Window,
              cx: &mut Context<Workspace>| {
                 if let Some(panel) = workspace.panel::<AgentsPanel>(cx) {
@@ -1557,7 +1557,7 @@ fn notify_settings_errors(result: settings::SettingsParseResult, is_user: bool, 
                             .primary_icon(IconName::Settings)
                             .primary_on_click(|window, cx| {
                                 window.dispatch_action(
-                                    zed_actions::OpenSettingsFile.boxed_clone(),
+                                    bspterm_actions::OpenSettingsFile.boxed_clone(),
                                     cx,
                                 );
                                 cx.emit(DismissEvent);
@@ -1592,7 +1592,7 @@ fn notify_settings_errors(result: settings::SettingsParseResult, is_user: bool, 
                         .primary_message("Open Settings File")
                         .primary_icon(IconName::Settings)
                         .primary_on_click(|window, cx| {
-                            window.dispatch_action(zed_actions::OpenSettingsFile.boxed_clone(), cx);
+                            window.dispatch_action(bspterm_actions::OpenSettingsFile.boxed_clone(), cx);
                             cx.emit(DismissEvent);
                         })
                     })
@@ -1792,7 +1792,7 @@ fn show_keymap_file_json_error(
                 .primary_message("Open Keymap File")
                 .primary_icon(IconName::Settings)
                 .primary_on_click(|window, cx| {
-                    window.dispatch_action(zed_actions::OpenKeymapFile.boxed_clone(), cx);
+                    window.dispatch_action(bspterm_actions::OpenKeymapFile.boxed_clone(), cx);
                     cx.emit(DismissEvent);
                 })
         })
@@ -1809,7 +1809,7 @@ fn show_keymap_file_load_error(
         error_message,
         "Open Keymap File".into(),
         |window, cx| {
-            window.dispatch_action(zed_actions::OpenKeymapFile.boxed_clone(), cx);
+            window.dispatch_action(bspterm_actions::OpenKeymapFile.boxed_clone(), cx);
             cx.emit(DismissEvent);
         },
         cx,
@@ -1969,7 +1969,7 @@ fn open_project_tasks_file(
 
 fn open_project_debug_tasks_file(
     workspace: &mut Workspace,
-    _: &zed_actions::OpenProjectDebugTasks,
+    _: &bspterm_actions::OpenProjectDebugTasks,
     window: &mut Window,
     cx: &mut Context<Workspace>,
 ) {

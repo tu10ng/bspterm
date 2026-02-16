@@ -43,7 +43,7 @@ use workspace::{
 };
 
 pub use ui_components::*;
-use zed_actions::{ChangeKeybinding, OpenKeymap};
+use bspterm_actions::{ChangeKeybinding, OpenKeymap};
 
 use crate::{
     action_completion_provider::ActionCompletionProvider,
@@ -1832,12 +1832,12 @@ impl Render for KeymapEditor {
                                                             menu.header("View Default...")
                                                                 .action(
                                                                     "Zed Key Bindings",
-                                                                    zed_actions::OpenDefaultKeymap
+                                                                    bspterm_actions::OpenDefaultKeymap
                                                                         .boxed_clone(),
                                                                 )
                                                                 .action(
                                                                     "Vim Bindings",
-                                                                    zed_actions::vim::OpenDefaultKeymap.boxed_clone(),
+                                                                    bspterm_actions::vim::OpenDefaultKeymap.boxed_clone(),
                                                                 )
                                                         }))
                                                     })
@@ -1857,7 +1857,7 @@ impl Render for KeymapEditor {
                                                             move |_window, cx| {
                                                                 Tooltip::for_action_in(
                                                                     "View Default...",
-                                                                    &zed_actions::OpenKeymapFile,
+                                                                    &bspterm_actions::OpenKeymapFile,
                                                                     &focus_handle,
                                                                     cx,
                                                                 )
@@ -1869,12 +1869,12 @@ impl Render for KeymapEditor {
                                                 Button::new("edit-in-json", "Edit in JSON")
                                                     .style(ButtonStyle::Subtle)
                                                     .key_binding(
-                                                        ui::KeyBinding::for_action_in(&zed_actions::OpenKeymapFile, &focus_handle, cx)
+                                                        ui::KeyBinding::for_action_in(&bspterm_actions::OpenKeymapFile, &focus_handle, cx)
                                                             .map(|kb| kb.size(rems_from_px(10.))),
                                                     )
                                                     .on_click(|_, window, cx| {
                                                         window.dispatch_action(
-                                                            zed_actions::OpenKeymapFile.boxed_clone(),
+                                                            bspterm_actions::OpenKeymapFile.boxed_clone(),
                                                             cx,
                                                         );
                                                     })

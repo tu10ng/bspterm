@@ -37,7 +37,7 @@ use ui::{ButtonLike, ButtonStyle, ContextMenu, Disclosure, ElevationIndex, prelu
 use util::paths::PathStyle;
 use util::{ResultExt, debug_panic};
 use workspace::{CollaboratorId, Workspace};
-use zed_actions::agent::{Chat, PasteRaw};
+use bspterm_actions::agent::{Chat, PasteRaw};
 
 pub struct MessageEditor {
     mention_set: Entity<MentionSet>,

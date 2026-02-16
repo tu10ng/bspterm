@@ -88,7 +88,7 @@ fn feature_gate_predict_edits_actions(cx: &mut App) {
         TypeId::of::<RatePredictions>(),
         TypeId::of::<CaptureExample>(),
         TypeId::of::<edit_prediction::ResetOnboarding>(),
-        zed_actions::OpenZedPredictOnboarding.type_id(),
+        bspterm_actions::OpenZedPredictOnboarding.type_id(),
         TypeId::of::<edit_prediction::ClearHistory>(),
         TypeId::of::<rate_prediction_modal::ThumbsUpActivePrediction>(),
         TypeId::of::<rate_prediction_modal::ThumbsDownActivePrediction>(),
@@ -99,7 +99,7 @@ fn feature_gate_predict_edits_actions(cx: &mut App) {
     CommandPaletteFilter::update_global(cx, |filter, _cx| {
         filter.hide_action_types(&rate_completion_action_types);
         filter.hide_action_types(&reset_onboarding_action_types);
-        filter.hide_action_types(&[zed_actions::OpenZedPredictOnboarding.type_id()]);
+        filter.hide_action_types(&[bspterm_actions::OpenZedPredictOnboarding.type_id()]);
     });
 
     cx.observe_global::<SettingsStore>(move |cx| {

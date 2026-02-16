@@ -44,7 +44,7 @@ use ui::{
 use update_version::UpdateVersion;
 use util::ResultExt;
 use workspace::{SwitchProject, ToggleWorktreeSecurity, Workspace, notifications::NotifyResultExt};
-use zed_actions::OpenRemote;
+use bspterm_actions::OpenRemote;
 
 pub use onboarding_banner::restore_banner;
 
@@ -348,7 +348,7 @@ impl TitleBar {
                 IconName::AiClaude,
                 "Claude Code",
                 Some("Introducing:".into()),
-                zed_actions::agent::OpenClaudeCodeOnboardingModal.boxed_clone(),
+                bspterm_actions::agent::OpenClaudeCodeOnboardingModal.boxed_clone(),
                 cx,
             )
             // When updating this to a non-AI feature release, remove this line.
@@ -709,7 +709,7 @@ impl TitleBar {
                 move |_window, cx| {
                     Tooltip::for_action(
                         "Recent Projects",
-                        &zed_actions::OpenRecent {
+                        &bspterm_actions::OpenRecent {
                             create_new_window: false,
                         },
                         cx,
@@ -839,7 +839,7 @@ impl TitleBar {
                     move |_window, cx| {
                         Tooltip::with_meta(
                             "Recent Branches",
-                            Some(&zed_actions::git::Branch),
+                            Some(&bspterm_actions::git::Branch),
                             "Local branches only",
                             cx,
                         )
@@ -1038,19 +1038,19 @@ impl TitleBar {
                         )
                         .separator()
                     })
-                    .action("Settings", zed_actions::OpenSettings.boxed_clone())
-                    .action("Keymap", Box::new(zed_actions::OpenKeymap))
+                    .action("Settings", bspterm_actions::OpenSettings.boxed_clone())
+                    .action("Keymap", Box::new(bspterm_actions::OpenKeymap))
                     .action(
                         "Themes…",
-                        zed_actions::theme_selector::Toggle::default().boxed_clone(),
+                        bspterm_actions::theme_selector::Toggle::default().boxed_clone(),
                     )
                     .action(
                         "Icon Themes…",
-                        zed_actions::icon_theme_selector::Toggle::default().boxed_clone(),
+                        bspterm_actions::icon_theme_selector::Toggle::default().boxed_clone(),
                     )
                     .action(
                         "Extensions",
-                        zed_actions::Extensions::default().boxed_clone(),
+                        bspterm_actions::Extensions::default().boxed_clone(),
                     )
                     .when(is_signed_in, |this| {
                         this.separator()

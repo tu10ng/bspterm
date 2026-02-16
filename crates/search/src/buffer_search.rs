@@ -31,7 +31,7 @@ use project::{
 use fs::Fs;
 use settings::{DiffViewStyle, Settings, update_settings_file};
 use std::{any::TypeId, sync::Arc};
-use zed_actions::{outline::ToggleOutline, workspace::CopyPath, workspace::CopyRelativePath};
+use bspterm_actions::{outline::ToggleOutline, workspace::CopyPath, workspace::CopyRelativePath};
 
 use ui::{
     BASE_REM_SIZE_IN_PX, IconButtonShape, PlatformStyle, TextSize, Tooltip, prelude::*,
@@ -52,7 +52,7 @@ use registrar::{ForDeployed, ForDismissed, SearchActionsRegistrar};
 
 const MAX_BUFFER_SEARCH_HISTORY_SIZE: usize = 50;
 
-pub use zed_actions::buffer_search::{Deploy, DeployReplace, Dismiss, FocusEditor};
+pub use bspterm_actions::buffer_search::{Deploy, DeployReplace, Dismiss, FocusEditor};
 
 pub enum Event {
     UpdateLocation,

@@ -71,7 +71,7 @@ use workspace::{
     pane,
     searchable::{SearchEvent, SearchableItem},
 };
-use zed_actions::agent::{AddSelectionToThread, PasteRaw, ToggleModelSelector};
+use bspterm_actions::agent::{AddSelectionToThread, PasteRaw, ToggleModelSelector};
 
 use crate::CycleFavoriteModels;
 

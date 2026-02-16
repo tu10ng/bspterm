@@ -19,7 +19,7 @@ use picker::{Picker, PickerDelegate};
 use settings::{Settings, SettingsStore};
 use ui::{DocumentationAside, DocumentationSide, IntoElement, prelude::*};
 use util::ResultExt;
-use zed_actions::agent::OpenSettings;
+use bspterm_actions::agent::OpenSettings;
 
 use crate::ui::{HoldForDefault, ModelSelectorFooter, ModelSelectorHeader, ModelSelectorListItem};
 

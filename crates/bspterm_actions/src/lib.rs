@@ -38,21 +38,21 @@ actions!(
     zed,
     [
         /// Opens the settings editor.
-        #[action(deprecated_aliases = ["zed_actions::OpenSettingsEditor"])]
+        #[action(deprecated_aliases = ["bspterm_actions::OpenSettingsEditor"])]
         OpenSettings,
         /// Opens the settings JSON file.
-        #[action(deprecated_aliases = ["zed_actions::OpenSettings"])]
+        #[action(deprecated_aliases = ["bspterm_actions::OpenSettings"])]
         OpenSettingsFile,
         /// Opens project-specific settings.
-        #[action(deprecated_aliases = ["zed_actions::OpenProjectSettings"])]
+        #[action(deprecated_aliases = ["bspterm_actions::OpenProjectSettings"])]
         OpenProjectSettings,
         /// Opens the default keymap file.
         OpenDefaultKeymap,
         /// Opens the user keymap file.
-        #[action(deprecated_aliases = ["zed_actions::OpenKeymap"])]
+        #[action(deprecated_aliases = ["bspterm_actions::OpenKeymap"])]
         OpenKeymapFile,
         /// Opens the keymap editor.
-        #[action(deprecated_aliases = ["zed_actions::OpenKeymapEditor"])]
+        #[action(deprecated_aliases = ["bspterm_actions::OpenKeymapEditor"])]
         OpenKeymap,
         /// Opens account settings.
         OpenAccountSettings,

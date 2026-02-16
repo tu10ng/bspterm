@@ -256,7 +256,7 @@ async fn upload_minidump(
             "sentry[tags][channel]",
             metadata.init.release_channel.clone(),
         )
-        .text("sentry[tags][version]", metadata.init.zed_version.clone())
+        .text("sentry[tags][version]", metadata.init.bspterm_version.clone())
         .text("sentry[tags][binary]", metadata.init.binary.clone())
         .text("sentry[release]", metadata.init.commit_sha.clone())
         .text("platform", "rust");
@@ -288,7 +288,7 @@ async fn upload_minidump(
     ::telemetry::event!(
         "Minidump Uploaded",
         panic_message = panic_message,
-        crashed_version = metadata.init.zed_version.clone(),
+        crashed_version = metadata.init.bspterm_version.clone(),
         commit_sha = metadata.init.commit_sha.clone(),
     );
 

@@ -5,7 +5,7 @@ fn main() {
     if cfg!(target_os = "macos") {
         println!("cargo:rustc-env=MACOSX_DEPLOYMENT_TARGET=10.15.7");
 
-        // Weakly link ReplayKit to ensure Zed can be used on macOS 10.15+.
+        // Weakly link ReplayKit to ensure Bspterm can be used on macOS 10.15+.
         println!("cargo:rustc-link-arg=-Wl,-weak_framework,ReplayKit");
 
         // Seems to be required to enable Swift concurrency
@@ -30,10 +30,10 @@ fn main() {
         let git_sha = String::from_utf8_lossy(&output.stdout);
         let git_sha = git_sha.trim();
 
-        println!("cargo:rustc-env=ZED_COMMIT_SHA={git_sha}");
+        println!("cargo:rustc-env=BSPTERM_COMMIT_SHA={git_sha}");
 
         if let Some(build_identifier) = option_env!("GITHUB_RUN_NUMBER") {
-            println!("cargo:rustc-env=ZED_BUILD_ID={build_identifier}");
+            println!("cargo:rustc-env=BSPTERM_BUILD_ID={build_identifier}");
         }
 
         if let Ok(build_profile) = std::env::var("PROFILE")
@@ -41,7 +41,7 @@ fn main() {
         {
             // This is currently the best way to make `cargo build ...`'s build script
             // to print something to stdout without extra verbosity.
-            println!("cargo::warning=Info: using '{git_sha}' hash for ZED_COMMIT_SHA env var");
+            println!("cargo::warning=Info: using '{git_sha}' hash for BSPTERM_COMMIT_SHA env var");
         }
     }
 
@@ -185,12 +185,12 @@ fn main() {
         // Depending on the security applied to the computer, winresource might fail
         // fetching the RC path. Therefore, we add a way to explicitly specify the
         // toolkit path, allowing winresource to use a valid RC path.
-        if let Some(explicit_rc_toolkit_path) = std::env::var("ZED_RC_TOOLKIT_PATH").ok() {
+        if let Some(explicit_rc_toolkit_path) = std::env::var("BSPTERM_RC_TOOLKIT_PATH").ok() {
             res.set_toolkit_path(explicit_rc_toolkit_path.as_str());
         }
         res.set_icon(icon.to_str().unwrap());
-        res.set("FileDescription", "Zed");
-        res.set("ProductName", "Zed");
+        res.set("FileDescription", "Bspterm");
+        res.set("ProductName", "Bspterm");
 
         if let Err(e) = res.compile() {
             eprintln!("{}", e);

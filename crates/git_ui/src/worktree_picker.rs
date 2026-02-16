@@ -26,7 +26,7 @@ actions!(git, [WorktreeFromDefault, WorktreeFromDefaultOnWindow]);
 
 pub fn open(
     workspace: &mut Workspace,
-    _: &zed_actions::git::Worktree,
+    _: &bspterm_actions::git::Worktree,
     window: &mut Window,
     cx: &mut Context<Workspace>,
 ) {

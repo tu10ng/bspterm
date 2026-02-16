@@ -38,7 +38,7 @@ use crate::repl_store::ReplStore;
 use picker::Picker;
 use runtimelib::{ExecuteRequest, JupyterMessage, JupyterMessageContent};
 use ui::PopoverMenuHandle;
-use zed_actions::editor::{MoveDown, MoveUp};
+use bspterm_actions::editor::{MoveDown, MoveUp};
 
 actions!(
     notebook,

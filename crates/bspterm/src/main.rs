@@ -1,8 +1,8 @@
 // Disable command line from opening on release mode
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod bspterm;
 mod reliability;
-mod zed;
 
 use agent::{SharedThread, ThreadStore};
 use agent_client_protocol;
@@ -57,21 +57,21 @@ use workspace::{
     AppState, PathList, SerializedWorkspaceLocation, Toast, Workspace, WorkspaceId,
     WorkspaceSettings, WorkspaceStore, notifications::NotificationId,
 };
-use zed::{
+use bspterm::{
     OpenListener, OpenRequest, RawOpenRequest, app_menus, build_window_options,
     derive_paths_with_position, edit_prediction_registry, handle_cli_connection,
     handle_keymap_file_changes, handle_settings_file_changes, initialize_workspace,
     open_paths_with_positions,
 };
 
-use crate::zed::{OpenRequestKind, eager_load_active_theme_and_icon_theme};
+use crate::bspterm::{OpenRequestKind, eager_load_active_theme_and_icon_theme};
 
 #[cfg(feature = "mimalloc")]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn files_not_created_on_launch(errors: HashMap<io::ErrorKind, Vec<&Path>>) {
-    let message = "Zed failed to launch";
+    let message = "Bspterm failed to launch";
     let error_details = errors
         .into_iter()
         .flat_map(|(kind, paths)| {
@@ -133,7 +133,7 @@ fn fail_to_open_window_async(e: anyhow::Error, cx: &mut AsyncApp) {
 
 fn fail_to_open_window(e: anyhow::Error, _cx: &mut App) {
     eprintln!(
-        "Zed failed to open a window: {e:?}. See https://zed.dev/docs/linux for troubleshooting steps."
+        "Bspterm failed to open a window: {e:?}."
     );
     #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
     {
@@ -149,14 +149,14 @@ fn fail_to_open_window(e: anyhow::Error, _cx: &mut App) {
                 process::exit(1);
             };
 
-            let notification_id = "dev.zed.Oops";
+            let notification_id = "dev.bspterm.Oops";
             proxy
                 .add_notification(
                     notification_id,
-                    Notification::new("Zed failed to launch")
+                    Notification::new("Bspterm failed to launch")
                         .body(Some(
                             format!(
-                                "{e:?}. See https://zed.dev/docs/linux for troubleshooting steps."
+                                "{e:?}."
                             )
                             .as_str(),
                         ))
@@ -237,7 +237,7 @@ fn main() {
         Ok(path) => askpass::set_askpass_program(path),
         Err(err) => {
             eprintln!("Error: {}", err);
-            if std::option_env!("ZED_BUNDLE").is_some() {
+            if std::option_env!("BSPTERM_BUNDLE").is_some() {
                 process::exit(1);
             }
         }
@@ -262,9 +262,9 @@ fn main() {
     }
     ztracing::init();
 
-    let version = option_env!("ZED_BUILD_ID");
+    let version = option_env!("BSPTERM_BUILD_ID");
     let app_commit_sha =
-        option_env!("ZED_COMMIT_SHA").map(|commit_sha| AppCommitSha::new(commit_sha.to_string()));
+        option_env!("BSPTERM_COMMIT_SHA").map(|commit_sha| AppCommitSha::new(commit_sha.to_string()));
     let app_version = AppVersion::load(env!("CARGO_PKG_VERSION"), version, app_commit_sha.clone());
 
     if args.system_specs {
@@ -273,7 +273,7 @@ fn main() {
             app_commit_sha,
             *release_channel::RELEASE_CHANNEL,
         );
-        println!("Zed System Specs (from CLI):\n{}", system_specs);
+        println!("Bspterm System Specs (from CLI):\n{}", system_specs);
         return;
     }
 
@@ -285,7 +285,7 @@ fn main() {
         .unwrap();
 
     log::info!(
-        "========== starting zed version {}, sha {} ==========",
+        "========== starting bspterm version {}, sha {} ==========",
         app_version,
         app_commit_sha
             .as_ref()
@@ -309,8 +309,8 @@ fn main() {
     app.background_executor()
         .spawn(crashes::init(InitCrashHandler {
             session_id,
-            zed_version: app_version.to_string(),
-            binary: "zed".to_string(),
+            bspterm_version: app_version.to_string(),
+            binary: "bspterm".to_string(),
             release_channel: release_channel::RELEASE_CHANNEL_NAME.clone(),
             commit_sha: app_commit_sha
                 .as_ref()
@@ -321,35 +321,35 @@ fn main() {
 
     let (open_listener, mut open_rx) = OpenListener::new();
 
-    let failed_single_instance_check = if *zed_env_vars::ZED_STATELESS
+    let failed_single_instance_check = if *bspterm_env_vars::BSPTERM_STATELESS
     // || *release_channel::RELEASE_CHANNEL == ReleaseChannel::Dev
     {
         false
     } else {
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         {
-            crate::zed::listen_for_cli_connections(open_listener.clone()).is_err()
+            crate::bspterm::listen_for_cli_connections(open_listener.clone()).is_err()
         }
 
         #[cfg(target_os = "windows")]
         {
-            !crate::zed::windows_only_instance::handle_single_instance(open_listener.clone(), &args)
+            !crate::bspterm::windows_only_instance::handle_single_instance(open_listener.clone(), &args)
         }
 
         #[cfg(target_os = "macos")]
         {
-            use zed::mac_only_instance::*;
+            use bspterm::mac_only_instance::*;
             ensure_only_instance() != IsOnlyInstance::Yes
         }
     };
     if failed_single_instance_check {
-        println!("zed is already running");
+        println!("bspterm is already running");
         return;
     }
 
     let git_hosting_provider_registry = Arc::new(GitHostingProviderRegistry::new());
     let git_binary_path =
-        if cfg!(target_os = "macos") && option_env!("ZED_BUNDLE").as_deref() == Some("true") {
+        if cfg!(target_os = "macos") && option_env!("BSPTERM_BUNDLE").as_deref() == Some("true") {
             app.path_for_auxiliary_executable("git")
                 .context("could not find git binary path")
                 .log_err()
@@ -425,7 +425,7 @@ fn main() {
         };
         trusted_worktrees::init(db_trusted_paths, cx);
         menu::init();
-        zed_actions::init();
+        bspterm_actions::init();
 
         release_channel::init(app_version, cx);
         gpui_tokio::init(cx);
@@ -444,7 +444,7 @@ fn main() {
         handle_keymap_file_changes(user_keymap_file_rx, user_keymap_watcher, cx);
 
         let user_agent = format!(
-            "Zed/{} ({}; {})",
+            "Bspterm/{} ({}; {})",
             AppVersion::global(cx),
             std::env::consts::OS,
             std::env::consts::ARCH
@@ -529,7 +529,7 @@ fn main() {
 
         Client::set_global(client.clone(), cx);
 
-        zed::init(cx);
+        bspterm::init(cx);
         project::Project::init(&client, cx);
         debugger_ui::init(cx);
         debugger_tools::init(cx);
@@ -615,8 +615,8 @@ fn main() {
         language_model::init(app_state.client.clone(), cx);
         language_models::init(app_state.user_store.clone(), app_state.client.clone(), cx);
         acp_tools::init(cx);
-        zed::telemetry_log::init(cx);
-        zed::remote_debug::init(cx);
+        bspterm::telemetry_log::init(cx);
+        bspterm::remote_debug::init(cx);
         edit_prediction_ui::init(cx);
         web_search::init(cx);
         web_search_providers::init(app_state.client.clone(), cx);
@@ -854,7 +854,7 @@ fn handle_open_request(request: OpenRequest, app_state: Arc<AppState>, cx: &mut 
                         workspace::get_any_active_workspace(app_state, cx.clone()).await?;
                     workspace.update(cx, |_, window, cx| {
                         window.dispatch_action(
-                            Box::new(zed_actions::Extensions {
+                            Box::new(bspterm_actions::Extensions {
                                 category_filter: None,
                                 id: Some(extension_id),
                             }),
@@ -1019,9 +1019,9 @@ fn handle_open_request(request: OpenRequest, app_state: Arc<AppState>, cx: &mut 
                         workspace::get_any_active_workspace(app_state, cx.clone()).await?;
 
                     workspace.update(cx, |_, window, cx| match setting_path {
-                        None => window.dispatch_action(Box::new(zed_actions::OpenSettings), cx),
+                        None => window.dispatch_action(Box::new(bspterm_actions::OpenSettings), cx),
                         Some(setting_path) => window.dispatch_action(
-                            Box::new(zed_actions::OpenSettingsAt { path: setting_path }),
+                            Box::new(bspterm_actions::OpenSettingsAt { path: setting_path }),
                             cx,
                         ),
                     })
@@ -1485,7 +1485,7 @@ fn stdout_is_a_pty() -> bool {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "zed", disable_version_flag = true, max_term_width = 100)]
+#[command(name = "bspterm", disable_version_flag = true, max_term_width = 100)]
 struct Args {
     /// A sequence of space-separated paths or urls that you want to open.
     ///
@@ -1503,14 +1503,14 @@ struct Args {
     /// Sets a custom directory for all user data (e.g., database, extensions, logs).
     ///
     /// This overrides the default platform-specific data directory location.
-    /// On macOS, the default is `~/Library/Application Support/Zed`.
-    /// On Linux/FreeBSD, the default is `$XDG_DATA_HOME/zed`.
-    /// On Windows, the default is `%LOCALAPPDATA%\Zed`.
+    /// On macOS, the default is `~/Library/Application Support/Bspterm`.
+    /// On Linux/FreeBSD, the default is `$XDG_DATA_HOME/bspterm`.
+    /// On Windows, the default is `%LOCALAPPDATA%\Bspterm`.
     #[arg(long, value_name = "DIR", verbatim_doc_comment)]
     user_data_dir: Option<String>,
 
     /// The username and WSL distribution to use when opening paths. If not specified,
-    /// Zed will attempt to open the paths directly.
+    /// Bspterm will attempt to open the paths directly.
     ///
     /// The username is optional, and if not specified, the default user for the distribution
     /// will be used.

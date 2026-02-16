@@ -25,7 +25,7 @@ theme.workspace = true
 ui.workspace = true
 ui_input.workspace = true
 workspace.workspace = true
-zed_actions.workspace = true
+bspterm_actions.workspace = true
 
 [dev-dependencies]
 ctor.workspace = true

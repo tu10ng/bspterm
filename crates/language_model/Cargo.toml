@@ -41,7 +41,7 @@ settings.workspace = true
 smol.workspace = true
 thiserror.workspace = true
 util.workspace = true
-zed_env_vars.workspace = true
+bspterm_env_vars.workspace = true
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

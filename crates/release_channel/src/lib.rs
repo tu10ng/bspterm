@@ -1,4 +1,4 @@
-//! Provides constructs for the Zed app version and release channel.
+//! Provides constructs for the Bspterm app version and release channel.
 
 #![deny(missing_docs)]
 
@@ -10,10 +10,10 @@ use semver::Version;
 /// stable | dev | nightly | preview
 pub static RELEASE_CHANNEL_NAME: LazyLock<String> = LazyLock::new(|| {
     if cfg!(debug_assertions) {
-        env::var("ZED_RELEASE_CHANNEL")
-            .unwrap_or_else(|_| include_str!("../../zed/RELEASE_CHANNEL").trim().to_string())
+        env::var("BSPTERM_RELEASE_CHANNEL")
+            .unwrap_or_else(|_| include_str!("../../bspterm/RELEASE_CHANNEL").trim().to_string())
     } else {
-        include_str!("../../zed/RELEASE_CHANNEL").trim().to_string()
+        include_str!("../../bspterm/RELEASE_CHANNEL").trim().to_string()
     }
 });
 
@@ -28,14 +28,14 @@ pub static RELEASE_CHANNEL: LazyLock<ReleaseChannel> =
 #[cfg(target_os = "windows")]
 pub fn app_identifier() -> &'static str {
     match *RELEASE_CHANNEL {
-        ReleaseChannel::Dev => "Zed-Editor-Dev",
-        ReleaseChannel::Nightly => "Zed-Editor-Nightly",
-        ReleaseChannel::Preview => "Zed-Editor-Preview",
-        ReleaseChannel::Stable => "Zed-Editor-Stable",
+        ReleaseChannel::Dev => "Bspterm-Dev",
+        ReleaseChannel::Nightly => "Bspterm-Nightly",
+        ReleaseChannel::Preview => "Bspterm-Preview",
+        ReleaseChannel::Stable => "Bspterm-Stable",
     }
 }
 
-/// The Git commit SHA that Zed was built at.
+/// The Git commit SHA that Bspterm was built at.
 #[derive(Clone, Eq, Debug, PartialEq)]
 pub struct AppCommitSha(String);
 
@@ -75,7 +75,7 @@ struct GlobalAppVersion(Version);
 
 impl Global for GlobalAppVersion {}
 
-/// The version of Zed.
+/// The version of Bspterm.
 pub struct AppVersion;
 
 impl AppVersion {
@@ -85,8 +85,8 @@ impl AppVersion {
         build_id: Option<&str>,
         commit_sha: Option<AppCommitSha>,
     ) -> Version {
-        let mut version: Version = if let Ok(from_env) = env::var("ZED_APP_VERSION") {
-            from_env.parse().expect("invalid ZED_APP_VERSION")
+        let mut version: Version = if let Ok(from_env) = env::var("BSPTERM_APP_VERSION") {
+            from_env.parse().expect("invalid BSPTERM_APP_VERSION")
         } else {
             pkg_version.parse().expect("invalid version in Cargo.toml")
         };
@@ -118,12 +118,12 @@ impl AppVersion {
     }
 }
 
-/// A Zed release channel.
+/// A Bspterm release channel.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum ReleaseChannel {
     /// The development release channel.
     ///
-    /// Used for local debug builds of Zed.
+    /// Used for local debug builds of Bspterm.
     #[default]
     Dev,
 
@@ -173,10 +173,10 @@ impl ReleaseChannel {
     /// Returns the display name for this [`ReleaseChannel`].
     pub fn display_name(&self) -> &'static str {
         match self {
-            ReleaseChannel::Dev => "Zed Dev",
-            ReleaseChannel::Nightly => "Zed Nightly",
-            ReleaseChannel::Preview => "Zed Preview",
-            ReleaseChannel::Stable => "Zed",
+            ReleaseChannel::Dev => "Bspterm Dev",
+            ReleaseChannel::Nightly => "Bspterm Nightly",
+            ReleaseChannel::Preview => "Bspterm Preview",
+            ReleaseChannel::Stable => "Bspterm",
         }
     }
 
@@ -192,13 +192,13 @@ impl ReleaseChannel {
 
     /// Returns the application ID that's used by Wayland as application ID
     /// and WM_CLASS on X11.
-    /// This also has to match the bundle identifier for Zed on macOS.
+    /// This also has to match the bundle identifier for Bspterm on macOS.
     pub fn app_id(&self) -> &'static str {
         match self {
-            ReleaseChannel::Dev => "dev.zed.Zed-Dev",
-            ReleaseChannel::Nightly => "dev.zed.Zed-Nightly",
-            ReleaseChannel::Preview => "dev.zed.Zed-Preview",
-            ReleaseChannel::Stable => "dev.zed.Zed",
+            ReleaseChannel::Dev => "dev.bspterm.Bspterm-Dev",
+            ReleaseChannel::Nightly => "dev.bspterm.Bspterm-Nightly",
+            ReleaseChannel::Preview => "dev.bspterm.Bspterm-Preview",
+            ReleaseChannel::Stable => "dev.bspterm.Bspterm",
         }
     }
 

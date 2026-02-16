@@ -54,7 +54,7 @@ use crate::agent_registry_ui::AgentRegistryPage;
 pub use crate::inline_assistant::InlineAssistant;
 pub use agent_diff::{AgentDiffPane, AgentDiffToolbar};
 pub use text_thread_editor::{AgentPanelDelegate, TextThreadEditor};
-use zed_actions;
+use bspterm_actions;
 
 actions!(
     agent,
@@ -295,7 +295,7 @@ pub fn init(
     cx.observe_new(|workspace: &mut Workspace, _window, _cx| {
         workspace.register_action(
             move |workspace: &mut Workspace,
-                  _: &zed_actions::AcpRegistry,
+                  _: &bspterm_actions::AcpRegistry,
                   window: &mut Window,
                   cx: &mut Context<Workspace>| {
                 let existing = workspace
@@ -372,7 +372,7 @@ fn update_command_palette_filter(cx: &mut App) {
             filter.hide_namespace("edit_prediction");
 
             filter.hide_action_types(&edit_prediction_actions);
-            filter.hide_action_types(&[TypeId::of::<zed_actions::OpenZedPredictOnboarding>()]);
+            filter.hide_action_types(&[TypeId::of::<bspterm_actions::OpenZedPredictOnboarding>()]);
         } else {
             if agent_enabled {
                 filter.show_namespace("agent");
@@ -417,9 +417,9 @@ fn update_command_palette_filter(cx: &mut App) {
             }
 
             filter.show_namespace("zed_predict_onboarding");
-            filter.show_action_types(&[TypeId::of::<zed_actions::OpenZedPredictOnboarding>()]);
+            filter.show_action_types(&[TypeId::of::<bspterm_actions::OpenZedPredictOnboarding>()]);
             if !agent_v2_enabled {
-                filter.hide_action_types(&[TypeId::of::<zed_actions::agent::ToggleAgentPane>()]);
+                filter.hide_action_types(&[TypeId::of::<bspterm_actions::agent::ToggleAgentPane>()]);
             }
         }
     });

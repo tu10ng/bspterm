@@ -25,7 +25,7 @@ use ui::{Divider, ListItem, ListItemSpacing, ListSubHeader, Tooltip, prelude::*}
 use ui_input::ErasedEditor;
 use util::{ResultExt, TryFutureExt};
 use workspace::{Workspace, WorkspaceSettings, client_side_decorations};
-use zed_actions::assistant::InlineAssist;
+use bspterm_actions::assistant::InlineAssist;
 
 use prompt_store::*;
 
@@ -986,7 +986,7 @@ impl RulesLibrary {
 
     fn move_down_from_title(
         &mut self,
-        _: &zed_actions::editor::MoveDown,
+        _: &bspterm_actions::editor::MoveDown,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -999,7 +999,7 @@ impl RulesLibrary {
 
     fn move_up_from_body(
         &mut self,
-        _: &zed_actions::editor::MoveUp,
+        _: &bspterm_actions::editor::MoveUp,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {

@@ -25,7 +25,7 @@ use rpc::AnyProtoClient;
 use std::sync::LazyLock;
 use std::{cmp::Reverse, ffi::OsStr, mem, path::Path, sync::Arc, time::Duration};
 use util::{ResultExt, TryFutureExt};
-use zed_env_vars::ZED_STATELESS;
+use bspterm_env_vars::BSPTERM_STATELESS;
 
 pub(crate) fn init(client: &AnyProtoClient) {
     client.add_entity_message_handler(TextThreadStore::handle_advertise_contexts);
@@ -822,7 +822,7 @@ impl TextThreadStore {
     fn reload(&mut self, cx: &mut Context<Self>) -> Task<Result<()>> {
         let fs = self.fs.clone();
         cx.spawn(async move |this, cx| {
-            if *ZED_STATELESS {
+            if *BSPTERM_STATELESS {
                 return Ok(());
             }
             fs.create_dir(text_threads_dir()).await?;

@@ -1,9 +1,9 @@
 use gpui::SharedString;
 use std::sync::LazyLock;
 
-/// Whether Zed is running in stateless mode.
-/// When true, Zed will use in-memory databases instead of persistent storage.
-pub static ZED_STATELESS: LazyLock<bool> = bool_env_var!("ZED_STATELESS");
+/// Whether Bspterm is running in stateless mode.
+/// When true, Bspterm will use in-memory databases instead of persistent storage.
+pub static BSPTERM_STATELESS: LazyLock<bool> = bool_env_var!("BSPTERM_STATELESS");
 
 #[derive(Clone)]
 pub struct EnvVar {

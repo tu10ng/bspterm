@@ -38,7 +38,7 @@ use crate::{
     actions::{DisableBreakpoint, EditLogBreakpoint, EnableBreakpoint, ToggleBreakpoint},
     display_map::Companion,
 };
-use zed_actions::assistant::InlineAssist;
+use bspterm_actions::assistant::InlineAssist;
 
 pub(crate) fn convert_lhs_rows_to_rhs(
     lhs_excerpt_to_rhs_excerpt: &HashMap<ExcerptId, ExcerptId>,

@@ -21,7 +21,7 @@ use workspace::{
     Pane, Workspace,
     dock::{DockPosition, Panel, PanelEvent},
 };
-use zed_actions::remote_explorer::ToggleFocus;
+use bspterm_actions::remote_explorer::ToggleFocus;
 
 pub use quick_add::*;
 pub use session_edit_modal::SessionEditModal;

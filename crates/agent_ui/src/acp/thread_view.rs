@@ -58,8 +58,8 @@ use ui::{
 use util::defer;
 use util::{ResultExt, size::format_file_size, time::duration_alt_display};
 use workspace::{CollaboratorId, NewTerminal, Toast, Workspace, notifications::NotificationId};
-use zed_actions::agent::{Chat, ToggleModelSelector};
-use zed_actions::assistant::OpenRulesLibrary;
+use bspterm_actions::agent::{Chat, ToggleModelSelector};
+use bspterm_actions::assistant::OpenRulesLibrary;
 
 use super::config_options::ConfigOptionsView;
 use super::entry_view_state::EntryViewState;

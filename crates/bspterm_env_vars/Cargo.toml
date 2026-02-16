@@ -1,5 +1,5 @@
 [package]
-name = "zed_actions"
+name = "bspterm_env_vars"
 version = "0.1.0"
 edition.workspace = true
 publish.workspace = true
@@ -8,9 +8,11 @@ license = "GPL-3.0-or-later"
 [lints]
 workspace = true
 
+[lib]
+path = "src/bspterm_env_vars.rs"
+
+[features]
+default = []
+
 [dependencies]
 gpui.workspace = true
-schemars.workspace = true
-serde.workspace = true
-util.workspace = true
-uuid.workspace = true

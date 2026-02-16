@@ -7,7 +7,7 @@ pub mod markdown_parser;
 pub mod markdown_preview_view;
 pub mod markdown_renderer;
 
-pub use zed_actions::preview::markdown::{OpenPreview, OpenPreviewToTheSide};
+pub use bspterm_actions::preview::markdown::{OpenPreview, OpenPreviewToTheSide};
 
 actions!(
     markdown,

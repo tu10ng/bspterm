@@ -31,7 +31,7 @@ pub fn init(cx: &mut App) {
     cx.observe_new(
         |workspace: &mut Workspace, _window, _cx: &mut Context<Workspace>| {
             workspace.register_action(
-                |workspace, _: &zed_actions::OpenTelemetryLog, window, cx| {
+                |workspace, _: &bspterm_actions::OpenTelemetryLog, window, cx| {
                     let telemetry_log =
                         cx.new(|cx| TelemetryLogView::new(workspace.project().clone(), window, cx));
 

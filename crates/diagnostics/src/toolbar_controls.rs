@@ -4,8 +4,8 @@ use language::DiagnosticEntry;
 use text::{Anchor, BufferId};
 use ui::{Tooltip, prelude::*};
 use workspace::{ToolbarItemEvent, ToolbarItemLocation, ToolbarItemView, item::ItemHandle};
-use zed_actions::assistant::InlineAssist;
-use zed_actions::buffer_search;
+use bspterm_actions::assistant::InlineAssist;
+use bspterm_actions::buffer_search;
 
 pub struct ToolbarControls {
     editor: Option<Box<dyn DiagnosticsToolbarEditor>>,

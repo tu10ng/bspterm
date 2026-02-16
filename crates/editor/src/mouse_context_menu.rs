@@ -13,8 +13,8 @@ use settings::Settings;
 use std::ops::Range;
 use text::PointUtf16;
 use workspace::OpenInTerminal;
-use zed_actions::agent::AddSelectionToThread;
-use zed_actions::preview::{
+use bspterm_actions::agent::AddSelectionToThread;
+use bspterm_actions::preview::{
     markdown::OpenPreview as OpenMarkdownPreview, svg::OpenPreview as OpenSvgPreview,
 };
 

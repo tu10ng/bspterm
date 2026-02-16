@@ -27,4 +27,4 @@ ui.workspace = true
 util.workspace = true
 util_macros.workspace = true
 workspace.workspace = true
-zed_actions.workspace = true
+bspterm_actions.workspace = true

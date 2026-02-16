@@ -3179,7 +3179,7 @@ impl AcpThreadView {
                         .handler({
                             move |window, cx| {
                                 window.dispatch_action(
-                                    zed_actions::agent::AddSelectionToThread.boxed_clone(),
+                                    bspterm_actions::agent::AddSelectionToThread.boxed_clone(),
                                     cx,
                                 );
                             }
@@ -6944,7 +6944,7 @@ impl AcpThreadView {
                         move |_, _, _window, cx| {
                             #[cfg(windows)]
                             _window.dispatch_action(
-                                zed_actions::wsl_actions::OpenWsl::default().boxed_clone(),
+                                bspterm_actions::wsl_actions::OpenWsl::default().boxed_clone(),
                                 cx,
                             );
                             cx.notify();

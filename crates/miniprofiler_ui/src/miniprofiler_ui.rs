@@ -19,7 +19,7 @@ use workspace::{
         ScrollableHandle as _, ToggleState, Tooltip, WithScrollbar, h_flex, v_flex,
     },
 };
-use zed_actions::OpenPerformanceProfiler;
+use bspterm_actions::OpenPerformanceProfiler;
 
 pub fn init(startup_time: Instant, cx: &mut App) {
     cx.observe_new(move |workspace: &mut workspace::Workspace, _, _| {

@@ -1,12 +1,12 @@
 [package]
 description = "The fast, collaborative code editor."
 edition.workspace = true
-name = "zed"
+name = "bspterm"
 version = "0.225.0"
 publish.workspace = true
 license = "GPL-3.0-or-later"
-authors = ["Zed Team <hi@zed.dev>"]
-default-run = "zed"
+authors = ["Bspterm Team"]
+default-run = "bspterm"
 
 [lints]
 workspace = true
@@ -53,11 +53,11 @@ visual-tests = [
 ]
 
 [[bin]]
-name = "zed"
+name = "bspterm"
 path = "src/main.rs"
 
 [[bin]]
-name = "zed_visual_test_runner"
+name = "bspterm_visual_test_runner"
 path = "src/visual_test_runner.rs"
 required-features = ["visual-tests"]
 
@@ -223,8 +223,8 @@ web_search.workspace = true
 web_search_providers.workspace = true
 which_key.workspace = true
 workspace.workspace = true
-zed_actions.workspace = true
-zed_env_vars.workspace = true
+bspterm_actions.workspace = true
+bspterm_env_vars.workspace = true
 zlog.workspace = true
 zlog_settings.workspace = true
 chrono.workspace = true
@@ -263,35 +263,35 @@ repl = { workspace = true, features = ["test-support"] }
 
 [package.metadata.bundle-dev]
 icon = ["resources/app-icon-dev@2x.png", "resources/app-icon-dev.png"]
-identifier = "dev.zed.Zed-Dev"
-name = "Zed Dev"
+identifier = "dev.bspterm.Bspterm-Dev"
+name = "Bspterm Dev"
 osx_minimum_system_version = "10.15.7"
 osx_info_plist_exts = ["resources/info/*"]
-osx_url_schemes = ["zed"]
+osx_url_schemes = ["bspterm"]
 
 [package.metadata.bundle-nightly]
 icon = ["resources/app-icon-nightly@2x.png", "resources/app-icon-nightly.png"]
-identifier = "dev.zed.Zed-Nightly"
-name = "Zed Nightly"
+identifier = "dev.bspterm.Bspterm-Nightly"
+name = "Bspterm Nightly"
 osx_minimum_system_version = "10.15.7"
 osx_info_plist_exts = ["resources/info/*"]
-osx_url_schemes = ["zed"]
+osx_url_schemes = ["bspterm"]
 
 [package.metadata.bundle-preview]
 icon = ["resources/app-icon-preview@2x.png", "resources/app-icon-preview.png"]
-identifier = "dev.zed.Zed-Preview"
-name = "Zed Preview"
+identifier = "dev.bspterm.Bspterm-Preview"
+name = "Bspterm Preview"
 osx_minimum_system_version = "10.15.7"
 osx_info_plist_exts = ["resources/info/*"]
-osx_url_schemes = ["zed"]
+osx_url_schemes = ["bspterm"]
 
 [package.metadata.bundle-stable]
 icon = ["resources/app-icon@2x.png", "resources/app-icon.png"]
-identifier = "dev.zed.Zed"
-name = "Zed"
+identifier = "dev.bspterm.Bspterm"
+name = "Bspterm"
 osx_minimum_system_version = "10.15.7"
 osx_info_plist_exts = ["resources/info/*"]
-osx_url_schemes = ["zed"]
+osx_url_schemes = ["bspterm"]
 
 [package.metadata.cargo-machete]
 ignored = ["profiling", "zstd", "tracing"]

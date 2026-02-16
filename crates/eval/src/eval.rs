@@ -349,11 +349,11 @@ pub struct AgentAppState {
 }
 
 pub fn init(cx: &mut App) -> Arc<AgentAppState> {
-    let app_commit_sha = option_env!("ZED_COMMIT_SHA").map(|s| AppCommitSha::new(s.to_owned()));
+    let app_commit_sha = option_env!("BSPTERM_COMMIT_SHA").map(|s| AppCommitSha::new(s.to_owned()));
 
     let app_version = AppVersion::load(
-        env!("ZED_PKG_VERSION"),
-        option_env!("ZED_BUILD_ID"),
+        env!("BSPTERM_PKG_VERSION"),
+        option_env!("BSPTERM_BUILD_ID"),
         app_commit_sha,
     );
 

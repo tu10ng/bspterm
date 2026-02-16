@@ -2,7 +2,7 @@ use gpui::{App, ClipboardItem, PromptLevel, actions};
 use system_specs::{CopySystemSpecsIntoClipboard, SystemSpecs};
 use util::ResultExt;
 use workspace::Workspace;
-use zed_actions::feedback::{EmailZed, FileBugReport, RequestFeature};
+use bspterm_actions::feedback::{EmailZed, FileBugReport, RequestFeature};
 
 actions!(
     zed,

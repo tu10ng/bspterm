@@ -1489,7 +1489,7 @@ impl PickerDelegate for DebugDelegate {
                     Button::new("edit-debug-json", "Edit debug.json").on_click(cx.listener(
                         |_picker, _, window, cx| {
                             window.dispatch_action(
-                                zed_actions::OpenProjectDebugTasks.boxed_clone(),
+                                bspterm_actions::OpenProjectDebugTasks.boxed_clone(),
                                 cx,
                             );
                             cx.emit(DismissEvent);

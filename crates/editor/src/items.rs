@@ -59,7 +59,7 @@ use workspace::{
     item::{BreadcrumbText, FollowEvent, ProjectItemKind},
     searchable::SearchOptions,
 };
-use zed_actions::preview::{
+use bspterm_actions::preview::{
     markdown::OpenPreview as OpenMarkdownPreview, svg::OpenPreview as OpenSvgPreview,
 };
 

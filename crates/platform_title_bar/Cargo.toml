@@ -19,7 +19,7 @@ smallvec.workspace = true
 theme.workspace = true
 ui.workspace = true
 workspace.workspace = true
-zed_actions.workspace = true
+bspterm_actions.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows.workspace = true

@@ -70,7 +70,7 @@ use {
     },
     util::ResultExt as _,
     workspace::{AppState, Workspace},
-    zed_actions::OpenSettingsAt,
+    bspterm_actions::OpenSettingsAt,
 };
 
 // All macOS-specific constants grouped together
@@ -97,11 +97,11 @@ use constants::*;
 
 #[cfg(target_os = "macos")]
 fn main() {
-    // Set ZED_STATELESS early to prevent file system access to real config directories
-    // This must be done before any code accesses zed_env_vars::ZED_STATELESS
+    // Set BSPTERM_STATELESS early to prevent file system access to real config directories
+    // This must be done before any code accesses bspterm_env_vars::BSPTERM_STATELESS
     // SAFETY: We're at the start of main(), before any threads are spawned
     unsafe {
-        std::env::set_var("ZED_STATELESS", "1");
+        std::env::set_var("BSPTERM_STATELESS", "1");
     }
 
     env_logger::builder()
@@ -2242,7 +2242,7 @@ fn run_tool_permissions_visual_tests(
     use agent_settings::{AgentSettings, CompiledRegex, ToolPermissions, ToolRules};
     use collections::HashMap;
     use settings::ToolPermissionMode;
-    use zed_actions::OpenSettingsAt;
+    use bspterm_actions::OpenSettingsAt;
 
     // Set up tool permissions with "hi" as both always_deny and always_allow for terminal
     cx.update(|cx| {
