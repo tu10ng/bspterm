@@ -531,6 +531,58 @@ remote_explorer::init(cx);
 let remote_explorer = RemoteExplorer::load(workspace_handle.clone(), cx.clone());
 ```
 
+### Quick Add Area
+
+The Remote Explorer panel includes a Quick Add area (`crates/remote_explorer/src/quick_add/`) for rapidly adding new connections.
+
+#### Auto-Recognize Input
+
+The auto-recognize input field (`auto_recognize.rs`) supports multiple formats:
+
+| Format | Example | Result |
+|--------|---------|--------|
+| IP only | `192.168.1.1` | Telnet on port 23 |
+| IP:port | `192.168.1.1:22` | SSH on port 22 |
+| IP user pass | `192.168.1.1 root password` | Telnet with credentials |
+| IP user pass port | `192.168.1.1 root password 2323` | Telnet on custom port |
+| Multiple (comma) | `192.168.1.1, 192.168.1.2` | Multiple connections |
+| Multiple (newline) | Line-separated IPs | Multiple connections |
+| Session env info | `环境192.168.1.1\troot\tpass` | Telnet (see below) |
+| Session env info | `后台192.168.1.1\tadmin\tpass` | SSH (see below) |
+
+#### Session Env Info Format (环境/后台)
+
+Special format for bulk importing sessions from "复制环境信息" (Copy Environment Info):
+
+- **Telnet**: `环境<host>[:<port>]\t<username>\t<password>` (default port 23)
+- **SSH**: `后台<host>[:<port>]\t<username>\t<password>` (default port 22)
+
+**Import behavior:**
+1. Entries are grouped by host IP address
+2. A `SessionGroup` is created for each unique IP (group name = IP address)
+3. All sessions for that IP are added to the group
+4. Sessions are auto-saved without establishing connections
+
+**Example input:**
+```
+环境192.168.1.1	root	pass1
+后台192.168.1.1	admin	pass2
+环境192.168.1.2	root	pass3
+```
+
+**Result:** Two groups "192.168.1.1" and "192.168.1.2", each containing their respective sessions.
+
+**Session naming:**
+- Telnet: `<host>` or `<host>:<port>` (no username prefix)
+- SSH: `<username>@<host>` or `<username>@<host>:<port>`
+
+#### Key Functions
+
+- `parse_connection_text()`: Main parser for all input formats
+- `is_session_env_info_format()`: Detects 环境/后台 format
+- `parse_session_env_info_entry()`: Parses single 环境/后台 entry
+- `import_session_env_info()`: Handles grouping and saving for bulk import
+
 ## Editor Panel
 
 The `editor_panel` crate (`crates/editor_panel`) provides a dockable panel for code editing, similar to the main editor but positioned in a dock.

@@ -8,8 +8,10 @@ pub use multi_connection_modal::*;
 pub use ssh_section::*;
 pub use telnet_section::*;
 
+use std::collections::HashMap;
+
 use gpui::{App, Entity, IntoElement, ParentElement, Styled, WeakEntity, Window};
-use terminal::SessionStoreEntity;
+use terminal::{SessionConfig, SessionGroup, SessionStoreEntity};
 use ui::{prelude::*, Color, Disclosure, Label, LabelSize, h_flex, v_flex};
 use workspace::{Pane, Workspace};
 
@@ -121,6 +123,16 @@ impl QuickAddArea {
         cx: &mut App,
     ) -> Option<ConnectionResult> {
         let input = self.auto_recognize.get_input(cx);
+
+        if is_session_env_info_format(&input) {
+            let parsed = parse_connection_text(&input);
+            if !parsed.is_empty() {
+                self.import_session_env_info(parsed, cx);
+            }
+            self.auto_recognize.clear_input(window, cx);
+            return None;
+        }
+
         let parsed = parse_connection_text(&input);
 
         if parsed.is_empty() {
@@ -137,6 +149,30 @@ impl QuickAddArea {
 
         self.auto_recognize.clear_input(window, cx);
         result
+    }
+
+    fn import_session_env_info(
+        &mut self,
+        connections: Vec<ParsedConnection>,
+        cx: &mut App,
+    ) {
+        let mut groups: HashMap<String, Vec<ParsedConnection>> = HashMap::new();
+        for conn in connections {
+            groups.entry(conn.host.clone()).or_default().push(conn);
+        }
+
+        self.session_store.update(cx, |store, cx| {
+            for (ip, conns) in groups {
+                let group = SessionGroup::new(&ip);
+                let group_id = group.id;
+                store.add_group(group, None, cx);
+
+                for conn in conns {
+                    let session_config = create_session_config(&conn);
+                    store.add_session(session_config, Some(group_id), cx);
+                }
+            }
+        });
     }
 
     fn connect_single(
@@ -328,6 +364,51 @@ fn parse_ssh_host_string(input: &str) -> (String, u16, Option<String>) {
         (host.to_string(), port, Some(username.to_string()))
     } else {
         (user_host.to_string(), port, None)
+    }
+}
+
+fn create_session_config(conn: &ParsedConnection) -> SessionConfig {
+    match conn.protocol {
+        ConnectionProtocol::Telnet => {
+            let host = &conn.host;
+            let port = conn.port;
+            let config = terminal::TelnetSessionConfig::new(host, port);
+            let config = if let (Some(user), Some(pass)) = (&conn.username, &conn.password) {
+                config.with_credentials(user.clone(), pass.clone())
+            } else {
+                config
+            };
+
+            let session_name = format_session_name(host, port, &None, 23);
+            SessionConfig::new_telnet(session_name, config)
+        }
+        ConnectionProtocol::Ssh => {
+            let host = &conn.host;
+            let port = conn.port;
+            let username = conn.username.clone().unwrap_or_else(|| "root".to_string());
+            let password = conn.password.clone().unwrap_or_else(|| "root".to_string());
+
+            let ssh_config = terminal::SshSessionConfig::new(host, port)
+                .with_username(&username)
+                .with_auth(terminal::AuthMethod::Password { password });
+
+            let session_name = format_session_name(host, port, &conn.username, 22);
+            SessionConfig::new_ssh(session_name, ssh_config)
+        }
+    }
+}
+
+fn format_session_name(host: &str, port: u16, username: &Option<String>, default_port: u16) -> String {
+    let host_part = if port == default_port {
+        host.to_string()
+    } else {
+        format!("{}:{}", host, port)
+    };
+
+    if let Some(user) = username {
+        format!("{}@{}", user, host_part)
+    } else {
+        host_part
     }
 }
 

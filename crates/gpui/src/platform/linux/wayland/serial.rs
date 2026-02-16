@@ -46,4 +46,14 @@ impl SerialTracker {
             .map(|serial_data| serial_data.serial)
             .unwrap_or(0)
     }
+
+    /// Returns the latest serial from either MousePress or KeyPress events.
+    ///
+    /// This is useful for clipboard operations where either type of input
+    /// serial is valid.
+    pub fn get_latest_input(&self) -> u32 {
+        let mouse = self.get(SerialKind::MousePress);
+        let key = self.get(SerialKind::KeyPress);
+        mouse.max(key)
+    }
 }

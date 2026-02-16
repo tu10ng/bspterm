@@ -2,6 +2,9 @@ use editor::Editor;
 use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window};
 use ui::{prelude::*, Color, Icon, IconName, IconSize, Label, LabelSize, h_flex, v_flex};
 
+const SESSION_ENV_PREFIX_TELNET: &str = "环境";
+const SESSION_ENV_PREFIX_SSH: &str = "后台";
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ConnectionProtocol {
     Ssh,
@@ -124,7 +127,7 @@ impl AutoRecognizeSection {
                     .child(self.editor.clone()),
             )
             .child(
-                Label::new("Supports: IP, IP:port, IP user pass")
+                Label::new("Supports: IP, IP:port, IP user pass, 环境/后台 format")
                     .size(LabelSize::XSmall)
                     .color(Color::Muted),
             )
@@ -161,7 +164,68 @@ pub fn parse_connection_text(input: &str) -> Vec<ParsedConnection> {
     connections
 }
 
+fn parse_host_port_with_default(input: &str, default_port: u16) -> Option<(String, u16)> {
+    if let Some((host, port_str)) = input.rsplit_once(':') {
+        let port = port_str.parse::<u16>().ok()?;
+        Some((host.to_string(), port))
+    } else {
+        Some((input.to_string(), default_port))
+    }
+}
+
+fn parse_session_env_info_entry(entry: &str) -> Option<ParsedConnection> {
+    let entry = entry.trim();
+
+    let (protocol, rest) = if let Some(rest) = entry.strip_prefix(SESSION_ENV_PREFIX_TELNET) {
+        (ConnectionProtocol::Telnet, rest)
+    } else if let Some(rest) = entry.strip_prefix(SESSION_ENV_PREFIX_SSH) {
+        (ConnectionProtocol::Ssh, rest)
+    } else {
+        return None;
+    };
+
+    let default_port = match protocol {
+        ConnectionProtocol::Telnet => 23,
+        ConnectionProtocol::Ssh => 22,
+    };
+
+    let parts: Vec<&str> = rest.split('\t').collect();
+    if parts.is_empty() {
+        return None;
+    }
+
+    let host_port = parts[0].trim();
+    let (host, port) = parse_host_port_with_default(host_port, default_port)?;
+
+    if !is_valid_ipv4(&host) && !is_valid_hostname(&host) {
+        return None;
+    }
+
+    let username = parts.get(1).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let password = parts.get(2).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+
+    Some(ParsedConnection {
+        host,
+        port,
+        protocol,
+        username,
+        password,
+    })
+}
+
+pub fn is_session_env_info_format(input: &str) -> bool {
+    input.lines().any(|line| {
+        let trimmed = line.trim();
+        trimmed.starts_with(SESSION_ENV_PREFIX_TELNET) || trimmed.starts_with(SESSION_ENV_PREFIX_SSH)
+    })
+}
+
 fn parse_single_entry(entry: &str) -> Option<ParsedConnection> {
+    let trimmed = entry.trim();
+    if trimmed.starts_with(SESSION_ENV_PREFIX_TELNET) || trimmed.starts_with(SESSION_ENV_PREFIX_SSH) {
+        return parse_session_env_info_entry(trimmed);
+    }
+
     let parts: Vec<&str> = entry.split_whitespace().collect();
     if parts.is_empty() {
         return None;
@@ -304,5 +368,93 @@ mod tests {
         assert!(!is_valid_ipv4("256.1.1.1"));
         assert!(!is_valid_ipv4("192.168.1"));
         assert!(!is_valid_ipv4("not.an.ip.address"));
+    }
+
+    #[test]
+    fn test_parse_session_env_info_telnet() {
+        let result = parse_connection_text("环境192.168.1.1\troot\tpassword");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].host, "192.168.1.1");
+        assert_eq!(result[0].port, 23);
+        assert_eq!(result[0].protocol, ConnectionProtocol::Telnet);
+        assert_eq!(result[0].username, Some("root".to_string()));
+        assert_eq!(result[0].password, Some("password".to_string()));
+    }
+
+    #[test]
+    fn test_parse_session_env_info_ssh() {
+        let result = parse_connection_text("后台192.168.1.1\tadmin\tsecret");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].host, "192.168.1.1");
+        assert_eq!(result[0].port, 22);
+        assert_eq!(result[0].protocol, ConnectionProtocol::Ssh);
+        assert_eq!(result[0].username, Some("admin".to_string()));
+        assert_eq!(result[0].password, Some("secret".to_string()));
+    }
+
+    #[test]
+    fn test_parse_session_env_info_with_port() {
+        let result = parse_connection_text("环境192.168.1.1:2323\troot\tpassword");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].host, "192.168.1.1");
+        assert_eq!(result[0].port, 2323);
+        assert_eq!(result[0].protocol, ConnectionProtocol::Telnet);
+    }
+
+    #[test]
+    fn test_parse_session_env_info_ssh_with_port() {
+        let result = parse_connection_text("后台192.168.1.1:2222\tadmin\tsecret");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].host, "192.168.1.1");
+        assert_eq!(result[0].port, 2222);
+        assert_eq!(result[0].protocol, ConnectionProtocol::Ssh);
+    }
+
+    #[test]
+    fn test_parse_session_env_info_multiple() {
+        let input = "环境192.168.1.1\troot\tpass1\n后台192.168.1.1\tadmin\tpass2\n环境192.168.1.2\troot\tpass3";
+        let result = parse_connection_text(input);
+        assert_eq!(result.len(), 3);
+
+        assert_eq!(result[0].host, "192.168.1.1");
+        assert_eq!(result[0].port, 23);
+        assert_eq!(result[0].protocol, ConnectionProtocol::Telnet);
+
+        assert_eq!(result[1].host, "192.168.1.1");
+        assert_eq!(result[1].port, 22);
+        assert_eq!(result[1].protocol, ConnectionProtocol::Ssh);
+
+        assert_eq!(result[2].host, "192.168.1.2");
+        assert_eq!(result[2].port, 23);
+        assert_eq!(result[2].protocol, ConnectionProtocol::Telnet);
+    }
+
+    #[test]
+    fn test_is_session_env_info_format() {
+        assert!(is_session_env_info_format("环境192.168.1.1\troot\tpass"));
+        assert!(is_session_env_info_format("后台192.168.1.1\tadmin\tpass"));
+        assert!(is_session_env_info_format("环境192.168.1.1\troot\tpass1\n后台192.168.1.2\tadmin\tpass2"));
+        assert!(!is_session_env_info_format("192.168.1.1"));
+        assert!(!is_session_env_info_format("192.168.1.1 root password"));
+    }
+
+    #[test]
+    fn test_parse_session_env_info_no_credentials() {
+        let result = parse_connection_text("环境192.168.1.1");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].host, "192.168.1.1");
+        assert_eq!(result[0].port, 23);
+        assert_eq!(result[0].protocol, ConnectionProtocol::Telnet);
+        assert_eq!(result[0].username, None);
+        assert_eq!(result[0].password, None);
+    }
+
+    #[test]
+    fn test_parse_session_env_info_username_only() {
+        let result = parse_connection_text("环境192.168.1.1\troot");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].host, "192.168.1.1");
+        assert_eq!(result[0].username, Some("root".to_string()));
+        assert_eq!(result[0].password, None);
     }
 }

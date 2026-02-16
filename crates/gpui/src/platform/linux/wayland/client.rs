@@ -834,16 +834,15 @@ impl LinuxClient for WaylandClient {
         ) else {
             return;
         };
-        if state.mouse_focused_window.is_some() || state.keyboard_focused_window.is_some() {
-            state.clipboard.set_primary(item);
-            let serial = state.serial_tracker.get(SerialKind::KeyPress);
-            let data_source = primary_selection_manager.create_source(&state.globals.qh, ());
-            for mime_type in TEXT_MIME_TYPES {
-                data_source.offer(mime_type.to_string());
-            }
-            data_source.offer(state.clipboard.self_mime());
-            primary_selection.set_selection(Some(&data_source), serial);
+
+        state.clipboard.set_primary(item);
+        let serial = state.serial_tracker.get_latest_input();
+        let data_source = primary_selection_manager.create_source(&state.globals.qh, ());
+        for mime_type in TEXT_MIME_TYPES {
+            data_source.offer(mime_type.to_string());
         }
+        data_source.offer(state.clipboard.self_mime());
+        primary_selection.set_selection(Some(&data_source), serial);
     }
 
     fn write_to_clipboard(&self, item: crate::ClipboardItem) {
@@ -854,16 +853,15 @@ impl LinuxClient for WaylandClient {
         ) else {
             return;
         };
-        if state.mouse_focused_window.is_some() || state.keyboard_focused_window.is_some() {
-            state.clipboard.set(item);
-            let serial = state.serial_tracker.get(SerialKind::KeyPress);
-            let data_source = data_device_manager.create_data_source(&state.globals.qh, ());
-            for mime_type in TEXT_MIME_TYPES {
-                data_source.offer(mime_type.to_string());
-            }
-            data_source.offer(state.clipboard.self_mime());
-            data_device.set_selection(Some(&data_source), serial);
+
+        state.clipboard.set(item);
+        let serial = state.serial_tracker.get_latest_input();
+        let data_source = data_device_manager.create_data_source(&state.globals.qh, ());
+        for mime_type in TEXT_MIME_TYPES {
+            data_source.offer(mime_type.to_string());
         }
+        data_source.offer(state.clipboard.self_mime());
+        data_device.set_selection(Some(&data_source), serial);
     }
 
     fn read_from_primary(&self) -> Option<crate::ClipboardItem> {

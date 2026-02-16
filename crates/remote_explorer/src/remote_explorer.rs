@@ -7,13 +7,16 @@ use std::time::Duration;
 
 use anyhow::Result;
 use gpui::{
-    Action, AnyElement, App, AppContext as _, AsyncWindowContext, ClickEvent, Context,
-    DismissEvent, DragMoveEvent, Entity, EventEmitter, FocusHandle, Focusable, IntoElement,
-    ListSizingBehavior, MouseButton, MouseDownEvent, ParentElement, Point, Render, Styled,
-    Subscription, Task, UniformListScrollHandle, WeakEntity, Window, anchored, deferred, px,
-    uniform_list,
+    Action, AnyElement, App, AppContext as _, AsyncWindowContext, ClickEvent, ClipboardItem,
+    Context, DismissEvent, DragMoveEvent, Entity, EventEmitter, FocusHandle, Focusable,
+    IntoElement, ListSizingBehavior, MouseButton, MouseDownEvent, ParentElement, Point, Render,
+    Styled, Subscription, Task, UniformListScrollHandle, WeakEntity, Window, anchored, deferred,
+    px, uniform_list,
 };
-use terminal::{ProtocolConfig, SessionNode, SessionStoreEntity, SessionStoreEvent};
+use terminal::{
+    AuthMethod, ProtocolConfig, SessionConfig, SessionGroup, SessionNode, SessionStoreEntity,
+    SessionStoreEvent,
+};
 use ui::{
     prelude::*, Color, ContextMenu, Disclosure, Icon, IconName, IconSize, Label, LabelSize,
     ListItem, ListItemSpacing, h_flex, v_flex,
@@ -30,6 +33,47 @@ pub use quick_add::*;
 pub use session_edit_modal::SessionEditModal;
 
 const REMOTE_EXPLORER_PANEL_KEY: &str = "RemoteExplorerPanel";
+
+fn format_session_env_info(session: &SessionConfig) -> String {
+    match &session.protocol {
+        ProtocolConfig::Telnet(telnet) => {
+            let host_with_port = if telnet.port == 23 {
+                telnet.host.clone()
+            } else {
+                format!("{}:{}", telnet.host, telnet.port)
+            };
+            let username = telnet.username.as_deref().unwrap_or("");
+            let password = telnet.password.as_deref().unwrap_or("");
+            format!("环境{}\t{}\t{}", host_with_port, username, password)
+        }
+        ProtocolConfig::Ssh(ssh) => {
+            let host_with_port = if ssh.port == 22 {
+                ssh.host.clone()
+            } else {
+                format!("{}:{}", ssh.host, ssh.port)
+            };
+            let username = ssh.username.as_deref().unwrap_or("");
+            let password = match &ssh.auth {
+                AuthMethod::Password { password } => password.as_str(),
+                _ => "",
+            };
+            format!("后台{}\t{}\t{}", host_with_port, username, password)
+        }
+    }
+}
+
+fn collect_sessions_from_group(group: &SessionGroup) -> Vec<&SessionConfig> {
+    let mut sessions = Vec::new();
+    for node in &group.children {
+        match node {
+            SessionNode::Session(session) => sessions.push(session),
+            SessionNode::Group(child_group) => {
+                sessions.extend(collect_sessions_from_group(child_group));
+            }
+        }
+    }
+    sessions
+}
 
 pub fn init(cx: &mut App) {
     SessionStoreEntity::init(cx);
@@ -270,6 +314,7 @@ impl RemoteExplorer {
 
         let context_menu = match node {
             SessionNode::Session(_) => {
+                let session_store_for_copy = session_store_entity.clone();
                 ContextMenu::build(window, cx, move |menu, _window, _cx| {
                     let workspace_for_edit = workspace.clone();
 
@@ -282,6 +327,18 @@ impl RemoteExplorer {
                             });
                         }
                     })
+                    .entry("复制环境信息", None, {
+                        let session_store = session_store_for_copy.clone();
+                        move |_window, cx| {
+                            let store = session_store.read(cx);
+                            if let Some(SessionNode::Session(session)) =
+                                store.store().find_node(entry_id)
+                            {
+                                let info = format_session_env_info(session);
+                                cx.write_to_clipboard(ClipboardItem::new_string(info));
+                            }
+                        }
+                    })
                     .entry("Delete Session", None, move |_window, cx| {
                         session_store_entity.update(cx, |store, cx| {
                             store.remove_node(entry_id, cx);
@@ -290,6 +347,7 @@ impl RemoteExplorer {
                 })
             }
             SessionNode::Group(_) => {
+                let session_store_for_copy = session_store_entity.clone();
                 ContextMenu::build(window, cx, move |menu, _window, _cx| {
                     let workspace_for_edit = workspace.clone();
 
@@ -300,6 +358,23 @@ impl RemoteExplorer {
                                     GroupEditModal::new_edit(entry_id, window, cx)
                                 });
                             });
+                        }
+                    })
+                    .entry("复制环境信息", None, {
+                        let session_store = session_store_for_copy.clone();
+                        move |_window, cx| {
+                            let store = session_store.read(cx);
+                            if let Some(SessionNode::Group(group)) =
+                                store.store().find_node(entry_id)
+                            {
+                                let sessions = collect_sessions_from_group(group);
+                                let info = sessions
+                                    .iter()
+                                    .map(|s| format_session_env_info(s))
+                                    .collect::<Vec<_>>()
+                                    .join("\n");
+                                cx.write_to_clipboard(ClipboardItem::new_string(info));
+                            }
                         }
                     })
                     .entry("Delete Group", None, move |_window, cx| {
