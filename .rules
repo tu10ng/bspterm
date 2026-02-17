@@ -495,6 +495,37 @@ let telnet_session_config: TelnetSessionConfig = /* from session store */;
 let config: TelnetConfig = (&telnet_session_config).into();
 ```
 
+## Terminal Keybinding Interception
+
+The terminal view intercepts keystrokes to decide whether they should be sent to the shell or handled by Zed's action system (`crates/terminal_view/src/terminal_view.rs`).
+
+### Behavior
+
+When `send_keybindings_to_shell` setting is enabled, keystrokes are intercepted and checked:
+
+1. **Explicit skip list**: Keystrokes in `keybindings_to_skip_shell` setting are always handled by Zed
+2. **Terminal-context bindings**: Only keybindings with `"context": "Terminal"` predicate are intercepted
+3. **Global bindings**: Keybindings without a Terminal context predicate are sent to the shell
+
+### Key Functions
+
+- `should_skip_shell()`: Main decision function combining all checks
+- `keystroke_has_zed_action_binding()`: Checks if keystroke has a Terminal-context keybinding
+- `predicate_contains_terminal()`: Recursively checks if a `KeyBindingContextPredicate` contains "Terminal"
+
+### Examples
+
+| Keystroke | Action | Context | Result |
+|-----------|--------|---------|--------|
+| `ctrl-p` | `menu::SelectPrevious` | Global | Sent to shell |
+| `ctrl-v` | `terminal::Paste` | Terminal | Intercepted by Zed |
+| `ctrl-c` | `terminal::SendKeystroke` | Terminal | Sent to shell (explicitly forwarded) |
+| `ctrl-shift-c` | `terminal::Copy` | Terminal | Intercepted by Zed |
+
+### Special Actions
+
+- `terminal::SendKeystroke` and `terminal::SendText` are always sent to the shell, even with Terminal context
+
 ## Remote Explorer Panel
 
 The `remote_explorer` crate (`crates/remote_explorer`) provides a panel for browsing saved SSH/Telnet sessions in a tree view.

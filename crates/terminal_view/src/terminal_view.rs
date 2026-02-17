@@ -10,9 +10,9 @@ use assistant_slash_command::SlashCommandRegistry;
 use editor::{Editor, EditorSettings, actions::SelectAll, blink_manager::BlinkManager};
 use gpui::{
     Action, AnyElement, App, ClipboardEntry, DismissEvent, Entity, EventEmitter, FocusHandle,
-    Focusable, KeyContext, KeyDownEvent, KeybindingKeystroke, Keystroke, KeystrokeEvent,
-    MouseButton, MouseDownEvent, Pixels, Point, Render, ScrollWheelEvent, Styled, Subscription,
-    Task, WeakEntity, actions, anchored, deferred, div,
+    Focusable, KeyBindingContextPredicate, KeyContext, KeyDownEvent, KeybindingKeystroke,
+    Keystroke, KeystrokeEvent, MouseButton, MouseDownEvent, Pixels, Point, Render,
+    ScrollWheelEvent, Styled, Subscription, Task, WeakEntity, actions, anchored, deferred, div,
 };
 use menu;
 use persistence::TERMINAL_DB;
@@ -1288,7 +1288,7 @@ impl TerminalView {
 
         let settings = TerminalSettings::get_global(cx);
 
-        if self.should_skip_shell(&event.keystroke, &settings) {
+        if self.should_skip_shell(&event.keystroke, &settings, &event.context_stack, cx) {
             return;
         }
 
@@ -1307,7 +1307,14 @@ impl TerminalView {
         }
     }
 
-    fn should_skip_shell(&self, keystroke: &Keystroke, settings: &TerminalSettings) -> bool {
+    fn should_skip_shell(
+        &self,
+        keystroke: &Keystroke,
+        settings: &TerminalSettings,
+        context_stack: &[KeyContext],
+        cx: &App,
+    ) -> bool {
+        // 1. Check explicit keybindings_to_skip_shell list (backwards compatibility)
         for pattern in &settings.keybindings_to_skip_shell {
             if let Ok(skip_ks) = Keystroke::parse(pattern) {
                 let skip_keybinding = KeybindingKeystroke::from_keystroke(skip_ks);
@@ -1316,7 +1323,60 @@ impl TerminalView {
                 }
             }
         }
+
+        // 2. Check if keystroke has a Terminal-context keybinding (NOT SendKeystroke/SendText)
+        Self::keystroke_has_zed_action_binding(keystroke, context_stack, cx)
+    }
+
+    /// Check if a keystroke has a Terminal-context keybinding that should NOT be sent to shell.
+    /// Returns true if the keystroke should skip shell and trigger normal action dispatch.
+    fn keystroke_has_zed_action_binding(
+        keystroke: &Keystroke,
+        context_stack: &[KeyContext],
+        cx: &App,
+    ) -> bool {
+        let keymap = cx.key_bindings();
+        let keymap = keymap.borrow();
+
+        let (bindings, _pending) =
+            keymap.bindings_for_input(std::slice::from_ref(keystroke), context_stack);
+
+        for binding in bindings {
+            let action_name = binding.action().name();
+
+            // SendKeystroke and SendText are meant to forward to shell, don't skip
+            if action_name == "terminal::SendKeystroke" || action_name == "terminal::SendText" {
+                continue;
+            }
+
+            // Only skip shell for bindings that explicitly target Terminal context
+            if let Some(predicate) = binding.predicate() {
+                if Self::predicate_contains_terminal(&predicate) {
+                    return true;
+                }
+            }
+            // If no predicate (global binding), don't skip shell - let it go to terminal
+        }
+
         false
+    }
+
+    /// Check if a KeyBindingContextPredicate contains "Terminal" identifier
+    fn predicate_contains_terminal(predicate: &KeyBindingContextPredicate) -> bool {
+        match predicate {
+            KeyBindingContextPredicate::Identifier(name) => name.as_ref() == "Terminal",
+            KeyBindingContextPredicate::And(left, right)
+            | KeyBindingContextPredicate::Or(left, right)
+            | KeyBindingContextPredicate::Descendant(left, right) => {
+                Self::predicate_contains_terminal(left) || Self::predicate_contains_terminal(right)
+            }
+            KeyBindingContextPredicate::Not(inner) => Self::predicate_contains_terminal(inner),
+            KeyBindingContextPredicate::Equal(key, _)
+            | KeyBindingContextPredicate::NotEqual(key, _) => {
+                // Key-value predicates like "vim_mode == normal" - check if key is "Terminal"
+                key.as_ref() == "Terminal"
+            }
+        }
     }
 
     fn register_keystroke_interceptor(&mut self, cx: &mut Context<Self>) {
