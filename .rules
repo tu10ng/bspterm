@@ -633,6 +633,61 @@ Special format for bulk importing sessions from "复制环境信息" (Copy Envir
 - `parse_session_env_info_entry()`: Parses single 环境/后台 entry
 - `import_session_env_info()`: Handles grouping and saving for bulk import
 
+## Terminal Reconnection
+
+The terminal supports reconnecting to SSH/Telnet sessions while preserving scrollback history (`crates/terminal/src/terminal.rs`, `crates/terminal_view/src/terminal_view.rs`).
+
+### Architecture
+
+When reconnecting, the existing `Terminal` entity is reused rather than creating a new one:
+- The `Term` object (which holds the scrollback buffer) is never replaced
+- A new connection is created using the stored `events_tx` sender
+- The new connection sends events through the same channel to the existing `Term`
+
+### Key Components
+
+- `events_tx: UnboundedSender<AlacTermEvent>`: Stored in Terminal struct for reuse during reconnection
+- `Terminal::reconnect(&self, cx: &App) -> Task<Result<Box<dyn TerminalConnection>>>`: Creates new SSH/Telnet connection using existing `events_tx` and current terminal size
+- `Terminal::set_connection(&mut self, connection: Box<dyn TerminalConnection>)`: Updates terminal to use new connection
+- `TerminalView::reconnect_terminal()`: Orchestrates reconnection, prints status messages
+
+### Reconnection Flow
+
+1. User triggers reconnect (e.g., presses Enter when disconnected)
+2. "Connecting..." message is printed to terminal
+3. `terminal.reconnect(cx)` creates new connection with existing `events_tx`
+4. On success: `terminal.set_connection(connection)` updates the terminal, "Connected" message printed
+5. On failure: Error message printed with retry prompt
+6. Scrollback history remains intact throughout
+
+### Usage
+
+```rust
+// In terminal_view.rs
+fn reconnect_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    // Print connecting message
+    self.terminal.update(cx, |terminal, cx| {
+        terminal.write_output(b"\x1b[36mConnecting...\x1b[0m\r\n", cx);
+    });
+
+    let reconnect_task = self.terminal.update(cx, |terminal, cx| terminal.reconnect(cx));
+
+    cx.spawn_in(window, async move |this, cx| {
+        match reconnect_task.await {
+            Ok(connection) => {
+                this.update(cx, |this, cx| {
+                    this.terminal.update(cx, |terminal, cx| {
+                        terminal.set_connection(connection);
+                    });
+                })?;
+            }
+            Err(err) => { /* handle error */ }
+        }
+        anyhow::Ok(())
+    }).detach_and_log_err(cx);
+}
+```
+
 ## Editor Panel
 
 The `editor_panel` crate (`crates/editor_panel`) provides a dockable panel for code editing, similar to the main editor but positioned in a dock.

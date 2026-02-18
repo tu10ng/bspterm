@@ -979,90 +979,41 @@ impl TerminalView {
     }
 
     fn reconnect_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(connection_info) = self.terminal.read(cx).connection_info().cloned() else {
+        if self.terminal.read(cx).connection_info().is_none() {
             return;
-        };
+        }
+
+        // Print connecting message
+        self.terminal.update(cx, |terminal, cx| {
+            terminal.write_output(b"\x1b[36mConnecting...\x1b[0m\r\n", cx);
+        });
+
+        let reconnect_task = self.terminal.update(cx, |terminal, cx| terminal.reconnect(cx));
 
         cx.spawn_in(window, async move |this, cx| {
-            let terminal: terminal::TerminalBuilder = match connection_info {
-                terminal::ConnectionInfo::Ssh {
-                    host,
-                    port,
-                    username,
-                    password,
-                    private_key_path,
-                    passphrase,
-                    session_id,
-                } => {
-                    let auth = if let Some(ref key_path) = private_key_path {
-                        terminal::SshAuthConfig::PrivateKey {
-                            path: key_path.clone(),
-                            passphrase: passphrase.clone(),
-                        }
-                    } else if let Some(ref pwd) = password {
-                        terminal::SshAuthConfig::Password(pwd.clone())
-                    } else {
-                        terminal::SshAuthConfig::Auto
-                    };
-
-                    let mut ssh_config = terminal::SshConfig::new(host, port).with_auth(auth);
-                    if let Some(user) = username {
-                        ssh_config = ssh_config.with_username(user);
-                    }
-
-                    let task = cx.update(|window, cx| {
-                        let settings = terminal::terminal_settings::TerminalSettings::get_global(cx);
-                        terminal::TerminalBuilder::new_with_ssh_and_session_id(
-                            ssh_config,
-                            session_id,
-                            settings.cursor_shape,
-                            settings.alternate_scroll,
-                            settings.max_scroll_history_lines,
-                            window.window_handle().window_id().as_u64(),
-                            cx,
-                            util::paths::PathStyle::local(),
-                        )
+            match reconnect_task.await {
+                Ok(connection) => {
+                    this.update(cx, |this, cx| {
+                        this.terminal.update(cx, |terminal, cx| {
+                            terminal.set_connection(connection);
+                            terminal.write_output(b"\x1b[32mConnected\x1b[0m\r\n", cx);
+                        });
+                        cx.notify();
                     })?;
-                    task.await?
                 }
-                terminal::ConnectionInfo::Telnet {
-                    host,
-                    port,
-                    username,
-                    password,
-                    session_id,
-                } => {
-                    let mut telnet_config = terminal::TelnetConfig::new(host, port);
-                    if let Some(user) = username {
-                        telnet_config = telnet_config.with_username(user);
-                    }
-                    if let Some(pwd) = password {
-                        telnet_config = telnet_config.with_password(pwd);
-                    }
-
-                    let task = cx.update(|window, cx| {
-                        let settings = terminal::terminal_settings::TerminalSettings::get_global(cx);
-                        terminal::TerminalBuilder::new_with_telnet_and_session_id(
-                            telnet_config,
-                            session_id,
-                            settings.cursor_shape,
-                            settings.alternate_scroll,
-                            settings.max_scroll_history_lines,
-                            window.window_handle().window_id().as_u64(),
-                            cx,
-                            util::paths::PathStyle::local(),
-                        )
+                Err(err) => {
+                    this.update(cx, |this, cx| {
+                        this.terminal.update(cx, |terminal, cx| {
+                            let message = format!(
+                                "\x1b[31mConnection failed: {}\x1b[0m\r\n\x1b[31mPress Enter to retry\x1b[0m\r\n",
+                                err
+                            );
+                            terminal.write_output(message.as_bytes(), cx);
+                        });
+                        cx.notify();
                     })?;
-                    task.await?
                 }
-            };
-
-            this.update_in(cx, |this, window, cx| {
-                let terminal = cx.new(|cx| terminal.subscribe(cx));
-                this.set_terminal(terminal, window, cx);
-                this.needs_serialize = true;
-                cx.notify();
-            })?;
+            }
 
             anyhow::Ok(())
         })

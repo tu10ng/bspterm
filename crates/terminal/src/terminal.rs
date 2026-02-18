@@ -376,7 +376,7 @@ impl TerminalBuilder {
         let mut term = Term::new(
             config.clone(),
             &TerminalBounds::default(),
-            ZedListener(events_tx),
+            ZedListener(events_tx.clone()),
         );
 
         if let AlternateScroll::Off = alternate_scroll {
@@ -388,6 +388,7 @@ impl TerminalBuilder {
         let terminal = Terminal {
             task: None,
             terminal_type: TerminalType::DisplayOnly,
+            events_tx,
             connection_info: None,
             pty_info: None,
             completion_tx: None,
@@ -602,7 +603,7 @@ impl TerminalBuilder {
             //And connect them together
             let event_loop = EventLoop::new(
                 term.clone(),
-                ZedListener(events_tx),
+                ZedListener(events_tx.clone()),
                 pty,
                 pty_options.drain_on_exit,
                 false,
@@ -628,6 +629,7 @@ impl TerminalBuilder {
                 completion_tx,
                 term,
                 term_config: config,
+                events_tx,
                 title_override: terminal_title_override,
                 events: VecDeque::with_capacity(10), //Should never get this high.
                 last_content: Default::default(),
@@ -789,6 +791,7 @@ impl TerminalBuilder {
             let ssh_connection = tokio_handle
                 .spawn({
                     let tokio_handle = tokio_handle.clone();
+                    let events_tx_clone = events_tx.clone();
                     async move {
                         let session_manager = connection::ssh::SshSessionManager::new();
                         let session = session_manager
@@ -800,7 +803,7 @@ impl TerminalBuilder {
                             session,
                             &ssh_config,
                             initial_size,
-                            events_tx,
+                            events_tx_clone,
                             tokio_handle,
                         )
                         .await
@@ -820,6 +823,7 @@ impl TerminalBuilder {
                 completion_tx: None,
                 term,
                 term_config: config,
+                events_tx,
                 title_override: None,
                 events: VecDeque::with_capacity(10),
                 last_content: Default::default(),
@@ -940,6 +944,7 @@ impl TerminalBuilder {
                 .spawn({
                     let tokio_handle = tokio_handle.clone();
                     let telnet_config = telnet_config.clone();
+                    let events_tx_clone = events_tx.clone();
                     async move {
                         let (session, read_half, write_half) =
                             connection::telnet::TelnetSession::connect(&telnet_config)
@@ -952,7 +957,7 @@ impl TerminalBuilder {
                             write_half,
                             &telnet_config,
                             initial_size,
-                            events_tx,
+                            events_tx_clone,
                             tokio_handle,
                         )
                         .await
@@ -972,6 +977,7 @@ impl TerminalBuilder {
                 completion_tx: None,
                 term,
                 term_config: config,
+                events_tx,
                 title_override: None,
                 events: VecDeque::with_capacity(10),
                 last_content: Default::default(),
@@ -1121,7 +1127,7 @@ impl TerminalBuilder {
         let mut term = Term::new(
             config.clone(),
             &TerminalBounds::default(),
-            ZedListener(events_tx),
+            ZedListener(events_tx.clone()),
         );
 
         if let AlternateScroll::Off = alternate_scroll {
@@ -1138,6 +1144,7 @@ impl TerminalBuilder {
             completion_tx: None,
             term,
             term_config: config,
+            events_tx,
             title_override: None,
             events: VecDeque::with_capacity(10),
             last_content: Default::default(),
@@ -1303,6 +1310,7 @@ pub struct Terminal {
     completion_tx: Option<Sender<Option<ExitStatus>>>,
     term: Arc<FairMutex<Term<ZedListener>>>,
     term_config: Config,
+    events_tx: UnboundedSender<AlacTermEvent>,
     events: VecDeque<InternalEvent>,
     /// This is only used for mouse mode cell change detection
     last_mouse: Option<(AlacPoint, AlacDirection)>,
@@ -2808,6 +2816,126 @@ impl Terminal {
         {
             connection.shutdown().ok();
         }
+    }
+
+    /// Reconnect to remote host, preserving scrollback history.
+    /// Returns a Task that resolves to the new connection on success.
+    pub fn reconnect(
+        &self,
+        cx: &App,
+    ) -> Task<Result<Box<dyn connection::TerminalConnection>>> {
+        let Some(connection_info) = self.connection_info.clone() else {
+            return Task::ready(Err(anyhow::anyhow!("No connection info available")));
+        };
+
+        let tokio_handle = gpui_tokio::Tokio::handle(cx);
+        let events_tx = self.events_tx.clone();
+        let terminal_size = self.last_content.terminal_bounds.into();
+
+        cx.spawn(async move |_| {
+            match connection_info {
+                ConnectionInfo::Ssh {
+                    host,
+                    port,
+                    username,
+                    password,
+                    private_key_path,
+                    passphrase,
+                    ..
+                } => {
+                    let auth = if let Some(ref key_path) = private_key_path {
+                        connection::ssh::SshAuthConfig::PrivateKey {
+                            path: key_path.clone(),
+                            passphrase: passphrase.clone(),
+                        }
+                    } else if let Some(ref pwd) = password {
+                        connection::ssh::SshAuthConfig::Password(pwd.clone())
+                    } else {
+                        connection::ssh::SshAuthConfig::Auto
+                    };
+
+                    let mut ssh_config = connection::ssh::SshConfig::new(host, port).with_auth(auth);
+                    if let Some(user) = username {
+                        ssh_config = ssh_config.with_username(user);
+                    }
+
+                    let ssh_connection = tokio_handle
+                        .spawn({
+                            let tokio_handle = tokio_handle.clone();
+                            async move {
+                                let session_manager = connection::ssh::SshSessionManager::new();
+                                let session = session_manager
+                                    .get_or_create_session(&ssh_config)
+                                    .await
+                                    .context("failed to establish SSH session")?;
+
+                                connection::ssh::SshTerminalConnection::new(
+                                    session,
+                                    &ssh_config,
+                                    terminal_size,
+                                    events_tx,
+                                    tokio_handle,
+                                )
+                                .await
+                                .context("failed to create SSH terminal channel")
+                            }
+                        })
+                        .await
+                        .context("SSH connection task panicked")??;
+
+                    Ok(Box::new(ssh_connection) as Box<dyn connection::TerminalConnection>)
+                }
+                ConnectionInfo::Telnet {
+                    host,
+                    port,
+                    username,
+                    password,
+                    ..
+                } => {
+                    let mut telnet_config = connection::telnet::TelnetConfig::new(host, port);
+                    if let Some(user) = username {
+                        telnet_config = telnet_config.with_username(user);
+                    }
+                    if let Some(pwd) = password {
+                        telnet_config = telnet_config.with_password(pwd);
+                    }
+
+                    let telnet_connection = tokio_handle
+                        .spawn({
+                            let tokio_handle = tokio_handle.clone();
+                            let telnet_config = telnet_config.clone();
+                            async move {
+                                let (session, read_half, write_half) =
+                                    connection::telnet::TelnetSession::connect(&telnet_config)
+                                        .await
+                                        .context("failed to establish Telnet connection")?;
+
+                                connection::telnet::TelnetTerminalConnection::new(
+                                    session,
+                                    read_half,
+                                    write_half,
+                                    &telnet_config,
+                                    terminal_size,
+                                    events_tx,
+                                    tokio_handle,
+                                )
+                                .await
+                                .context("failed to create Telnet terminal connection")
+                            }
+                        })
+                        .await
+                        .context("Telnet connection task panicked")??;
+
+                    Ok(Box::new(telnet_connection) as Box<dyn connection::TerminalConnection>)
+                }
+            }
+        })
+    }
+
+    /// Set a new connection after successful reconnect.
+    pub fn set_connection(&mut self, connection: Box<dyn connection::TerminalConnection>) {
+        self.terminal_type = TerminalType::Connected { connection };
+        self.disconnection_reason = None;
     }
 
     pub fn print_user_disconnection_message(&mut self, cx: &mut Context<Self>) {
