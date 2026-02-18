@@ -494,7 +494,7 @@ fn init_renderers(cx: &mut App) {
         .add_basic_renderer::<f32>(render_number_field)
         .add_basic_renderer::<u32>(render_number_field)
         .add_basic_renderer::<u64>(render_number_field)
-        .add_basic_renderer::<usize>(render_number_field)
+        .add_basic_renderer::<usize>(render_editable_number_field)
         .add_basic_renderer::<NonZero<usize>>(render_number_field)
         .add_basic_renderer::<NonZeroU32>(render_number_field)
         .add_basic_renderer::<settings::CodeFade>(render_number_field)
