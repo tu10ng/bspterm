@@ -1439,6 +1439,7 @@ impl Terminal {
                         }
                         connection.shutdown().ok();
                     }
+                    self.print_disconnection_message(cx);
                 }
                 self.register_task_finished(Some(9), cx);
             }
@@ -2786,12 +2787,42 @@ impl Terminal {
         self.disconnection_reason.as_deref()
     }
 
+    pub fn print_disconnection_message(&mut self, cx: &mut Context<Self>) {
+        let reason = self
+            .disconnection_reason
+            .as_deref()
+            .unwrap_or("Connection closed");
+
+        // \x1b[31m = red, \x1b[1m = bold, \x1b[0m = reset
+        let message = format!(
+            "\r\n\x1b[31m\x1b[1m[Disconnected]\x1b[0m \x1b[31m{}\x1b[0m\r\n\x1b[31mPress Enter to reconnect\x1b[0m\r\n",
+            reason
+        );
+
+        self.write_output(message.as_bytes(), cx);
+    }
+
     pub fn disconnect(&mut self) {
         if let TerminalType::Connected { connection } =
             std::mem::replace(&mut self.terminal_type, TerminalType::Disconnected)
         {
             connection.shutdown().ok();
         }
+    }
+
+    pub fn print_user_disconnection_message(&mut self, cx: &mut Context<Self>) {
+        // \x1b[33m = yellow, \x1b[1m = bold, \x1b[0m = reset
+        let message =
+            "\r\n\x1b[33m\x1b[1m[Disconnected]\x1b[0m\r\n\x1b[33mPress Enter to reconnect\x1b[0m\r\n";
+
+        self.write_output(message.as_bytes(), cx);
+    }
+
+    pub fn print_restored_disconnection_message(&mut self, cx: &mut Context<Self>) {
+        // \x1b[36m = cyan, \x1b[0m = reset
+        let message = "\x1b[36mPress Enter to reconnect\x1b[0m\r\n";
+
+        self.write_output(message.as_bytes(), cx);
     }
 
     pub fn clone_builder(&self, cx: &App, cwd: Option<PathBuf>) -> Task<Result<TerminalBuilder>> {

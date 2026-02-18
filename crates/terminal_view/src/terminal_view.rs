@@ -11,7 +11,7 @@ use editor::{Editor, EditorSettings, actions::SelectAll, blink_manager::BlinkMan
 use gpui::{
     Action, AnyElement, App, ClipboardEntry, DismissEvent, Entity, EventEmitter, FocusHandle,
     Focusable, KeyBindingContextPredicate, KeyContext, KeyDownEvent, KeybindingKeystroke,
-    Keystroke, KeystrokeEvent, MouseButton, MouseDownEvent, Pixels, Point, Render,
+    Keystroke, KeystrokeEvent, Modifiers, MouseButton, MouseDownEvent, Pixels, Point, Render,
     ScrollWheelEvent, Styled, Subscription, Task, WeakEntity, actions, anchored, deferred, div,
 };
 use menu;
@@ -275,6 +275,13 @@ impl TerminalView {
 
         let has_connection_info = terminal.read(cx).connection_info().is_some();
 
+        // Print reconnection hint for restored disconnected terminals
+        if terminal.read(cx).is_disconnected() && has_connection_info {
+            terminal.update(cx, |terminal, cx| {
+                terminal.print_restored_disconnection_message(cx);
+            });
+        }
+
         Self {
             terminal,
             workspace: workspace_handle,
@@ -506,16 +513,21 @@ impl TerminalView {
             .upgrade()
             .and_then(|workspace| workspace.read(cx).panel::<TerminalPanel>(cx))
             .is_some_and(|terminal_panel| terminal_panel.read(cx).assistant_enabled());
-        let has_selection = self
-            .terminal
-            .read(cx)
+        let terminal = self.terminal.read(cx);
+        let has_selection = terminal
             .last_content
             .selection_text
             .as_ref()
             .is_some_and(|text| !text.is_empty());
+        let is_disconnected = terminal.is_disconnected();
+        let has_connection_info = terminal.connection_info().is_some();
+
         let context_menu = ContextMenu::build(window, cx, |menu, _, _| {
             menu.context(self.focus_handle.clone())
                 .action("New Terminal", Box::new(NewTerminal::default()))
+                .when(is_disconnected && has_connection_info, |menu| {
+                    menu.action("Reconnect", Box::new(ReconnectTerminal))
+                })
                 .separator()
                 .action("Copy", Box::new(Copy))
                 .action("Paste", Box::new(Paste))
@@ -1059,8 +1071,9 @@ impl TerminalView {
 
     fn disconnect_terminal(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if self.terminal.read(cx).connection_info().is_some() {
-            self.terminal.update(cx, |terminal, _| {
+            self.terminal.update(cx, |terminal, cx| {
                 terminal.disconnect();
+                terminal.print_user_disconnection_message(cx);
             });
             cx.notify();
         }
@@ -1286,6 +1299,20 @@ impl TerminalView {
             return;
         }
 
+        // When disconnected, pressing Enter triggers reconnection
+        let should_reconnect = {
+            let terminal = self.terminal.read(cx);
+            terminal.is_disconnected()
+                && terminal.connection_info().is_some()
+                && event.keystroke.key == "enter"
+                && event.keystroke.modifiers == Modifiers::none()
+        };
+        if should_reconnect {
+            self.reconnect_terminal(window, cx);
+            cx.stop_propagation();
+            return;
+        }
+
         let settings = TerminalSettings::get_global(cx);
 
         if self.should_skip_shell(&event.keystroke, &settings, &event.context_stack, cx) {
@@ -1496,7 +1523,7 @@ impl Render for TerminalView {
                     .size_full()
                     .bg(cx.theme().colors().editor_background)
                     .child(TerminalElement::new(
-                        terminal_handle.clone(),
+                        terminal_handle,
                         terminal_view_handle,
                         self.workspace.clone(),
                         self.focus_handle.clone(),
@@ -1519,69 +1546,6 @@ impl Render for TerminalView {
                         )
                     }),
             )
-            .when(terminal_handle.read(cx).is_disconnected(), |el| {
-                let terminal = terminal_handle.read(cx);
-                let connection_description = terminal.connection_info().map(|info| {
-                    match info {
-                        terminal::ConnectionInfo::Ssh { host, port, username, .. } => {
-                            if let Some(user) = username {
-                                format!("SSH: {}@{}:{}", user, host, port)
-                            } else {
-                                format!("SSH: {}:{}", host, port)
-                            }
-                        }
-                        terminal::ConnectionInfo::Telnet { host, port, username, .. } => {
-                            if let Some(user) = username {
-                                format!("Telnet: {}@{}:{}", user, host, port)
-                            } else {
-                                format!("Telnet: {}:{}", host, port)
-                            }
-                        }
-                    }
-                }).unwrap_or_else(|| "Disconnected".to_string());
-
-                el.child(
-                    div()
-                        .id("disconnected-overlay")
-                        .absolute()
-                        .inset_0()
-                        .bg(cx.theme().colors().editor_background.opacity(0.9))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .child(
-                            v_flex()
-                                .gap_3()
-                                .items_center()
-                                .child(
-                                    Icon::new(IconName::Disconnected)
-                                        .size(IconSize::XLarge)
-                                        .color(Color::Warning),
-                                )
-                                .child(
-                                    Label::new(connection_description)
-                                        .size(LabelSize::Large)
-                                        .color(Color::Default),
-                                )
-                                .child(
-                                    Label::new(
-                                        terminal.disconnection_reason()
-                                            .map(|s| s.to_string())
-                                            .unwrap_or_else(|| "Connection closed".to_string())
-                                    )
-                                        .size(LabelSize::Default)
-                                        .color(Color::Muted),
-                                )
-                                .child(
-                                    Button::new("reconnect", "Reconnect")
-                                        .style(ButtonStyle::Filled)
-                                        .on_click(cx.listener(|this, _, window, cx| {
-                                            this.reconnect_terminal(window, cx);
-                                        })),
-                                ),
-                        ),
-                )
-            })
             .children(self.context_menu.as_ref().map(|(menu, position, _)| {
                 deferred(
                     anchored()
