@@ -6263,7 +6263,7 @@ fn terminal_page() -> SettingsPage {
             SettingsPageItem::SectionHeader("Advanced Settings"),
             SettingsPageItem::SettingItem(SettingItem {
                 title: "Max Scroll History Lines",
-                description: "Maximum number of lines to keep in scrollback history (max: 100,000; 0 disables scrolling).",
+                description: "Maximum number of lines to keep in scrollback history (max: 1,000,000; 0 disables scrolling).",
                 field: Box::new(SettingField {
                     json_path: Some("terminal.max_scroll_history_lines"),
                     pick: |settings_content| {

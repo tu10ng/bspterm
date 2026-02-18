@@ -89,6 +89,8 @@ actions!(
     [
         /// Clears the terminal screen.
         Clear,
+        /// Clears only the scrollback buffer (preserves visible screen).
+        ClearScrollback,
         /// Copies selected text to the clipboard.
         Copy,
         /// Pastes from the clipboard.
@@ -175,6 +177,7 @@ pub enum MaybeNavigationTarget {
 enum InternalEvent {
     Resize(TerminalBounds),
     Clear,
+    ClearScrollback,
     // FocusNextMatch,
     Scroll(AlacScroll),
     ScrollToAlacPoint(AlacPoint),
@@ -344,8 +347,8 @@ impl Display for TerminalError {
 }
 
 // https://github.com/alacritty/alacritty/blob/cb3a79dbf6472740daca8440d5166c1d4af5029e/extra/man/alacritty.5.scd?plain=1#L207-L213
-const DEFAULT_SCROLL_HISTORY_LINES: usize = 10_000;
-pub const MAX_SCROLL_HISTORY_LINES: usize = 100_000;
+const DEFAULT_SCROLL_HISTORY_LINES: usize = 100_000;
+pub const MAX_SCROLL_HISTORY_LINES: usize = 1_000_000;
 
 pub struct TerminalBuilder {
     terminal: Terminal,
@@ -1549,6 +1552,11 @@ impl Terminal {
 
                 cx.emit(Event::Wakeup);
             }
+            InternalEvent::ClearScrollback => {
+                trace!("Clearing scrollback only");
+                term.clear_screen(ClearMode::Saved);
+                cx.emit(Event::Wakeup);
+            }
             InternalEvent::Scroll(scroll) => {
                 trace!("Scrolling: scroll={scroll:?}");
                 term.scroll_display(*scroll);
@@ -1867,6 +1875,10 @@ impl Terminal {
 
     pub fn clear(&mut self) {
         self.events.push_back(InternalEvent::Clear)
+    }
+
+    pub fn clear_scrollback(&mut self) {
+        self.events.push_back(InternalEvent::ClearScrollback)
     }
 
     pub fn scroll_line_up(&mut self) {

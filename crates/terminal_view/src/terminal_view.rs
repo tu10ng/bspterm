@@ -30,9 +30,9 @@ use std::{
 };
 use task::TaskId;
 use terminal::{
-    Clear, Copy, Event, HoveredWord, MaybeNavigationTarget, Paste, ScrollLineDown, ScrollLineUp,
-    ScrollPageDown, ScrollPageUp, ScrollToBottom, ScrollToTop, ShowCharacterPalette, TaskState,
-    TaskStatus, Terminal, TerminalBounds, ToggleViMode,
+    Clear, ClearScrollback, Copy, Event, HoveredWord, MaybeNavigationTarget, Paste, ScrollLineDown,
+    ScrollLineUp, ScrollPageDown, ScrollPageUp, ScrollToBottom, ScrollToTop, ShowCharacterPalette,
+    TaskState, TaskStatus, Terminal, TerminalBounds, ToggleViMode,
     alacritty_terminal::{
         index::Point as AlacPoint,
         term::{TermMode, point_to_viewport, search::RegexSearch},
@@ -659,6 +659,12 @@ impl TerminalView {
     fn clear(&mut self, _: &Clear, _: &mut Window, cx: &mut Context<Self>) {
         self.scroll_top = px(0.);
         self.terminal.update(cx, |term, _| term.clear());
+        cx.notify();
+    }
+
+    fn clear_scrollback(&mut self, _: &ClearScrollback, _: &mut Window, cx: &mut Context<Self>) {
+        self.scroll_top = px(0.);
+        self.terminal.update(cx, |term, _| term.clear_scrollback());
         cx.notify();
     }
 
@@ -1435,6 +1441,7 @@ impl Render for TerminalView {
             .on_action(cx.listener(TerminalView::copy))
             .on_action(cx.listener(TerminalView::paste))
             .on_action(cx.listener(TerminalView::clear))
+            .on_action(cx.listener(TerminalView::clear_scrollback))
             .on_action(cx.listener(TerminalView::scroll_line_up))
             .on_action(cx.listener(TerminalView::scroll_line_down))
             .on_action(cx.listener(TerminalView::scroll_page_up))
@@ -1723,6 +1730,8 @@ impl Item for TerminalView {
         if terminal.task().is_none() {
             actions.push(("Rename".into(), Box::new(RenameTerminal) as Box<dyn gpui::Action>));
         }
+
+        actions.push(("Clear Scrollback".into(), Box::new(ClearScrollback) as Box<dyn gpui::Action>));
 
         actions
     }

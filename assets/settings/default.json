@@ -1727,9 +1727,9 @@
     // The weight of the editor font in standard CSS units from 100 to 900.
     "font_weight": 400,
     // Sets the maximum number of lines in the terminal's scrollback buffer.
-    // Default: 10_000, maximum: 100_000 (all bigger values set will be treated as 100_000), 0 disables the scrolling.
+    // Default: 100_000, maximum: 1_000_000 (all bigger values set will be treated as 1_000_000), 0 disables the scrolling.
     // Existing terminals will not pick up this change until they are recreated.
-    "max_scroll_history_lines": 10000,
+    "max_scroll_history_lines": 100000,
     // The multiplier for scrolling speed in the terminal.
     "scroll_multiplier": 1.0,
     // The minimum APCA perceptual contrast between foreground and background colors.
