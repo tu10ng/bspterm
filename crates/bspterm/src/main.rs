@@ -671,6 +671,8 @@ fn main() {
         });
         vim::init(cx);
         terminal_view::init(cx);
+        terminal_scripting::init(cx);
+        script_panel::init(cx);
         editor_panel::init(cx);
         journal::init(app_state.clone(), cx);
         encoding_selector::init(cx);

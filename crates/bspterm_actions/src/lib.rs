@@ -320,6 +320,18 @@ pub mod remote_explorer {
     );
 }
 
+pub mod script_panel {
+    use gpui::actions;
+
+    actions!(
+        script_panel,
+        [
+            /// Toggles focus on the script panel.
+            ToggleFocus
+        ]
+    );
+}
+
 pub mod feedback {
     use gpui::actions;
 

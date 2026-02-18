@@ -709,3 +709,139 @@ The `editor_panel` crate (`crates/editor_panel`) provides a dockable panel for c
 - **Action**: `zed_actions::editor_panel::ToggleFocus`
 - **Position**: Left, Right, or Bottom dock (default: Right)
 - **Auto-close**: Panel closes automatically when last tab is closed
+
+## Terminal Python Scripting
+
+The terminal scripting system allows Python scripts to automate terminal sessions via a Unix socket JSON-RPC server.
+
+### Architecture
+
+```
++------------------+     Unix Socket      +--------------------+
+|  Python Script   | <------------------> |  Scripting Server  |
+|  (bspterm.py)    |    JSON-RPC 2.0      |  (Rust crate)      |
++------------------+                      +--------------------+
+        ^                                          |
+        |                                 +--------v--------+
++-------+--------+                        | Terminal Entity |
+| Script Panel   |                        | (PTY/SSH/Telnet)|
+| (UI 管理面板)   |                        +-----------------+
++----------------+
+```
+
+### Crates
+
+| Crate | Path | Purpose |
+|-------|------|---------|
+| `terminal_scripting` | `crates/terminal_scripting/` | Unix socket server, JSON-RPC protocol, terminal registry |
+| `script_panel` | `crates/script_panel/` | UI panel for script management and execution |
+
+### Terminal Registry
+
+Terminals are automatically registered when created (`TerminalView::new()`) and tracked for focus changes:
+
+```rust
+// In terminal_view.rs
+let scripting_id = TerminalRegistry::register(&terminal, term_name, cx);
+
+// On focus
+TerminalRegistry::set_focused(Some(id), cx);
+```
+
+The registry uses `WeakEntity<Terminal>` references, so terminals are automatically cleaned up when dropped.
+
+### JSON-RPC Methods
+
+| Method | Description |
+|--------|-------------|
+| `session.current` | Get current focused terminal |
+| `session.list` | List all terminal sessions |
+| `session.create_ssh` | Create background SSH connection (no UI) |
+| `session.create_telnet` | Create background Telnet connection (no UI) |
+| `terminal.send` | Send raw input to terminal |
+| `terminal.read` | Read current screen content |
+| `terminal.wait_for` | Wait for pattern in output (regex) |
+| `terminal.run` | Run command and wait for completion |
+| `terminal.close` | Close terminal connection |
+
+### Python Client Library
+
+Location: `assets/scripts/bspterm.py` (auto-installed to `~/.config/zed/scripts/`)
+
+```python
+from bspterm import current_terminal, Session, SSH, Telnet
+
+# Scenario 1: Operate on focused terminal
+term = current_terminal()
+output = term.run("ls -la")
+print(output)
+
+# Scenario 2: List all sessions
+sessions = Session.list()
+for s in sessions:
+    print(f"{s.id}: {s.name}")
+
+# Scenario 3: Background SSH connection
+term = SSH.connect("192.168.1.1", user="root", password="secret")
+term.wait_for("$")
+output = term.run("hostname")
+term.close()
+
+# Scenario 4: Background Telnet connection
+term = Telnet.connect("192.168.1.1", port=23)
+term.wait_for("login:")
+term.send("admin\n")
+term.wait_for(">")
+output = term.run("show version")
+term.close()
+
+# Scenario 5: Interactive commands
+term = current_terminal()
+term.send("passwd\n")
+term.wait_for("New password:")
+term.send("newpass123\n")
+term.wait_for("Retype")
+term.send("newpass123\n")
+```
+
+### Script Panel
+
+- **Location**: Bottom dock (View > Script Panel)
+- **Action**: `bspterm_actions::script_panel::ToggleFocus`
+- **Scripts Directory**: `~/.config/zed/scripts/*.py`
+
+Features:
+- Script list with refresh button
+- Run/Stop controls
+- Real-time output display
+- Automatic focus terminal binding (via `BSPTERM_CURRENT_TERMINAL` env var)
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `BSPTERM_SOCKET` | Unix socket path for JSON-RPC server |
+| `BSPTERM_CURRENT_TERMINAL` | Terminal ID of focused terminal when script started |
+| `PYTHONPATH` | Set to scripts directory for `bspterm` module import |
+
+### Testing
+
+1. Build and run: `cargo run`
+2. Open a terminal (Ctrl+`)
+3. Open Script Panel (View > Script Panel)
+4. Create test script `~/.config/zed/scripts/hello.py`:
+```python
+from bspterm import current_terminal
+term = current_terminal()
+print(f"Terminal ID: {term.id}")
+output = term.run("echo 'Hello from Python!'")
+print(f"Output: {output}")
+```
+5. Click Run and observe output in Script Panel
+
+### Non-blocking I/O
+
+The script runner uses non-blocking I/O to prevent UI hangs:
+- stdout/stderr are set to `O_NONBLOCK` via `fcntl`
+- `read_output()` handles `WouldBlock` errors gracefully
+- Output is polled during render cycles

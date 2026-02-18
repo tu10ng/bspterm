@@ -1,0 +1,29 @@
+[package]
+name = "terminal_scripting"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+license = "GPL-3.0-or-later"
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/terminal_scripting.rs"
+doctest = false
+
+[dependencies]
+anyhow.workspace = true
+futures.workspace = true
+gpui.workspace = true
+log.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+settings.workspace = true
+smol.workspace = true
+terminal.workspace = true
+util.workspace = true
+uuid = { workspace = true, features = ["v4", "serde"] }
+regex.workspace = true
+dirs = "5.0"

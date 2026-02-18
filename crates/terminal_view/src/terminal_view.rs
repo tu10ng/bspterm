@@ -62,6 +62,7 @@ use workspace::{
     },
 };
 use bspterm_actions::{agent::AddSelectionToThread, assistant::InlineAssist};
+use terminal_scripting::TerminalRegistry;
 
 struct ImeState {
     marked_text: String,
@@ -151,6 +152,7 @@ pub struct TerminalView {
     rename_editor: Option<Entity<Editor>>,
     rename_editor_subscription: Option<Subscription>,
     keystroke_intercept_subscription: Option<Subscription>,
+    scripting_id: Option<uuid::Uuid>,
     _subscriptions: Vec<Subscription>,
     _terminal_subscriptions: Vec<Subscription>,
 }
@@ -282,6 +284,11 @@ impl TerminalView {
             });
         }
 
+        let scripting_id = {
+            let term_name = terminal.read(cx).title(false);
+            Some(TerminalRegistry::register(&terminal, term_name, cx))
+        };
+
         Self {
             terminal,
             workspace: workspace_handle,
@@ -307,6 +314,7 @@ impl TerminalView {
             rename_editor: None,
             rename_editor_subscription: None,
             keystroke_intercept_subscription: None,
+            scripting_id,
             _subscriptions: subscriptions,
             _terminal_subscriptions: terminal_subscriptions,
         }
@@ -1391,6 +1399,10 @@ impl TerminalView {
         }
 
         self.register_keystroke_interceptor(cx);
+
+        if let Some(id) = self.scripting_id {
+            TerminalRegistry::set_focused(Some(id), cx);
+        }
 
         window.invalidate_character_coordinates();
         cx.notify();

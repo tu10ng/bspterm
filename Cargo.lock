@@ -2596,6 +2596,7 @@ dependencies = [
  "repl",
  "reqwest_client",
  "rope",
+ "script_panel",
  "search",
  "semver",
  "serde",
@@ -2618,6 +2619,7 @@ dependencies = [
  "telemetry",
  "telemetry_events",
  "tempfile",
+ "terminal_scripting",
  "terminal_view",
  "theme",
  "theme_extension",
@@ -15727,6 +15729,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "script_panel"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bspterm_actions",
+ "gpui",
+ "libc",
+ "log",
+ "parking_lot",
+ "paths",
+ "serde",
+ "terminal_scripting",
+ "ui",
+ "uuid",
+ "workspace",
+]
+
+[[package]]
 name = "scroll"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -18016,6 +18036,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "terminal_scripting"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dirs 5.0.1",
+ "futures 0.3.31",
+ "gpui",
+ "log",
+ "parking_lot",
+ "regex",
+ "serde",
+ "serde_json",
+ "settings",
+ "smol",
+ "terminal",
+ "util",
+ "uuid",
+]
+
+[[package]]
 name = "terminal_size"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -18056,6 +18096,7 @@ dependencies = [
  "shellexpand 2.1.2",
  "task",
  "terminal",
+ "terminal_scripting",
  "theme",
  "ui",
  "util",

@@ -184,7 +184,9 @@ members = [
     "crates/telemetry",
     "crates/telemetry_events",
     "crates/terminal",
+    "crates/terminal_scripting",
     "crates/terminal_view",
+    "crates/script_panel",
     "crates/text",
     "crates/theme",
     "crates/theme_extension",
@@ -424,7 +426,9 @@ tasks_ui = { path = "crates/tasks_ui" }
 telemetry = { path = "crates/telemetry" }
 telemetry_events = { path = "crates/telemetry_events" }
 terminal = { path = "crates/terminal" }
+terminal_scripting = { path = "crates/terminal_scripting" }
 terminal_view = { path = "crates/terminal_view" }
+script_panel = { path = "crates/script_panel" }
 text = { path = "crates/text" }
 theme = { path = "crates/theme" }
 theme_extension = { path = "crates/theme_extension" }
