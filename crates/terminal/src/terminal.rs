@@ -424,6 +424,7 @@ impl TerminalBuilder {
                 window_id,
             },
             child_exited: None,
+            disconnection_reason: None,
             event_loop_task: Task::ready(Ok(())),
             background_executor: background_executor.clone(),
             path_style,
@@ -661,6 +662,7 @@ impl TerminalBuilder {
                     window_id,
                 },
                 child_exited: None,
+                disconnection_reason: None,
                 event_loop_task: Task::ready(Ok(())),
                 background_executor,
                 path_style,
@@ -848,6 +850,7 @@ impl TerminalBuilder {
                     window_id,
                 },
                 child_exited: None,
+                disconnection_reason: None,
                 event_loop_task: Task::ready(Ok(())),
                 background_executor,
                 path_style,
@@ -999,6 +1002,7 @@ impl TerminalBuilder {
                     window_id,
                 },
                 child_exited: None,
+                disconnection_reason: None,
                 event_loop_task: Task::ready(Ok(())),
                 background_executor,
                 path_style,
@@ -1164,6 +1168,7 @@ impl TerminalBuilder {
                 window_id,
             },
             child_exited: None,
+            disconnection_reason: None,
             event_loop_task: Task::ready(Ok(())),
             background_executor: background_executor.clone(),
             path_style,
@@ -1322,6 +1327,7 @@ pub struct Terminal {
     template: CopyTemplate,
     activation_script: Vec<String>,
     child_exited: Option<ExitStatus>,
+    disconnection_reason: Option<String>,
     event_loop_task: Task<Result<(), anyhow::Error>>,
     background_executor: BackgroundExecutor,
     path_style: PathStyle,
@@ -1423,7 +1429,19 @@ impl Terminal {
             AlacTermEvent::Bell => {
                 cx.emit(Event::Bell);
             }
-            AlacTermEvent::Exit => self.register_task_finished(Some(9), cx),
+            AlacTermEvent::Exit => {
+                if self.is_remote_terminal {
+                    if let TerminalType::Connected { connection } =
+                        std::mem::replace(&mut self.terminal_type, TerminalType::Disconnected)
+                    {
+                        if let connection::ConnectionState::Error(msg) = connection.state() {
+                            self.disconnection_reason = Some(msg);
+                        }
+                        connection.shutdown().ok();
+                    }
+                }
+                self.register_task_finished(Some(9), cx);
+            }
             AlacTermEvent::MouseCursorDirty => {
                 //NOOP, Handled in render
             }
@@ -2762,6 +2780,10 @@ impl Terminal {
 
     pub fn is_disconnected(&self) -> bool {
         matches!(self.terminal_type, TerminalType::Disconnected)
+    }
+
+    pub fn disconnection_reason(&self) -> Option<&str> {
+        self.disconnection_reason.as_deref()
     }
 
     pub fn disconnect(&mut self) {

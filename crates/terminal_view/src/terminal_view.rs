@@ -1564,7 +1564,11 @@ impl Render for TerminalView {
                                         .color(Color::Default),
                                 )
                                 .child(
-                                    Label::new("Connection closed")
+                                    Label::new(
+                                        terminal.disconnection_reason()
+                                            .map(|s| s.to_string())
+                                            .unwrap_or_else(|| "Connection closed".to_string())
+                                    )
                                         .size(LabelSize::Default)
                                         .color(Color::Muted),
                                 )
