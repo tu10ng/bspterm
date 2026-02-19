@@ -332,6 +332,20 @@ pub mod script_panel {
     );
 }
 
+pub mod terminal_button_bar {
+    use gpui::actions;
+
+    actions!(
+        terminal_button_bar,
+        [
+            /// Toggles the terminal button bar visibility.
+            ToggleButtonBar,
+            /// Opens the terminal button bar configuration modal.
+            ConfigureButtonBar
+        ]
+    );
+}
+
 pub mod feedback {
     use gpui::actions;
 

@@ -242,6 +242,12 @@ pub fn sessions_file() -> &'static PathBuf {
     SESSIONS_FILE.get_or_init(|| config_dir().join("sessions.json"))
 }
 
+/// Returns the path to the `button_bar.json` file for terminal button bar configuration.
+pub fn button_bar_file() -> &'static PathBuf {
+    static BUTTON_BAR_FILE: OnceLock<PathBuf> = OnceLock::new();
+    BUTTON_BAR_FILE.get_or_init(|| config_dir().join("button_bar.json"))
+}
+
 /// Returns the path to the global settings file.
 pub fn global_settings_file() -> &'static PathBuf {
     static GLOBAL_SETTINGS_FILE: OnceLock<PathBuf> = OnceLock::new();

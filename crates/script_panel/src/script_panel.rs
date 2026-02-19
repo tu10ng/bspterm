@@ -1,4 +1,4 @@
-mod script_runner;
+pub mod script_runner;
 
 use std::path::PathBuf;
 

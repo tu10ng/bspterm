@@ -1,3 +1,4 @@
+mod button_bar;
 mod persistence;
 mod ssh_connect_modal;
 pub mod terminal_element;
@@ -5,6 +6,8 @@ pub mod terminal_panel;
 mod terminal_path_like_target;
 pub mod terminal_scrollbar;
 mod terminal_slash_command;
+
+use button_bar::script_runner::ScriptStatus;
 
 use assistant_slash_command::SlashCommandRegistry;
 use editor::{Editor, EditorSettings, actions::SelectAll, blink_manager::BlinkManager};
@@ -61,8 +64,14 @@ use workspace::{
         Direction, SearchEvent, SearchOptions, SearchToken, SearchableItem, SearchableItemHandle,
     },
 };
-use bspterm_actions::{agent::AddSelectionToThread, assistant::InlineAssist};
-use terminal_scripting::TerminalRegistry;
+use bspterm_actions::{
+    agent::AddSelectionToThread,
+    assistant::InlineAssist,
+    terminal_button_bar::{ConfigureButtonBar, ToggleButtonBar},
+};
+use button_bar::ButtonBarScriptRunner;
+use terminal::{ButtonBarStoreEntity, ButtonBarStoreEvent};
+use terminal_scripting::{ScriptingServer, TerminalRegistry};
 
 struct ImeState {
     marked_text: String,
@@ -104,6 +113,7 @@ pub struct RenameTerminal;
 pub fn init(cx: &mut App) {
     assistant_slash_command::init(cx);
     terminal_panel::init(cx);
+    ButtonBarStoreEntity::init(cx);
 
     register_serializable_item::<TerminalView>(cx);
 
@@ -153,6 +163,8 @@ pub struct TerminalView {
     rename_editor_subscription: Option<Subscription>,
     keystroke_intercept_subscription: Option<Subscription>,
     scripting_id: Option<uuid::Uuid>,
+    button_bar_runner: Option<ButtonBarScriptRunner>,
+    _button_bar_subscription: Option<Subscription>,
     _subscriptions: Vec<Subscription>,
     _terminal_subscriptions: Vec<Subscription>,
 }
@@ -289,6 +301,12 @@ impl TerminalView {
             Some(TerminalRegistry::register(&terminal, term_name, cx))
         };
 
+        let button_bar_subscription = ButtonBarStoreEntity::try_global(cx).map(|store| {
+            cx.subscribe(&store, |_this, _, _event: &ButtonBarStoreEvent, cx| {
+                cx.notify();
+            })
+        });
+
         Self {
             terminal,
             workspace: workspace_handle,
@@ -315,6 +333,8 @@ impl TerminalView {
             rename_editor_subscription: None,
             keystroke_intercept_subscription: None,
             scripting_id,
+            button_bar_runner: None,
+            _button_bar_subscription: button_bar_subscription,
             _subscriptions: subscriptions,
             _terminal_subscriptions: terminal_subscriptions,
         }
@@ -623,6 +643,143 @@ impl TerminalView {
             cx.emit(ItemEvent::UpdateBreadcrumbs);
         }
         cx.notify();
+    }
+
+    fn toggle_button_bar(&mut self, _: &ToggleButtonBar, _window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(store) = ButtonBarStoreEntity::try_global(cx) {
+            store.update(cx, |store, cx| {
+                store.toggle_visibility(cx);
+            });
+        }
+    }
+
+    fn configure_button_bar(&mut self, _: &ConfigureButtonBar, window: &mut Window, cx: &mut Context<Self>) {
+        self.workspace
+            .update(cx, |workspace, cx| {
+                workspace.toggle_modal(window, cx, |window, cx| {
+                    button_bar::ButtonBarConfigModal::new(window, cx)
+                });
+            })
+            .ok();
+    }
+
+    fn render_button_bar(&self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let Some(store) = ButtonBarStoreEntity::try_global(cx) else {
+            return h_flex().id("terminal-button-bar").into_any_element();
+        };
+
+        let buttons = store.read(cx).buttons().to_vec();
+        let running_button_id = self.button_bar_runner.as_ref().map(|r| r.button_id());
+        let terminal_view_handle = cx.entity().downgrade();
+
+        h_flex()
+            .id("terminal-button-bar")
+            .w_full()
+            .gap_2()
+            .px_2()
+            .py_1()
+            .border_t_1()
+            .border_color(cx.theme().colors().border)
+            .bg(cx.theme().colors().surface_background)
+            .children(buttons.iter().map(|button| {
+                let button_id = button.id;
+                let is_running = running_button_id == Some(button_id);
+                let label = button.label.clone();
+                let tooltip = button
+                    .tooltip
+                    .clone()
+                    .unwrap_or_else(|| button.label.clone());
+                let terminal_view_handle = terminal_view_handle.clone();
+
+                ui::Button::new(
+                    SharedString::from(format!("button-bar-btn-{}", button_id)),
+                    label,
+                )
+                .style(ui::ButtonStyle::Tinted(ui::TintColor::Accent))
+                .disabled(is_running)
+                .tooltip(Tooltip::text(tooltip))
+                .on_click(move |_, window, cx| {
+                    terminal_view_handle
+                        .update(cx, |this, cx| {
+                            this.run_button_script(button_id, window, cx);
+                        })
+                        .ok();
+                })
+                .into_any_element()
+            }))
+            .child(div().flex_1())
+            .child(
+                ui::IconButton::new("button-bar-settings", ui::IconName::Settings)
+                    .icon_size(ui::IconSize::Small)
+                    .tooltip(Tooltip::text("Configure Button Bar"))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.configure_button_bar(&ConfigureButtonBar, window, cx);
+                    })),
+            )
+            .into_any_element()
+    }
+
+    fn run_button_script(&mut self, button_id: uuid::Uuid, _window: &mut Window, cx: &mut Context<Self>) {
+        let Some(store) = ButtonBarStoreEntity::try_global(cx) else {
+            return;
+        };
+
+        let Some(button) = store.read(cx).find_button(button_id).cloned() else {
+            return;
+        };
+
+        let Some(socket_path) = ScriptingServer::get(cx) else {
+            log::error!("Scripting server not available for button bar script");
+            return;
+        };
+
+        // Stop any currently running script
+        if let Some(runner) = &mut self.button_bar_runner {
+            runner.stop();
+        }
+
+        let terminal_id = self.scripting_id.map(|id| id.to_string());
+        let script_path = shellexpand::tilde(&button.script_path.to_string_lossy()).into_owned();
+        let mut runner = ButtonBarScriptRunner::new(
+            PathBuf::from(script_path),
+            socket_path,
+            terminal_id,
+            button_id,
+        );
+
+        if let Err(err) = runner.start() {
+            log::error!("Failed to start button bar script: {}", err);
+            return;
+        }
+
+        self.button_bar_runner = Some(runner);
+        cx.notify();
+    }
+
+    fn update_button_bar_runner(&mut self) {
+        let Some(runner) = &mut self.button_bar_runner else {
+            return;
+        };
+
+        // Read and log any output
+        if let Some(output) = runner.read_output() {
+            for line in output.lines() {
+                log::debug!("[button-bar-script] {}", line);
+            }
+        }
+
+        // Check if script has finished
+        match runner.status() {
+            ScriptStatus::Finished(code) => {
+                log::debug!("Button bar script finished with code {}", code);
+                self.button_bar_runner = None;
+            }
+            ScriptStatus::Failed(err) => {
+                log::error!("Button bar script failed: {}", err);
+                self.button_bar_runner = None;
+            }
+            _ => {}
+        }
     }
 
     fn show_character_palette(
@@ -1437,12 +1594,18 @@ impl Render for TerminalView {
             });
         }
 
+        // Update button bar runner status and log output
+        self.update_button_bar_runner();
+
         let terminal_handle = self.terminal.clone();
         let terminal_view_handle = cx.entity();
 
         let focused = self.focus_handle.is_focused(window);
+        let show_button_bar = ButtonBarStoreEntity::try_global(cx)
+            .map(|store| store.read(cx).show_button_bar())
+            .unwrap_or(false);
 
-        div()
+        v_flex()
             .id("terminal-view")
             .size_full()
             .relative()
@@ -1471,6 +1634,8 @@ impl Render for TerminalView {
             .on_action(cx.listener(|this, _: &DisconnectTerminal, window, cx| {
                 this.disconnect_terminal(window, cx);
             }))
+            .on_action(cx.listener(Self::toggle_button_bar))
+            .on_action(cx.listener(Self::configure_button_bar))
             .on_key_down(cx.listener(Self::key_down))
             .on_mouse_down(
                 MouseButton::Right,
@@ -1490,6 +1655,7 @@ impl Render for TerminalView {
                 // TODO: Oddly this wrapper div is needed for TerminalElement to not steal events from the context menu
                 div()
                     .id("terminal-view-container")
+                    .flex_1()
                     .size_full()
                     .bg(cx.theme().colors().editor_background)
                     .child(TerminalElement::new(
@@ -1516,6 +1682,9 @@ impl Render for TerminalView {
                         )
                     }),
             )
+            .when(show_button_bar, |this| {
+                this.child(self.render_button_bar(window, cx))
+            })
             .children(self.context_menu.as_ref().map(|(menu, position, _)| {
                 deferred(
                     anchored()

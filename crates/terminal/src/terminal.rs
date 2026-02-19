@@ -1,3 +1,4 @@
+pub mod button_bar_config;
 pub mod connection;
 pub mod mappings;
 pub mod session_store;
@@ -7,6 +8,10 @@ pub use alacritty_terminal;
 pub use session_store::{
     AuthMethod, GlobalSessionStore, ProtocolConfig, SessionConfig, SessionGroup, SessionNode,
     SessionStore, SessionStoreEntity, SessionStoreEvent, SshSessionConfig, TelnetSessionConfig,
+};
+
+pub use button_bar_config::{
+    ButtonBarStore, ButtonBarStoreEntity, ButtonBarStoreEvent, ButtonConfig, GlobalButtonBarStore,
 };
 
 pub use crate::connection::ssh::{SshAuthConfig, SshConfig};

@@ -18090,6 +18090,7 @@ dependencies = [
  "rand 0.9.2",
  "regex",
  "schemars",
+ "script_panel",
  "serde",
  "serde_json",
  "settings",

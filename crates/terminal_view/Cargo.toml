@@ -43,6 +43,7 @@ uuid.workspace = true
 shellexpand.workspace = true
 terminal.workspace = true
 terminal_scripting.workspace = true
+script_panel.workspace = true
 theme.workspace = true
 ui.workspace = true
 util.workspace = true
