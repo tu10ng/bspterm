@@ -2,10 +2,12 @@ mod handlers;
 mod protocol;
 mod server;
 mod session;
+mod tracking;
 
 pub use protocol::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
 pub use server::{ScriptingServer, ScriptingServerHandle};
 pub use session::{TerminalRegistry, TerminalSession};
+pub use tracking::{CommandId, OutputTracker, ReaderId};
 
 use gpui::App;
 use std::path::PathBuf;

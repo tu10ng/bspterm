@@ -158,6 +158,92 @@ class Screen:
     cols: int
 
 
+@dataclass
+class CommandResult:
+    """Result of a marked command execution."""
+    command_id: str
+    output: str
+    exit_code: Optional[int]
+
+
+class TrackingSession:
+    """
+    Incremental output tracking session.
+
+    Use this to track terminal output incrementally, only reading
+    new content since the last read.
+
+    Example:
+        tracker = term.track()
+        term.send("command1\\n")
+        time.sleep(1)
+        output1 = tracker.read_new()  # Only command1 output
+
+        term.send("command2\\n")
+        time.sleep(1)
+        output2 = tracker.read_new()  # Only command2 output
+
+        tracker.stop()
+    """
+
+    def __init__(self, terminal_id: str, reader_id: str):
+        self._terminal_id = terminal_id
+        self._reader_id = reader_id
+        self._client = _get_client()
+        self._stopped = False
+
+    @property
+    def terminal_id(self) -> str:
+        """The terminal ID this tracker is attached to."""
+        return self._terminal_id
+
+    @property
+    def reader_id(self) -> str:
+        """The unique reader ID for this tracking session."""
+        return self._reader_id
+
+    def read_new(self) -> str:
+        """
+        Read new output since the last read.
+
+        Returns:
+            String containing only the new output since last read.
+            Empty string if no new output.
+
+        Raises:
+            BsptermError: If the tracking session has been stopped.
+        """
+        if self._stopped:
+            raise BsptermError("Tracking session has been stopped")
+
+        result = self._client.call("terminal.track_read", {
+            "terminal_id": self._terminal_id,
+            "reader_id": self._reader_id,
+        })
+        return result["content"]
+
+    def stop(self) -> None:
+        """
+        Stop the tracking session and release resources.
+
+        After calling stop(), read_new() will raise an error.
+        """
+        if self._stopped:
+            return
+
+        self._client.call("terminal.track_stop", {
+            "terminal_id": self._terminal_id,
+            "reader_id": self._reader_id,
+        })
+        self._stopped = True
+
+    def __enter__(self) -> "TrackingSession":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.stop()
+
+
 class Terminal:
     """Represents a terminal session for automation."""
 
@@ -238,11 +324,138 @@ class Terminal:
         result = self._client.call("terminal.run", params)
         return result["output"]
 
+    def sendcmd(
+        self,
+        command: str,
+        timeout: float = 30.0,
+        prompt_pattern: str = None
+    ) -> str:
+        """
+        Execute a command and return clean output.
+
+        Automatically strips:
+        - Command echo (the command you typed)
+        - Shell prompt
+
+        Args:
+            command: Command to execute
+            timeout: Timeout in seconds
+            prompt_pattern: Regex pattern to detect prompt (default: [$#>]\\s*$)
+
+        Returns:
+            Clean command output without echo or prompt
+
+        Raises:
+            TimeoutError: If command does not complete within timeout
+
+        Example:
+            result = term.sendcmd("ls -la")
+            print(result)  # Only file listing, no "ls -la" echo, no prompt
+        """
+        params = {
+            "terminal_id": self.id,
+            "command": command,
+            "timeout_ms": int(timeout * 1000),
+            "strip_echo": True,
+        }
+        if prompt_pattern:
+            params["prompt_pattern"] = prompt_pattern
+
+        result = self._client.call("terminal.sendcmd", params)
+        return result["output"]
+
     def close(self) -> None:
         """Close the terminal connection."""
         self._client.call("terminal.close", {
             "terminal_id": self.id,
         })
+
+    def track(self) -> TrackingSession:
+        """
+        Start incremental output tracking.
+
+        Returns a TrackingSession that allows reading only new output
+        since the last read, enabling precise tracking of command outputs.
+
+        Returns:
+            TrackingSession instance for incremental reading
+
+        Example:
+            tracker = term.track()
+            term.send("ls\\n")
+            time.sleep(1)
+            output = tracker.read_new()  # Only ls output
+            tracker.stop()
+
+            # Or use as context manager:
+            with term.track() as tracker:
+                term.send("pwd\\n")
+                time.sleep(1)
+                output = tracker.read_new()
+        """
+        result = self._client.call("terminal.track_start", {
+            "terminal_id": self.id,
+        })
+        return TrackingSession(self.id, result["reader_id"])
+
+    def run_marked(
+        self,
+        command: str,
+        timeout: float = 30.0,
+        prompt_pattern: str = None
+    ) -> CommandResult:
+        """
+        Execute a command and precisely capture its output.
+
+        Unlike run(), this method tracks the exact boundaries of the
+        command's output using internal markers, allowing for more
+        accurate output capture.
+
+        Args:
+            command: Command to execute
+            timeout: Timeout in seconds
+            prompt_pattern: Regex pattern to detect command completion
+
+        Returns:
+            CommandResult with command_id, output, and exit_code
+
+        Raises:
+            TimeoutError: If command does not complete within timeout
+        """
+        params = {
+            "terminal_id": self.id,
+            "command": command,
+            "timeout_ms": int(timeout * 1000),
+        }
+        if prompt_pattern:
+            params["prompt_pattern"] = prompt_pattern
+
+        result = self._client.call("terminal.run_marked", params)
+        return CommandResult(
+            command_id=result["command_id"],
+            output=result["output"],
+            exit_code=result.get("exit_code"),
+        )
+
+    def read_time_range(self, start_seconds: float, end_seconds: float) -> str:
+        """
+        Read output within a time range.
+
+        Time is measured from when tracking started for this terminal.
+
+        Args:
+            start_seconds: Start time in seconds from tracking start
+            end_seconds: End time in seconds from tracking start
+
+        Returns:
+            String containing output within the specified time range
+        """
+        result = self._client.call("terminal.read_time_range", {
+            "terminal_id": self.id,
+            "start_ms": int(start_seconds * 1000),
+            "end_ms": int(end_seconds * 1000),
+        })
+        return result["content"]
 
 
 @dataclass
@@ -446,6 +659,8 @@ __all__ = [
     "TimeoutError",
     "JsonRpcError",
     "Screen",
+    "CommandResult",
+    "TrackingSession",
     "Terminal",
     "SessionInfo",
     "Session",

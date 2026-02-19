@@ -211,3 +211,57 @@ pub struct NewTerminalParams {
 pub struct CurrentTerminalParams {
     pub terminal_id: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackStartParams {
+    pub terminal_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackReadParams {
+    pub terminal_id: String,
+    pub reader_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackStopParams {
+    pub terminal_id: String,
+    pub reader_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunMarkedParams {
+    pub terminal_id: String,
+    pub command: String,
+    #[serde(default = "default_timeout")]
+    pub timeout_ms: u64,
+    pub prompt_pattern: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadCommandOutputParams {
+    pub terminal_id: String,
+    pub command_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadTimeRangeParams {
+    pub terminal_id: String,
+    pub start_ms: u64,
+    pub end_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SendCmdParams {
+    pub terminal_id: String,
+    pub command: String,
+    #[serde(default = "default_timeout")]
+    pub timeout_ms: u64,
+    pub prompt_pattern: Option<String>,
+    #[serde(default = "default_strip_echo")]
+    pub strip_echo: bool,
+}
+
+fn default_strip_echo() -> bool {
+    true
+}
