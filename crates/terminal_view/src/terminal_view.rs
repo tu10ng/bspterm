@@ -102,6 +102,12 @@ actions!(
         ReconnectTerminal,
         /// Disconnects a connected SSH/Telnet terminal.
         DisconnectTerminal,
+        /// Adds a new button to the button bar.
+        AddButtonBarButton,
+        /// Opens the script file for a button bar button in the editor.
+        EditButtonBarButtonScript,
+        /// Opens a dialog to rename a button bar button.
+        RenameButtonBarButton,
     ]
 );
 
@@ -165,6 +171,8 @@ pub struct TerminalView {
     scripting_id: Option<uuid::Uuid>,
     button_bar_runner: Option<ButtonBarScriptRunner>,
     _button_bar_subscription: Option<Subscription>,
+    /// Currently selected button for context menu operations (button_id, script_path)
+    selected_button: Option<(uuid::Uuid, PathBuf)>,
     _subscriptions: Vec<Subscription>,
     _terminal_subscriptions: Vec<Subscription>,
 }
@@ -335,6 +343,7 @@ impl TerminalView {
             scripting_id,
             button_bar_runner: None,
             _button_bar_subscription: button_bar_subscription,
+            selected_button: None,
             _subscriptions: subscriptions,
             _terminal_subscriptions: terminal_subscriptions,
         }
@@ -654,13 +663,161 @@ impl TerminalView {
     }
 
     fn configure_button_bar(&mut self, _: &ConfigureButtonBar, window: &mut Window, cx: &mut Context<Self>) {
+        let workspace_weak = self.workspace.clone();
         self.workspace
             .update(cx, |workspace, cx| {
                 workspace.toggle_modal(window, cx, |window, cx| {
-                    button_bar::ButtonBarConfigModal::new(window, cx)
+                    button_bar::ButtonBarConfigModal::new(workspace_weak, window, cx)
                 });
             })
             .ok();
+    }
+
+    fn deploy_button_bar_context_menu(
+        &mut self,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let context_menu = ContextMenu::build(window, cx, |menu, _, _| {
+            menu.context(self.focus_handle.clone())
+                .action("添加按钮", Box::new(AddButtonBarButton))
+        });
+
+        window.focus(&context_menu.focus_handle(cx), cx);
+        let subscription = cx.subscribe_in(
+            &context_menu,
+            window,
+            |this, _, _: &DismissEvent, window, cx| {
+                if this.context_menu.as_ref().is_some_and(|context_menu| {
+                    context_menu.0.focus_handle(cx).contains_focused(window, cx)
+                }) {
+                    cx.focus_self(window);
+                }
+                this.context_menu.take();
+                cx.notify();
+            },
+        );
+
+        self.context_menu = Some((context_menu, position, subscription));
+    }
+
+    fn add_button_bar_button(&mut self, _: &AddButtonBarButton, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(workspace) = self.workspace.upgrade() else { return; };
+        let Some(project) = self.project.upgrade() else { return; };
+
+        let language_registry = project.read(cx).languages().clone();
+
+        cx.spawn_in(window, async move |_, cx| {
+            let python_lang = language_registry.language_for_name("Python").await.ok();
+
+            let template = r#"from bspterm import current_terminal
+
+term = current_terminal()
+# 在此编写你的脚本逻辑
+output = term.run("ls -la")
+print(output)
+"#;
+            workspace.update_in(cx, |workspace, window, cx| {
+                let buffer = project.update(cx, |project, cx| {
+                    project.create_local_buffer(template, python_lang, true, cx)
+                });
+
+                let script_editor = cx.new(|cx| {
+                    button_bar::ButtonScriptEditor::new(
+                        buffer,
+                        project.clone(),
+                        workspace.weak_handle(),
+                        window,
+                        cx,
+                    )
+                });
+
+                workspace.active_pane().update(cx, |pane, cx| {
+                    pane.add_item(Box::new(script_editor), true, true, None, window, cx);
+                });
+            })?;
+
+            anyhow::Ok(())
+        }).detach_and_log_err(cx);
+    }
+
+    fn deploy_button_context_menu(
+        &mut self,
+        button_id: uuid::Uuid,
+        script_path: PathBuf,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.selected_button = Some((button_id, script_path));
+
+        let context_menu = ContextMenu::build(window, cx, |menu, _, _| {
+            menu.context(self.focus_handle.clone())
+                .action("修改按钮脚本", Box::new(EditButtonBarButtonScript))
+                .action("修改按钮名称", Box::new(RenameButtonBarButton))
+        });
+
+        window.focus(&context_menu.focus_handle(cx), cx);
+        let subscription = cx.subscribe_in(
+            &context_menu,
+            window,
+            |this, _, _: &DismissEvent, window, cx| {
+                if this.context_menu.as_ref().is_some_and(|context_menu| {
+                    context_menu.0.focus_handle(cx).contains_focused(window, cx)
+                }) {
+                    cx.focus_self(window);
+                }
+                this.context_menu.take();
+                cx.notify();
+            },
+        );
+
+        self.context_menu = Some((context_menu, position, subscription));
+    }
+
+    fn edit_button_bar_button_script(
+        &mut self,
+        _: &EditButtonBarButtonScript,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((_, script_path)) = self.selected_button.take() else {
+            return;
+        };
+        let Some(workspace) = self.workspace.upgrade() else {
+            return;
+        };
+
+        cx.spawn_in(window, async move |_, cx| {
+            workspace.update_in(cx, |workspace, window, cx| {
+                workspace
+                    .open_abs_path(script_path, workspace::OpenOptions::default(), window, cx)
+                    .detach();
+            })?;
+            anyhow::Ok(())
+        })
+        .detach_and_log_err(cx);
+    }
+
+    fn rename_button_bar_button(
+        &mut self,
+        _: &RenameButtonBarButton,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((button_id, _)) = self.selected_button.take() else {
+            return;
+        };
+        let Some(workspace) = self.workspace.upgrade() else {
+            return;
+        };
+
+        workspace.update(cx, |ws, cx| {
+            ws.toggle_modal(window, cx, |window, cx| {
+                button_bar::RenameButtonModal::new(button_id, window, cx)
+            });
+        });
     }
 
     fn render_button_bar(&self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -669,7 +826,6 @@ impl TerminalView {
         };
 
         let buttons = store.read(cx).buttons().to_vec();
-        let running_button_id = self.button_bar_runner.as_ref().map(|r| r.button_id());
         let terminal_view_handle = cx.entity().downgrade();
 
         h_flex()
@@ -681,31 +837,62 @@ impl TerminalView {
             .border_t_1()
             .border_color(cx.theme().colors().border)
             .bg(cx.theme().colors().surface_background)
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                    this.deploy_button_bar_context_menu(event.position, window, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().colors().text_muted)
+                    .child("快捷按钮"),
+            )
             .children(buttons.iter().map(|button| {
                 let button_id = button.id;
-                let is_running = running_button_id == Some(button_id);
+                let script_path = button.script_path.clone();
                 let label = button.label.clone();
                 let tooltip = button
                     .tooltip
                     .clone()
                     .unwrap_or_else(|| button.label.clone());
                 let terminal_view_handle = terminal_view_handle.clone();
+                let terminal_view_handle_for_menu = terminal_view_handle.clone();
 
-                ui::Button::new(
-                    SharedString::from(format!("button-bar-btn-{}", button_id)),
-                    label,
-                )
-                .style(ui::ButtonStyle::Tinted(ui::TintColor::Accent))
-                .disabled(is_running)
-                .tooltip(Tooltip::text(tooltip))
-                .on_click(move |_, window, cx| {
-                    terminal_view_handle
-                        .update(cx, |this, cx| {
-                            this.run_button_script(button_id, window, cx);
-                        })
-                        .ok();
-                })
-                .into_any_element()
+                div()
+                    .id(SharedString::from(format!("button-bar-btn-container-{}", button_id)))
+                    .on_mouse_down(MouseButton::Right, move |event: &MouseDownEvent, window, cx| {
+                        terminal_view_handle_for_menu
+                            .update(cx, |this, cx| {
+                                this.deploy_button_context_menu(
+                                    button_id,
+                                    script_path.clone(),
+                                    event.position,
+                                    window,
+                                    cx,
+                                );
+                            })
+                            .ok();
+                        cx.stop_propagation();
+                    })
+                    .child(
+                        ui::Button::new(
+                            SharedString::from(format!("button-bar-btn-{}", button_id)),
+                            label,
+                        )
+                        .style(ui::ButtonStyle::Tinted(ui::TintColor::Accent))
+                        .tooltip(Tooltip::text(tooltip))
+                        .on_click(move |_, window, cx| {
+                            terminal_view_handle
+                                .update(cx, |this, cx| {
+                                    this.run_button_script(button_id, window, cx);
+                                })
+                                .ok();
+                        }),
+                    )
+                    .into_any_element()
             }))
             .child(div().flex_1())
             .child(
@@ -744,7 +931,6 @@ impl TerminalView {
             PathBuf::from(script_path),
             socket_path,
             terminal_id,
-            button_id,
         );
 
         if let Err(err) = runner.start() {
@@ -1636,6 +1822,9 @@ impl Render for TerminalView {
             }))
             .on_action(cx.listener(Self::toggle_button_bar))
             .on_action(cx.listener(Self::configure_button_bar))
+            .on_action(cx.listener(Self::add_button_bar_button))
+            .on_action(cx.listener(Self::edit_button_bar_button_script))
+            .on_action(cx.listener(Self::rename_button_bar_button))
             .on_key_down(cx.listener(Self::key_down))
             .on_mouse_down(
                 MouseButton::Right,

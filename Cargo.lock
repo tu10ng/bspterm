@@ -18085,6 +18085,7 @@ dependencies = [
  "language",
  "log",
  "menu",
+ "paths",
  "pretty_assertions",
  "project",
  "rand 0.9.2",
