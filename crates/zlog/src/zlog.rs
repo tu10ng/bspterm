@@ -31,7 +31,7 @@ pub fn init_test() {
 }
 
 fn get_env_config() -> Option<String> {
-    std::env::var("ZED_LOG")
+    std::env::var("BSPTERM_LOG")
         .or_else(|_| std::env::var("RUST_LOG"))
         .ok()
         .or_else(|| {

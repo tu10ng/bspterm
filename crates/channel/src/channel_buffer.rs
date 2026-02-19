@@ -1,6 +1,6 @@
 use crate::{Channel, ChannelStore};
 use anyhow::Result;
-use client::{ChannelId, Client, Collaborator, UserStore, ZED_ALWAYS_ACTIVE};
+use client::{ChannelId, Client, Collaborator, UserStore, BSPTERM_ALWAYS_ACTIVE};
 use collections::HashMap;
 use gpui::{App, AppContext as _, AsyncApp, Context, Entity, EventEmitter, Task};
 use language::proto::serialize_version;
@@ -197,7 +197,7 @@ impl ChannelBuffer {
                 operation,
                 is_local: true,
             } => {
-                if *ZED_ALWAYS_ACTIVE
+                if *BSPTERM_ALWAYS_ACTIVE
                     && let language::Operation::UpdateSelections { selections, .. } = operation
                     && selections.is_empty()
                 {

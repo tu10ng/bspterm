@@ -186,8 +186,8 @@ pub fn init(client: Arc<Client>, cx: &mut App) {
             .map(|channel| channel.poll_for_updates())
             .unwrap_or(false);
 
-        if option_env!("ZED_UPDATE_EXPLANATION").is_none()
-            && env::var("ZED_UPDATE_EXPLANATION").is_err()
+        if option_env!("BSPTERM_UPDATE_EXPLANATION").is_none()
+            && env::var("BSPTERM_UPDATE_EXPLANATION").is_err()
             && poll_for_updates
         {
             let mut update_subscription = AutoUpdateSetting::get_global(cx)
@@ -212,10 +212,10 @@ pub fn init(client: Arc<Client>, cx: &mut App) {
 }
 
 pub fn check(_: &Check, window: &mut Window, cx: &mut App) {
-    if let Some(message) = option_env!("ZED_UPDATE_EXPLANATION") {
+    if let Some(message) = option_env!("BSPTERM_UPDATE_EXPLANATION") {
         drop(window.prompt(
             gpui::PromptLevel::Info,
-            "Zed was installed via a package manager.",
+            "Bspterm was installed via a package manager.",
             Some(message),
             &["Ok"],
             cx,
@@ -223,10 +223,10 @@ pub fn check(_: &Check, window: &mut Window, cx: &mut App) {
         return;
     }
 
-    if let Ok(message) = env::var("ZED_UPDATE_EXPLANATION") {
+    if let Ok(message) = env::var("BSPTERM_UPDATE_EXPLANATION") {
         drop(window.prompt(
             gpui::PromptLevel::Info,
-            "Zed was installed via a package manager.",
+            "Bspterm was installed via a package manager.",
             Some(&message),
             &["Ok"],
             cx,

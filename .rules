@@ -419,7 +419,7 @@ cx.subscribe(&sessions, |this, _, event, cx| {
 
 ### Persistence
 
-Sessions are stored in `~/.config/zed/sessions.json` (or platform equivalent via `paths::sessions_file()`).
+Sessions are stored in `~/.config/bspterm/sessions.json` (or platform equivalent via `paths::sessions_file()`).
 
 ## Telnet Connection
 
@@ -767,7 +767,7 @@ The registry uses `WeakEntity<Terminal>` references, so terminals are automatica
 
 ### Python Client Library
 
-Location: `assets/scripts/bspterm.py` (auto-installed to `~/.config/zed/scripts/`)
+Location: `assets/scripts/bspterm.py` (auto-installed to `~/.config/bspterm/scripts/`)
 
 ```python
 from bspterm import current_terminal, Session, SSH, Telnet
@@ -809,7 +809,7 @@ term.send("newpass123\n")
 
 - **Location**: Bottom dock (View > Script Panel)
 - **Action**: `bspterm_actions::script_panel::ToggleFocus`
-- **Scripts Directory**: `~/.config/zed/scripts/*.py`
+- **Scripts Directory**: `~/.config/bspterm/scripts/*.py`
 
 Features:
 - Script list with refresh button
@@ -830,7 +830,7 @@ Features:
 1. Build and run: `cargo run`
 2. Open a terminal (Ctrl+`)
 3. Open Script Panel (View > Script Panel)
-4. Create test script `~/.config/zed/scripts/hello.py`:
+4. Create test script `~/.config/bspterm/scripts/hello.py`:
 ```python
 from bspterm import current_terminal
 term = current_terminal()
@@ -924,7 +924,7 @@ cx.subscribe(&rules, |this, _, event, cx| {
 
 ### Persistence
 
-Rules are stored in `~/.config/zed/terminal_rules.json` (via `paths::terminal_rules_file()`).
+Rules are stored in `~/.config/bspterm/terminal_rules.json` (via `paths::terminal_rules_file()`).
 
 ### RuleEngine (`crates/terminal/src/rule_engine.rs`)
 
@@ -1053,3 +1053,16 @@ Tests cover:
 - Credential retrieval
 - Disabled rules ignored
 - Reset counts functionality
+
+## Zed 遗留命名
+
+以下模块/文件保留了 Zed 命名，这是历史原因造成的：
+
+| 路径 | 说明 |
+|------|------|
+| `crates/client/src/zed_urls.rs` | URL 处理模块 |
+| `crates/zlog/` | 日志 crate（zlog 不是 zed_log） |
+| `crates/install_cli/src/register_zed_scheme.rs` | URL scheme 注册 |
+| `crates/docs_preprocessor/` | 文档预处理器 |
+
+这些不需要重命名，但在代码中应注意区分。

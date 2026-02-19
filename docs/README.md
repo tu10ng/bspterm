@@ -1,4 +1,10 @@
-# Zed Docs
+# Bspterm 文档
+
+> **注意**: Bspterm fork 自 Zed 代码编辑器。本文档继承自 Zed，
+> 其中的编辑器功能在 Bspterm 中作为辅助工具保留。
+> Bspterm 的核心功能是远程连接管理（SSH/Telnet）。
+
+---
 
 Welcome to Zed's documentation.
 

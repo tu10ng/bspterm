@@ -741,7 +741,7 @@ impl UserStore {
         response: GetAuthenticatedUserResponse,
         cx: &mut Context<Self>,
     ) {
-        let staff = response.user.is_staff && !*feature_flags::ZED_DISABLE_STAFF;
+        let staff = response.user.is_staff && !*feature_flags::BSPTERM_DISABLE_STAFF;
         cx.update_flags(staff, response.feature_flags);
         if let Some(client) = self.client.upgrade() {
             client

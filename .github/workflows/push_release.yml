@@ -21,13 +21,13 @@ jobs:
         run: ./script/linux
 
       - name: Build release
-        run: cargo build --release --package zed --package cli
+        run: cargo build --release --package bspterm --package cli
 
       - name: Package
         run: |
           mkdir -p release-artifacts
-          tar -czvf release-artifacts/zed-linux-x86_64.tar.gz \
-            -C target/release zed cli
+          tar -czvf release-artifacts/bspterm-linux-x86_64.tar.gz \
+            -C target/release bspterm cli
 
       - uses: actions/upload-artifact@v4
         with:
@@ -44,14 +44,14 @@ jobs:
 
       - name: Build release
         shell: pwsh
-        run: cargo build --release --package zed --package cli
+        run: cargo build --release --package bspterm --package cli
 
       - name: Package
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path release-artifacts -Force
-          Compress-Archive -Path target/release/zed.exe, target/release/cli.exe `
-            -DestinationPath release-artifacts/zed-windows-x86_64.zip
+          Compress-Archive -Path target/release/bspterm.exe, target/release/cli.exe `
+            -DestinationPath release-artifacts/bspterm-windows-x86_64.zip
 
       - uses: actions/upload-artifact@v4
         with:

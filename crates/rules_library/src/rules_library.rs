@@ -112,7 +112,7 @@ pub fn open_rules_library(
         cx.update(|cx| {
             let app_id = ReleaseChannel::global(cx).app_id();
             let bounds = Bounds::centered(None, size(px(1024.0), px(768.0)), cx);
-            let window_decorations = match std::env::var("ZED_WINDOW_DECORATIONS") {
+            let window_decorations = match std::env::var("BSPTERM_WINDOW_DECORATIONS") {
                 Ok(val) if val == "server" => gpui::WindowDecorations::Server,
                 Ok(val) if val == "client" => gpui::WindowDecorations::Client,
                 _ => match WorkspaceSettings::get_global(cx).window_decorations {

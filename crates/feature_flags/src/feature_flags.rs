@@ -18,8 +18,8 @@ struct FeatureFlags {
     staff: bool,
 }
 
-pub static ZED_DISABLE_STAFF: LazyLock<bool> = LazyLock::new(|| {
-    std::env::var("ZED_DISABLE_STAFF").is_ok_and(|value| !value.is_empty() && value != "0")
+pub static BSPTERM_DISABLE_STAFF: LazyLock<bool> = LazyLock::new(|| {
+    std::env::var("BSPTERM_DISABLE_STAFF").is_ok_and(|value| !value.is_empty() && value != "0")
 });
 
 impl FeatureFlags {
@@ -28,7 +28,7 @@ impl FeatureFlags {
             return true;
         }
 
-        if (cfg!(debug_assertions) || self.staff) && !*ZED_DISABLE_STAFF && T::enabled_for_staff() {
+        if (cfg!(debug_assertions) || self.staff) && !*BSPTERM_DISABLE_STAFF && T::enabled_for_staff() {
             return true;
         }
 
@@ -42,7 +42,7 @@ impl Global for FeatureFlags {}
 /// a generic parameter when called [`FeatureFlagAppExt::has_flag`].
 ///
 /// Feature flags are enabled for members of Zed staff by default. To disable this behavior
-/// so you can test flags being disabled, set ZED_DISABLE_STAFF=1 in your environment,
+/// so you can test flags being disabled, set BSPTERM_DISABLE_STAFF=1 in your environment,
 /// which will force Zed to treat the current user as non-staff.
 pub trait FeatureFlag {
     const NAME: &'static str;
@@ -157,7 +157,7 @@ impl FeatureFlagAppExt for App {
         self.try_global::<FeatureFlags>()
             .map(|flags| flags.has_flag::<T>())
             .unwrap_or_else(|| {
-                (cfg!(debug_assertions) && T::enabled_for_staff() && !*ZED_DISABLE_STAFF)
+                (cfg!(debug_assertions) && T::enabled_for_staff() && !*BSPTERM_DISABLE_STAFF)
                     || T::enabled_for_all()
             })
     }

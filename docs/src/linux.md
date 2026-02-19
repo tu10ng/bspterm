@@ -174,7 +174,7 @@ There are a few different ways to force Zed to use a specific GPU:
 
 ##### Option A
 
-You can use the `ZED_DEVICE_ID={device_id}` environment variable to specify the device ID of the GPU you wish to have Zed use.
+You can use the `BSPTERM_DEVICE_ID={device_id}` environment variable to specify the device ID of the GPU you wish to have Bspterm use.
 
 You can obtain the device ID of your GPU by running `lspci -nn | grep VGA` which will output each GPU on one line like:
 
@@ -182,10 +182,10 @@ You can obtain the device ID of your GPU by running `lspci -nn | grep VGA` which
 08:00.0 VGA compatible controller [0300]: NVIDIA Corporation GA104 [GeForce RTX 3070] [10de:2484] (rev a1)
 ```
 
-where the device ID here is `2484`. This value is in hexadecimal, so to force Zed to use this specific GPU you would set the environment variable like so:
+where the device ID here is `2484`. This value is in hexadecimal, so to force Bspterm to use this specific GPU you would set the environment variable like so:
 
 ```
-ZED_DEVICE_ID=0x2484 zed
+BSPTERM_DEVICE_ID=0x2484 bspterm
 ```
 
 Make sure to export the variable if you choose to define it globally in a `.bashrc` or similar.

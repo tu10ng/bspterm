@@ -11,7 +11,7 @@ Build a release .tar.gz for Linux.
 
 Options:
   -h, --help     Display this help and exit.
-  --flatpak      Set ZED_BUNDLE_TYPE=flatpak so that this can be included in system info
+  --flatpak      Set BSPTERM_BUNDLE_TYPE=flatpak so that this can be included in system info
   "
 }
 
@@ -23,7 +23,7 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         --flatpak)
-            export ZED_BUNDLE_TYPE=flatpak
+            export BSPTERM_BUNDLE_TYPE=flatpak
             shift
             ;;
         --)
@@ -43,12 +43,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-export ZED_BUNDLE=true
+export BSPTERM_BUNDLE=true
 
-channel=$(<crates/zed/RELEASE_CHANNEL)
+channel=$(<crates/bspterm/RELEASE_CHANNEL)
 target_dir="${CARGO_TARGET_DIR:-target}"
 
-version="$(script/get-crate-version zed)"
+version="$(script/get-crate-version bspterm)"
 # Set RELEASE_VERSION so it's compiled into GPUI and it knows about the version.
 export RELEASE_VERSION="${version}"
 
@@ -75,7 +75,7 @@ export CC=$(which clang)
 
 # Build binary in release mode
 export RUSTFLAGS="${RUSTFLAGS:-} -C link-args=-Wl,--disable-new-dtags,-rpath,\$ORIGIN/../lib"
-cargo build --release --target "${target_triple}" --package zed --package cli
+cargo build --release --target "${target_triple}" --package bspterm --package cli
 # Build remote_server in separate invocation to prevent feature unification from other crates
 # from influencing dynamic libraries required by it.
 if [[ "$remote_server_triple" == "$musl_triple" ]]; then
@@ -89,13 +89,13 @@ if ! command -v sentry-cli >/dev/null 2>&1; then
     echo "install with: 'curl -sL https://sentry.io/get-cli | bash'"
 else
     if [[ -n "${SENTRY_AUTH_TOKEN:-}" ]]; then
-        echo "Uploading zed debug symbols to sentry..."
+        echo "Uploading bspterm debug symbols to sentry..."
         # note: this uploads the unstripped binary which is needed because it contains
         # .eh_frame data for stack unwinding. see https://github.com/getsentry/symbolic/issues/783
         for attempt in 1 2 3; do
             echo "Attempting sentry upload (attempt $attempt/3)..."
-            if sentry-cli debug-files upload --include-sources --wait -p zed -o zed-dev \
-                "${target_dir}/${target_triple}"/release/zed \
+            if sentry-cli debug-files upload --include-sources --wait -p bspterm -o bspterm-dev \
+                "${target_dir}/${target_triple}"/release/bspterm \
                 "${target_dir}/${remote_server_triple}"/release/remote_server; then
                 echo "Sentry upload successful on attempt $attempt"
                 break
@@ -112,7 +112,7 @@ else
 fi
 
 # Strip debug symbols and save them for upload to DigitalOcean
-objcopy --strip-debug "${target_dir}/${target_triple}/release/zed"
+objcopy --strip-debug "${target_dir}/${target_triple}/release/bspterm"
 objcopy --strip-debug "${target_dir}/${target_triple}/release/cli"
 objcopy --strip-debug "${target_dir}/${remote_server_triple}/release/remote_server"
 
@@ -133,59 +133,59 @@ fi
 # Move everything that should end up in the final package
 # into a temp directory.
 temp_dir=$(mktemp -d)
-zed_dir="${temp_dir}/zed$suffix.app"
+bspterm_dir="${temp_dir}/bspterm$suffix.app"
 
 # Binary
-mkdir -p "${zed_dir}/bin" "${zed_dir}/libexec"
-cp "${target_dir}/${target_triple}/release/zed" "${zed_dir}/libexec/zed-editor"
-cp "${target_dir}/${target_triple}/release/cli" "${zed_dir}/bin/zed"
+mkdir -p "${bspterm_dir}/bin" "${bspterm_dir}/libexec"
+cp "${target_dir}/${target_triple}/release/bspterm" "${bspterm_dir}/libexec/bspterm-editor"
+cp "${target_dir}/${target_triple}/release/cli" "${bspterm_dir}/bin/bspterm"
 
 # Libs
 find_libs() {
-    ldd ${target_dir}/${target_triple}/release/zed |\
+    ldd ${target_dir}/${target_triple}/release/bspterm |\
         cut -d' ' -f3 |\
         grep -v '\<\(libstdc++.so\|libc.so\|libgcc_s.so\|libm.so\|libpthread.so\|libdl.so\|libasound.so\)'
 }
 
-mkdir -p "${zed_dir}/lib"
-rm -rf "${zed_dir}/lib/*"
-cp $(find_libs) "${zed_dir}/lib"
+mkdir -p "${bspterm_dir}/lib"
+rm -rf "${bspterm_dir}/lib/*"
+cp $(find_libs) "${bspterm_dir}/lib"
 
 # Icons
-mkdir -p "${zed_dir}/share/icons/hicolor/512x512/apps"
-cp "crates/zed/resources/app-icon$suffix.png" "${zed_dir}/share/icons/hicolor/512x512/apps/zed.png"
-mkdir -p "${zed_dir}/share/icons/hicolor/1024x1024/apps"
-cp "crates/zed/resources/app-icon$suffix@2x.png" "${zed_dir}/share/icons/hicolor/1024x1024/apps/zed.png"
+mkdir -p "${bspterm_dir}/share/icons/hicolor/512x512/apps"
+cp "crates/bspterm/resources/app-icon$suffix.png" "${bspterm_dir}/share/icons/hicolor/512x512/apps/bspterm.png"
+mkdir -p "${bspterm_dir}/share/icons/hicolor/1024x1024/apps"
+cp "crates/bspterm/resources/app-icon$suffix@2x.png" "${bspterm_dir}/share/icons/hicolor/1024x1024/apps/bspterm.png"
 
 # .desktop
 export DO_STARTUP_NOTIFY="true"
-export APP_CLI="zed"
-export APP_ICON="zed"
+export APP_CLI="bspterm"
+export APP_ICON="bspterm"
 export APP_ARGS="%U"
 if [[ "$channel" == "preview" ]]; then
-  export APP_NAME="Zed Preview"
+  export APP_NAME="Bspterm Preview"
 elif [[ "$channel" == "nightly" ]]; then
-  export APP_NAME="Zed Nightly"
+  export APP_NAME="Bspterm Nightly"
 elif [[ "$channel" == "dev" ]]; then
-  export APP_NAME="Zed Devel"
+  export APP_NAME="Bspterm Devel"
 else
-  export APP_NAME="Zed"
+  export APP_NAME="Bspterm"
 fi
 
-mkdir -p "${zed_dir}/share/applications"
-envsubst < "crates/zed/resources/zed.desktop.in" > "${zed_dir}/share/applications/zed$suffix.desktop"
-chmod +x "${zed_dir}/share/applications/zed$suffix.desktop"
+mkdir -p "${bspterm_dir}/share/applications"
+envsubst < "crates/bspterm/resources/bspterm.desktop.in" > "${bspterm_dir}/share/applications/bspterm$suffix.desktop"
+chmod +x "${bspterm_dir}/share/applications/bspterm$suffix.desktop"
 
 # Copy generated licenses so they'll end up in archive too
-cp "assets/licenses.md" "${zed_dir}/licenses.md"
+cp "assets/licenses.md" "${bspterm_dir}/licenses.md"
 
 # Create archive out of everything that's in the temp directory
 arch=$(uname -m)
-archive="zed-linux-${arch}.tar.gz"
+archive="bspterm-linux-${arch}.tar.gz"
 
 rm -rf "${archive}"
-remove_match="zed(-[a-zA-Z0-9]+)?-linux-$(uname -m)\.tar\.gz"
+remove_match="bspterm(-[a-zA-Z0-9]+)?-linux-$(uname -m)\.tar\.gz"
 ls "${target_dir}/release" | grep -E ${remove_match} | xargs -d "\n" -I {} rm -f "${target_dir}/release/{}" || true
-tar -czvf "${target_dir}/release/$archive" -C ${temp_dir} "zed$suffix.app"
+tar -czvf "${target_dir}/release/$archive" -C ${temp_dir} "bspterm$suffix.app"
 
-gzip -f --stdout --best "${target_dir}/${remote_server_triple}/release/remote_server" > "${target_dir}/zed-remote-server-linux-${arch}.gz"
+gzip -f --stdout --best "${target_dir}/${remote_server_triple}/release/remote_server" > "${target_dir}/bspterm-remote-server-linux-${arch}.gz"

@@ -32,6 +32,6 @@ pub enum CliResponse {
     Exit { status: i32 },
 }
 
-/// When Zed started not as an *.app but as a binary (e.g. local development),
+/// When Bspterm started not as an *.app but as a binary (e.g. local development),
 /// there's a possibility to tell it to behave "regularly".
-pub const FORCE_CLI_MODE_ENV_VAR_NAME: &str = "ZED_FORCE_CLI_MODE";
+pub const FORCE_CLI_MODE_ENV_VAR_NAME: &str = "BSPTERM_FORCE_CLI_MODE";
