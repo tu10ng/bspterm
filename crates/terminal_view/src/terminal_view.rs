@@ -12,10 +12,11 @@ use button_bar::script_runner::ScriptStatus;
 use assistant_slash_command::SlashCommandRegistry;
 use editor::{Editor, EditorSettings, actions::SelectAll, blink_manager::BlinkManager};
 use gpui::{
-    Action, AnyElement, App, ClipboardEntry, DismissEvent, Entity, EventEmitter, FocusHandle,
-    Focusable, KeyBindingContextPredicate, KeyContext, KeyDownEvent, KeybindingKeystroke,
-    Keystroke, KeystrokeEvent, Modifiers, MouseButton, MouseDownEvent, Pixels, Point, Render,
-    ScrollWheelEvent, Styled, Subscription, Task, WeakEntity, actions, anchored, deferred, div,
+    Action, AnyElement, App, ClipboardEntry, DismissEvent, DragMoveEvent, Entity, EventEmitter,
+    FocusHandle, Focusable, KeyBindingContextPredicate, KeyContext, KeyDownEvent,
+    KeybindingKeystroke, Keystroke, KeystrokeEvent, Modifiers, MouseButton, MouseDownEvent, Pixels,
+    Point, Render, ScrollWheelEvent, Styled, Subscription, Task, WeakEntity, actions, anchored,
+    deferred, div,
 };
 use menu;
 use persistence::TERMINAL_DB;
@@ -77,6 +78,35 @@ struct ImeState {
     marked_text: String,
 }
 
+#[derive(Clone)]
+struct DraggedButton {
+    id: uuid::Uuid,
+    label: String,
+}
+
+struct DraggedButtonView {
+    label: String,
+}
+
+impl Render for DraggedButtonView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px_2()
+            .py_1()
+            .rounded_md()
+            .bg(cx.theme().colors().element_background)
+            .border_1()
+            .border_color(cx.theme().colors().border)
+            .child(div().text_sm().child(self.label.clone()))
+    }
+}
+
+#[derive(Clone, PartialEq)]
+enum ButtonDragTarget {
+    Before { button_id: uuid::Uuid },
+    After { button_id: uuid::Uuid },
+}
+
 const CURSOR_BLINK_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Event to transmit the scroll from the element to the view
@@ -108,6 +138,10 @@ actions!(
         EditButtonBarButtonScript,
         /// Opens a dialog to rename a button bar button.
         RenameButtonBarButton,
+        /// Hides a button from the button bar (sets enabled = false).
+        HideButtonBarButton,
+        /// Deletes a button from the button bar permanently.
+        DeleteButtonBarButton,
     ]
 );
 
@@ -173,6 +207,7 @@ pub struct TerminalView {
     _button_bar_subscription: Option<Subscription>,
     /// Currently selected button for context menu operations (button_id, script_path)
     selected_button: Option<(uuid::Uuid, PathBuf)>,
+    button_drag_target: Option<ButtonDragTarget>,
     _subscriptions: Vec<Subscription>,
     _terminal_subscriptions: Vec<Subscription>,
 }
@@ -344,6 +379,7 @@ impl TerminalView {
             button_bar_runner: None,
             _button_bar_subscription: button_bar_subscription,
             selected_button: None,
+            button_drag_target: None,
             _subscriptions: subscriptions,
             _terminal_subscriptions: terminal_subscriptions,
         }
@@ -756,6 +792,9 @@ print(output)
             menu.context(self.focus_handle.clone())
                 .action("修改按钮脚本", Box::new(EditButtonBarButtonScript))
                 .action("修改按钮名称", Box::new(RenameButtonBarButton))
+                .separator()
+                .action("隐藏按钮", Box::new(HideButtonBarButton))
+                .action("删除按钮", Box::new(DeleteButtonBarButton))
         });
 
         window.focus(&context_menu.focus_handle(cx), cx);
@@ -820,6 +859,46 @@ print(output)
         });
     }
 
+    fn hide_button_bar_button(
+        &mut self,
+        _: &HideButtonBarButton,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((button_id, _)) = self.selected_button.take() else {
+            return;
+        };
+        let Some(store) = ButtonBarStoreEntity::try_global(cx) else {
+            return;
+        };
+
+        store.update(cx, |store, cx| {
+            store.update_button(button_id, |button| button.enabled = false, cx);
+        });
+    }
+
+    fn delete_button_bar_button(
+        &mut self,
+        _: &DeleteButtonBarButton,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((button_id, script_path)) = self.selected_button.take() else {
+            return;
+        };
+        let Some(store) = ButtonBarStoreEntity::try_global(cx) else {
+            return;
+        };
+
+        if let Err(e) = std::fs::remove_file(&script_path) {
+            log::error!("Failed to delete script file {:?}: {}", script_path, e);
+        }
+
+        store.update(cx, |store, cx| {
+            store.remove_button(button_id, cx);
+        });
+    }
+
     fn render_button_bar(&self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let Some(store) = ButtonBarStoreEntity::try_global(cx) else {
             return h_flex().id("terminal-button-bar").into_any_element();
@@ -850,6 +929,21 @@ print(output)
                     cx.stop_propagation();
                 }),
             )
+            .on_drag_move::<DraggedButton>(cx.listener(
+                |this, event: &DragMoveEvent<DraggedButton>, _, cx| {
+                    if !event.bounds.contains(&event.event.position) {
+                        if this.button_drag_target.is_some() {
+                            this.button_drag_target = None;
+                            cx.notify();
+                        }
+                    }
+                },
+            ))
+            .on_drop(cx.listener(
+                |this, dragged: &DraggedButton, _window, cx| {
+                    this.handle_button_drop(dragged, cx);
+                },
+            ))
             .child(
                 div()
                     .text_xs()
@@ -866,38 +960,108 @@ print(output)
                     .unwrap_or_else(|| button.label.clone());
                 let terminal_view_handle = terminal_view_handle.clone();
                 let terminal_view_handle_for_menu = terminal_view_handle.clone();
+                let drag_data = DraggedButton {
+                    id: button_id,
+                    label: label.clone(),
+                };
+                let is_before_target =
+                    self.button_drag_target == Some(ButtonDragTarget::Before { button_id });
+                let is_after_target =
+                    self.button_drag_target == Some(ButtonDragTarget::After { button_id });
 
-                div()
-                    .id(SharedString::from(format!("button-bar-btn-container-{}", button_id)))
-                    .on_mouse_down(MouseButton::Right, move |event: &MouseDownEvent, window, cx| {
-                        terminal_view_handle_for_menu
-                            .update(cx, |this, cx| {
-                                this.deploy_button_context_menu(
-                                    button_id,
-                                    script_path.clone(),
-                                    event.position,
-                                    window,
-                                    cx,
-                                );
-                            })
-                            .ok();
-                        cx.stop_propagation();
+                h_flex()
+                    .items_center()
+                    .when(is_before_target, |this| {
+                        this.child(
+                            div()
+                                .w(px(2.0))
+                                .h_4()
+                                .rounded_sm()
+                                .bg(cx.theme().colors().text_accent),
+                        )
                     })
                     .child(
-                        ui::Button::new(
-                            SharedString::from(format!("button-bar-btn-{}", button_id)),
-                            label,
-                        )
-                        .style(ui::ButtonStyle::Tinted(ui::TintColor::Accent))
-                        .tooltip(Tooltip::text(tooltip))
-                        .on_click(move |_, window, cx| {
-                            terminal_view_handle
-                                .update(cx, |this, cx| {
-                                    this.run_button_script(button_id, window, cx);
+                        div()
+                            .id(SharedString::from(format!(
+                                "button-bar-btn-container-{}",
+                                button_id
+                            )))
+                            .on_drag(drag_data, move |drag_data, _, _, cx| {
+                                cx.new(|_| DraggedButtonView {
+                                    label: drag_data.label.clone(),
                                 })
-                                .ok();
-                        }),
+                            })
+                            .on_drag_move::<DraggedButton>(cx.listener(
+                                move |this,
+                                      event: &DragMoveEvent<DraggedButton>,
+                                      _window,
+                                      cx| {
+                                    if !event.bounds.contains(&event.event.position) {
+                                        return;
+                                    }
+                                    let dragged = event.drag(cx);
+                                    if dragged.id == button_id {
+                                        this.button_drag_target = None;
+                                        cx.notify();
+                                        return;
+                                    }
+                                    let mouse_x = event.event.position.x - event.bounds.origin.x;
+                                    let is_after = mouse_x > event.bounds.size.width / 2.0;
+                                    this.button_drag_target = Some(if is_after {
+                                        ButtonDragTarget::After { button_id }
+                                    } else {
+                                        ButtonDragTarget::Before { button_id }
+                                    });
+                                    cx.notify();
+                                },
+                            ))
+                            .on_drop(cx.listener(
+                                move |this, dragged: &DraggedButton, _window, cx| {
+                                    this.handle_button_drop(dragged, cx);
+                                },
+                            ))
+                            .on_mouse_down(
+                                MouseButton::Right,
+                                move |event: &MouseDownEvent, window, cx| {
+                                    terminal_view_handle_for_menu
+                                        .update(cx, |this, cx| {
+                                            this.deploy_button_context_menu(
+                                                button_id,
+                                                script_path.clone(),
+                                                event.position,
+                                                window,
+                                                cx,
+                                            );
+                                        })
+                                        .ok();
+                                    cx.stop_propagation();
+                                },
+                            )
+                            .child(
+                                ui::Button::new(
+                                    SharedString::from(format!("button-bar-btn-{}", button_id)),
+                                    label,
+                                )
+                                .style(ui::ButtonStyle::Tinted(ui::TintColor::Accent))
+                                .tooltip(Tooltip::text(tooltip))
+                                .on_click(move |_, window, cx| {
+                                    terminal_view_handle
+                                        .update(cx, |this, cx| {
+                                            this.run_button_script(button_id, window, cx);
+                                        })
+                                        .ok();
+                                }),
+                            ),
                     )
+                    .when(is_after_target, |this| {
+                        this.child(
+                            div()
+                                .w(px(2.0))
+                                .h_4()
+                                .rounded_sm()
+                                .bg(cx.theme().colors().text_accent),
+                        )
+                    })
                     .into_any_element()
             }))
             .child(div().flex_1())
@@ -910,6 +1074,36 @@ print(output)
                     })),
             )
             .into_any_element()
+    }
+
+    fn handle_button_drop(&mut self, dragged: &DraggedButton, cx: &mut Context<Self>) {
+        let Some(target) = self.button_drag_target.take() else {
+            return;
+        };
+        cx.notify();
+
+        let Some(store) = ButtonBarStoreEntity::try_global(cx) else {
+            return;
+        };
+
+        let target_button_id = match &target {
+            ButtonDragTarget::Before { button_id } => *button_id,
+            ButtonDragTarget::After { button_id } => *button_id,
+        };
+
+        let buttons = store.read(cx).buttons();
+        let Some(target_index) = buttons.iter().position(|b| b.id == target_button_id) else {
+            return;
+        };
+
+        let new_index = match target {
+            ButtonDragTarget::After { .. } => target_index + 1,
+            ButtonDragTarget::Before { .. } => target_index,
+        };
+
+        store.update(cx, |store, cx| {
+            store.move_button(dragged.id, new_index, cx);
+        });
     }
 
     fn run_button_script(&mut self, button_id: uuid::Uuid, _window: &mut Window, cx: &mut Context<Self>) {
@@ -1831,6 +2025,8 @@ impl Render for TerminalView {
             .on_action(cx.listener(Self::add_button_bar_button))
             .on_action(cx.listener(Self::edit_button_bar_button_script))
             .on_action(cx.listener(Self::rename_button_bar_button))
+            .on_action(cx.listener(Self::hide_button_bar_button))
+            .on_action(cx.listener(Self::delete_button_bar_button))
             .on_key_down(cx.listener(Self::key_down))
             .on_mouse_down(
                 MouseButton::Right,
