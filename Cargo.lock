@@ -2596,6 +2596,7 @@ dependencies = [
  "repl",
  "reqwest_client",
  "rope",
+ "rule_editor",
  "script_panel",
  "search",
  "semver",
@@ -15132,6 +15133,23 @@ name = "rtrb"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ad8388ea1a9e0ea807e442e8263a699e7edcb320ecbcd21b4fa8ff859acce3ba"
+
+[[package]]
+name = "rule_editor"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bspterm_actions",
+ "editor",
+ "gpui",
+ "log",
+ "settings",
+ "terminal",
+ "ui",
+ "util",
+ "uuid",
+ "workspace",
+]
 
 [[package]]
 name = "rules_library"

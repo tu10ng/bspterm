@@ -177,6 +177,7 @@ recent_projects.workspace = true
 release_channel.workspace = true
 remote_explorer.workspace = true
 remote.workspace = true
+rule_editor.workspace = true
 repl.workspace = true
 reqwest.workspace = true
 reqwest_client.workspace = true

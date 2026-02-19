@@ -665,6 +665,7 @@ fn initialize_panels(
     cx.spawn_in(window, async move |workspace_handle, cx| {
         let project_panel = ProjectPanel::load(workspace_handle.clone(), cx.clone());
         let remote_explorer = RemoteExplorer::load(workspace_handle.clone(), cx.clone());
+        let rule_editor = rule_editor::RuleEditor::load(workspace_handle.clone(), cx.clone());
         let outline_panel = OutlinePanel::load(workspace_handle.clone(), cx.clone());
         let terminal_panel = TerminalPanel::load(workspace_handle.clone(), cx.clone());
         let editor_panel = EditorPanel::load(workspace_handle.clone(), cx.clone());
@@ -696,6 +697,7 @@ fn initialize_panels(
         futures::join!(
             add_panel_when_ready(project_panel, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(remote_explorer, workspace_handle.clone(), cx.clone()),
+            add_panel_when_ready(rule_editor, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(outline_panel, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(terminal_panel, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(editor_panel, workspace_handle.clone(), cx.clone()),
@@ -5047,6 +5049,7 @@ mod tests {
             git_ui::init(cx);
             project_panel::init(cx);
             remote_explorer::init(cx);
+            rule_editor::init(cx);
             outline_panel::init(cx);
             terminal_view::init(cx);
             copilot_chat::init(

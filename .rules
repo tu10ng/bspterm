@@ -53,8 +53,9 @@ This is a fork of [Zed](https://github.com/zed-industries/zed), a GPU-accelerate
 - **vim** (`crates/vim`): Vim mode implementation over the editor.
 - **ui** (`crates/ui`): Shared UI components and patterns.
 - **collab** (`crates/collab`): Collaboration server for project sharing.
-- **terminal** / **terminal_view** (`crates/terminal`, `crates/terminal_view`): Terminal emulator with SSH/Telnet session management.
+- **terminal** / **terminal_view** (`crates/terminal`, `crates/terminal_view`): Terminal emulator with SSH/Telnet session management and automation rule engine.
 - **remote_explorer** (`crates/remote_explorer`): Panel for browsing and managing saved SSH/Telnet sessions in a tree view.
+- **rule_editor** (`crates/rule_editor`): Panel for managing terminal automation rules (auto-login, pattern-based actions).
 
 ## Rust Coding Guidelines
 
@@ -845,3 +846,210 @@ The script runner uses non-blocking I/O to prevent UI hangs:
 - stdout/stderr are set to `O_NONBLOCK` via `fcntl`
 - `read_output()` handles `WouldBlock` errors gracefully
 - Output is polled during render cycles
+
+## Terminal Automation Rules
+
+The terminal includes a rule-based automation system for auto-login and other automated actions (`crates/terminal/src/rule_store.rs`, `crates/terminal/src/rule_engine.rs`, `crates/rule_editor/`).
+
+### Architecture
+
+```
+Terminal Event (Wakeup/Connected/Disconnected)
+       ↓
+  RuleEngine.check(event_type, screen_content)
+       ↓
+  Filter rules by trigger → Pattern Match? → Execute Action
+       ↓
+  SendCredential / SendText / RunPython / etc.
+```
+
+### Data Structures (`crates/terminal/src/rule_store.rs`)
+
+```rust
+pub struct AutomationRule {
+    pub id: Uuid,
+    pub name: String,
+    pub enabled: bool,
+    pub trigger: TriggerEvent,      // When to check this rule
+    pub max_triggers: Option<u32>,  // Max times to trigger per connection (None = unlimited)
+    pub condition: RuleCondition,
+    pub action: RuleAction,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+pub enum TriggerEvent {
+    #[default]
+    Wakeup,       // New output received (most common)
+    Connected,    // Connection established
+    Disconnected, // Connection lost
+}
+
+pub enum RuleCondition {
+    Pattern { pattern: String, case_insensitive: bool },
+    ConnectionType { protocol: Protocol },  // Ssh or Telnet
+    All { conditions: Vec<RuleCondition> }, // AND logic
+    Any { conditions: Vec<RuleCondition> }, // OR logic
+}
+
+pub enum RuleAction {
+    SendText { text: String, append_newline: bool },
+    SendCredential { credential_type: CredentialType }, // Username or Password
+    RunPython { code: String },
+    Sequence { actions: Vec<RuleAction> },
+    Delay { milliseconds: u64 },
+}
+```
+
+### RuleStore and GPUI Integration
+
+- `RuleStore`: Holds rules, handles save/load from JSON
+- `RuleStoreEntity`: GPUI entity with auto-save and event emission
+- `RuleStoreEvent`: Events for UI subscription (Changed, RuleAdded, RuleRemoved)
+
+```rust
+// Initialize on app startup
+RuleStoreEntity::init(cx);
+
+// Access globally
+let rules = RuleStoreEntity::global(cx);
+rules.update(cx, |store, cx| {
+    store.add_rule(rule, cx);
+});
+
+// Subscribe to changes
+cx.subscribe(&rules, |this, _, event, cx| {
+    // Handle RuleStoreEvent
+});
+```
+
+### Persistence
+
+Rules are stored in `~/.config/zed/terminal_rules.json` (via `paths::terminal_rules_file()`).
+
+### RuleEngine (`crates/terminal/src/rule_engine.rs`)
+
+The rule engine compiles regex patterns at initialization and tracks trigger counts per connection.
+
+```rust
+// Create engine with connection info and rules
+let engine = RuleEngine::new(&connection_info, &rules);
+
+// Check rules for a trigger event
+let actions = engine.check(TriggerEvent::Wakeup, &screen_content);
+
+// Execute matched actions
+for action in actions {
+    match action.action {
+        RuleAction::SendCredential { credential_type } => {
+            if let Some(cred) = engine.get_credential(&credential_type) {
+                terminal.input(format!("{}\n", cred).into_bytes());
+            }
+        }
+        RuleAction::SendText { text, append_newline } => { /* ... */ }
+        // ...
+    }
+}
+```
+
+**Key features:**
+- Pre-compiled regex patterns for performance
+- Cooldown mechanism (2 seconds) prevents rapid repeated triggering
+- `max_triggers` limit per rule per connection
+- `reset_counts()` for reconnection scenarios
+
+### Terminal Integration
+
+The rule engine is integrated into `Terminal` (`crates/terminal/src/terminal.rs`):
+
+- `init_rule_engine()`: Called when connection is established
+- `check_rules(trigger, cx)`: Called on Wakeup events (new output) and connection state changes
+- `execute_rule_action(action, cx)`: Executes matched actions
+
+### Rule Editor Panel (`crates/rule_editor/`)
+
+A dockable panel for managing automation rules.
+
+**Module Structure:**
+```
+crates/rule_editor/
+├── Cargo.toml
+└── src/
+    ├── rule_editor.rs       # Main panel with rule list
+    └── rule_edit_modal.rs   # Modal for creating/editing rules
+```
+
+**Panel Features:**
+- List of rules with enable/disable checkboxes
+- Edit and Delete buttons per rule
+- "Add Rule" button to create new rules
+- Subscribes to `RuleStoreEntity` for automatic updates
+
+**Modal Features:**
+- Name, Pattern (regex), and Send Text input fields
+- Trigger selection (Wakeup, Connected)
+- Protocol selection (Telnet, SSH)
+- Action type selection (Send Credential, Send Text)
+- Credential type selection (Username, Password)
+
+### Integration Points
+
+- **Action**: `bspterm_actions::rule_editor::ToggleFocus`
+- **Position**: Right dock
+- **Icon**: Cog icon
+- **Priority**: `activation_priority = 11`
+
+### Default Auto-Login Rules
+
+Default rules are stored in `assets/settings/default_terminal_rules.json`:
+
+```json
+{
+  "rules": [
+    {
+      "name": "Telnet Username Prompt",
+      "enabled": true,
+      "trigger": "Wakeup",
+      "max_triggers": 1,
+      "condition": {
+        "type": "All",
+        "conditions": [
+          { "type": "ConnectionType", "protocol": "Telnet" },
+          { "type": "Pattern", "pattern": "(?i)(username|login|user)\\s*:", "case_insensitive": true }
+        ]
+      },
+      "action": { "type": "SendCredential", "credential_type": "Username" }
+    },
+    {
+      "name": "Telnet Password Prompt",
+      "enabled": true,
+      "trigger": "Wakeup",
+      "max_triggers": 1,
+      "condition": {
+        "type": "All",
+        "conditions": [
+          { "type": "ConnectionType", "protocol": "Telnet" },
+          { "type": "Pattern", "pattern": "(?i)password\\s*:", "case_insensitive": true }
+        ]
+      },
+      "action": { "type": "SendCredential", "credential_type": "Password" }
+    }
+  ]
+}
+```
+
+### Testing
+
+Run rule engine tests:
+```sh
+cargo test -p terminal rule_engine
+```
+
+Tests cover:
+- Pattern matching (case-sensitive and case-insensitive)
+- Connection type conditions
+- max_triggers limit enforcement
+- Trigger event filtering
+- Any/All condition logic
+- Credential retrieval
+- Disabled rules ignored
+- Reset counts functionality

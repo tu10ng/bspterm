@@ -1,6 +1,8 @@
 pub mod button_bar_config;
 pub mod connection;
 pub mod mappings;
+pub mod rule_engine;
+pub mod rule_store;
 pub mod session_store;
 
 pub use alacritty_terminal;
@@ -13,6 +15,13 @@ pub use session_store::{
 pub use button_bar_config::{
     ButtonBarStore, ButtonBarStoreEntity, ButtonBarStoreEvent, ButtonConfig, GlobalButtonBarStore,
 };
+
+pub use rule_store::{
+    AutomationRule, CredentialType, GlobalRuleStore, Protocol, RuleAction, RuleCondition,
+    RuleStore, RuleStoreEntity, RuleStoreEvent, TriggerEvent,
+};
+
+pub use rule_engine::{ConnectionContext, MatchedAction, RuleEngine};
 
 pub use crate::connection::ssh::{SshAuthConfig, SshConfig};
 pub use crate::connection::telnet::TelnetConfig;
@@ -437,6 +446,7 @@ impl TerminalBuilder {
             event_loop_task: Task::ready(Ok(())),
             background_executor: background_executor.clone(),
             path_style,
+            rule_engine: None,
         };
 
         Ok(TerminalBuilder {
@@ -676,6 +686,7 @@ impl TerminalBuilder {
                 event_loop_task: Task::ready(Ok(())),
                 background_executor,
                 path_style,
+                rule_engine: None,
             };
 
             if !activation_script.is_empty() && no_task {
@@ -821,7 +832,7 @@ impl TerminalBuilder {
                 .await
                 .context("SSH connection task panicked")??;
 
-            let terminal = Terminal {
+            let mut terminal = Terminal {
                 task: None,
                 terminal_type: TerminalType::Connected {
                     connection: Box::new(ssh_connection),
@@ -866,7 +877,10 @@ impl TerminalBuilder {
                 event_loop_task: Task::ready(Ok(())),
                 background_executor,
                 path_style,
+                rule_engine: None,
             };
+
+            terminal.init_rule_engine();
 
             Ok(TerminalBuilder {
                 terminal,
@@ -975,7 +989,7 @@ impl TerminalBuilder {
                 .await
                 .context("Telnet connection task panicked")??;
 
-            let terminal = Terminal {
+            let mut terminal = Terminal {
                 task: None,
                 terminal_type: TerminalType::Connected {
                     connection: Box::new(telnet_connection),
@@ -1020,7 +1034,10 @@ impl TerminalBuilder {
                 event_loop_task: Task::ready(Ok(())),
                 background_executor,
                 path_style,
+                rule_engine: None,
             };
+
+            terminal.init_rule_engine();
 
             Ok(TerminalBuilder {
                 terminal,
@@ -1144,7 +1161,7 @@ impl TerminalBuilder {
 
         let term = Arc::new(FairMutex::new(term));
 
-        let terminal = Terminal {
+        let mut terminal = Terminal {
             task: None,
             terminal_type: TerminalType::Disconnected,
             connection_info: Some(connection_info),
@@ -1187,7 +1204,10 @@ impl TerminalBuilder {
             event_loop_task: Task::ready(Ok(())),
             background_executor: background_executor.clone(),
             path_style,
+            rule_engine: None,
         };
+
+        terminal.init_rule_engine();
 
         Ok(TerminalBuilder {
             terminal,
@@ -1347,6 +1367,7 @@ pub struct Terminal {
     event_loop_task: Task<Result<(), anyhow::Error>>,
     background_executor: BackgroundExecutor,
     path_style: PathStyle,
+    rule_engine: Option<rule_engine::RuleEngine>,
 }
 
 struct CopyTemplate {
@@ -1455,6 +1476,7 @@ impl Terminal {
                         }
                         connection.shutdown().ok();
                     }
+                    self.check_rules(rule_store::TriggerEvent::Disconnected, cx);
                     self.print_disconnection_message(cx);
                 }
                 self.register_task_finished(Some(9), cx);
@@ -1468,6 +1490,8 @@ impl Terminal {
                         self.process_ssh_input(&data);
                     }
                 }
+
+                self.check_rules(rule_store::TriggerEvent::Wakeup, cx);
 
                 cx.emit(Event::Wakeup);
 
@@ -2950,9 +2974,11 @@ impl Terminal {
     }
 
     /// Set a new connection after successful reconnect.
-    pub fn set_connection(&mut self, connection: Box<dyn connection::TerminalConnection>) {
+    pub fn set_connection(&mut self, connection: Box<dyn connection::TerminalConnection>, cx: &mut Context<Self>) {
         self.terminal_type = TerminalType::Connected { connection };
         self.disconnection_reason = None;
+        self.reset_rule_counts();
+        self.check_rules(rule_store::TriggerEvent::Connected, cx);
     }
 
     pub fn print_user_disconnection_message(&mut self, cx: &mut Context<Self>) {
@@ -3093,6 +3119,95 @@ impl Drop for Terminal {
                     })
                     .detach();
             }
+        }
+    }
+}
+
+impl Terminal {
+    /// Initialize the rule engine if connection info is available.
+    fn init_rule_engine(&mut self) {
+        if let Some(connection_info) = &self.connection_info {
+            let rules = rule_store::RuleStore::load_from_file(paths::terminal_rules_file())
+                .unwrap_or_else(|_| rule_store::RuleStore::with_defaults());
+            let enabled_rules: Vec<_> = rules.enabled_rules().cloned().collect();
+            self.rule_engine = Some(rule_engine::RuleEngine::new(connection_info, &enabled_rules));
+        }
+    }
+
+    /// Check automation rules for the given trigger event.
+    fn check_rules(&mut self, trigger: rule_store::TriggerEvent, cx: &mut Context<Self>) {
+        let content = self.get_screen_content();
+        let matched_actions = if let Some(engine) = &mut self.rule_engine {
+            engine.check(trigger, &content)
+        } else {
+            return;
+        };
+
+        for matched in matched_actions {
+            log::debug!("Rule '{}' triggered, executing action", matched.rule_name);
+            self.execute_rule_action(&matched.action, cx);
+        }
+    }
+
+    /// Get the current screen content as a string for rule matching.
+    fn get_screen_content(&self) -> String {
+        let term = self.term.lock();
+        let grid = term.grid();
+        let mut content = String::new();
+
+        for line in (0..grid.screen_lines()).map(|i| Line(i as i32)) {
+            let row = &grid[line];
+            for cell in row.into_iter() {
+                content.push(cell.c);
+            }
+            content.push('\n');
+        }
+
+        content
+    }
+
+    /// Execute a single rule action.
+    fn execute_rule_action(&mut self, action: &rule_store::RuleAction, cx: &mut Context<Self>) {
+        match action {
+            rule_store::RuleAction::SendText { text, append_newline } => {
+                let mut data = text.clone();
+                if *append_newline {
+                    data.push('\n');
+                }
+                self.input(data.into_bytes());
+            }
+            rule_store::RuleAction::SendCredential { credential_type } => {
+                if let Some(engine) = &self.rule_engine {
+                    if let Some(credential) = engine.get_credential(credential_type) {
+                        let mut data = credential;
+                        data.push('\n');
+                        self.input(data.into_bytes());
+                    }
+                }
+            }
+            rule_store::RuleAction::RunPython { code } => {
+                self.execute_python_rule_action(code, cx);
+            }
+            rule_store::RuleAction::Sequence { actions } => {
+                for sub_action in actions {
+                    self.execute_rule_action(sub_action, cx);
+                }
+            }
+            rule_store::RuleAction::Delay { milliseconds } => {
+                std::thread::sleep(std::time::Duration::from_millis(*milliseconds));
+            }
+        }
+    }
+
+    /// Execute a Python script action (placeholder - requires integration with terminal_scripting).
+    fn execute_python_rule_action(&self, code: &str, _cx: &mut Context<Self>) {
+        log::info!("Python rule action requested (code length: {} bytes)", code.len());
+    }
+
+    /// Reset rule engine trigger counts (called on reconnection).
+    pub fn reset_rule_counts(&mut self) {
+        if let Some(engine) = &mut self.rule_engine {
+            engine.reset_counts();
         }
     }
 }

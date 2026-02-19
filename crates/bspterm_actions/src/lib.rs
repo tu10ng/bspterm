@@ -332,6 +332,18 @@ pub mod script_panel {
     );
 }
 
+pub mod rule_editor {
+    use gpui::actions;
+
+    actions!(
+        rule_editor,
+        [
+            /// Toggles focus on the terminal rule editor panel.
+            ToggleFocus
+        ]
+    );
+}
+
 pub mod terminal_button_bar {
     use gpui::actions;
 

@@ -153,6 +153,7 @@ members = [
     "crates/rich_text",
     "crates/rope",
     "crates/rpc",
+    "crates/rule_editor",
     "crates/rules_library",
     "crates/schema_generator",
     "crates/search",
@@ -398,6 +399,7 @@ reqwest_client = { path = "crates/reqwest_client" }
 rodio = { git = "https://github.com/RustAudio/rodio", rev ="e2074c6c2acf07b57cf717e076bdda7a9ac6e70b", features = ["wav", "playback", "wav_output", "recording"] }
 rope = { path = "crates/rope" }
 rpc = { path = "crates/rpc" }
+rule_editor = { path = "crates/rule_editor" }
 rules_library = { path = "crates/rules_library" }
 scheduler = { path = "crates/scheduler" }
 search = { path = "crates/search" }

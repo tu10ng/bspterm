@@ -1552,7 +1552,7 @@ print(output)
                 Ok(connection) => {
                     this.update(cx, |this, cx| {
                         this.terminal.update(cx, |terminal, cx| {
-                            terminal.set_connection(connection);
+                            terminal.set_connection(connection, cx);
                             terminal.write_output(b"\x1b[32mConnected\x1b[0m\r\n", cx);
                         });
                         cx.notify();

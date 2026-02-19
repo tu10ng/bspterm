@@ -248,6 +248,12 @@ pub fn button_bar_file() -> &'static PathBuf {
     BUTTON_BAR_FILE.get_or_init(|| config_dir().join("button_bar.json"))
 }
 
+/// Returns the path to the `terminal_rules.json` file for terminal automation rules.
+pub fn terminal_rules_file() -> &'static PathBuf {
+    static TERMINAL_RULES_FILE: OnceLock<PathBuf> = OnceLock::new();
+    TERMINAL_RULES_FILE.get_or_init(|| config_dir().join("terminal_rules.json"))
+}
+
 /// Returns the path to the global settings file.
 pub fn global_settings_file() -> &'static PathBuf {
     static GLOBAL_SETTINGS_FILE: OnceLock<PathBuf> = OnceLock::new();

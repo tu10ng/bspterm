@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "name": "Telnet Username Prompt",
+      "enabled": true,
+      "trigger": "wakeup",
+      "max_triggers": 1,
+      "condition": {
+        "type": "all",
+        "conditions": [
+          {
+            "type": "connection_type",
+            "protocol": "telnet"
+          },
+          {
+            "type": "pattern",
+            "pattern": "(?i)(username|login|user)\\s*:",
+            "case_insensitive": true
+          }
+        ]
+      },
+      "action": {
+        "type": "send_credential",
+        "credential_type": "username"
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000002",
+      "name": "Telnet Password Prompt",
+      "enabled": true,
+      "trigger": "wakeup",
+      "max_triggers": 1,
+      "condition": {
+        "type": "all",
+        "conditions": [
+          {
+            "type": "connection_type",
+            "protocol": "telnet"
+          },
+          {
+            "type": "pattern",
+            "pattern": "(?i)password\\s*:",
+            "case_insensitive": true
+          }
+        ]
+      },
+      "action": {
+        "type": "send_credential",
+        "credential_type": "password"
+      }
+    }
+  ]
+}
