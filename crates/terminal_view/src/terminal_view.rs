@@ -825,7 +825,13 @@ print(output)
             return h_flex().id("terminal-button-bar").into_any_element();
         };
 
-        let buttons = store.read(cx).buttons().to_vec();
+        let buttons: Vec<_> = store
+            .read(cx)
+            .buttons()
+            .iter()
+            .filter(|b| b.enabled)
+            .cloned()
+            .collect();
         let terminal_view_handle = cx.entity().downgrade();
 
         h_flex()

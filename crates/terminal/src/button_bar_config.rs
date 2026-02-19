@@ -6,6 +6,10 @@ use gpui::{App, AppContext as _, Context, Entity, EventEmitter, Global, Task};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+fn default_enabled() -> bool {
+    true
+}
+
 /// Configuration for a single button in the button bar.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ButtonConfig {
@@ -16,6 +20,8 @@ pub struct ButtonConfig {
     pub tooltip: Option<String>,
     #[serde(default)]
     pub icon: Option<String>,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
 }
 
 impl ButtonConfig {
@@ -26,6 +32,7 @@ impl ButtonConfig {
             script_path,
             tooltip: None,
             icon: None,
+            enabled: true,
         }
     }
 
@@ -246,6 +253,11 @@ impl ButtonBarStoreEntity {
     /// Get all buttons.
     pub fn buttons(&self) -> &[ButtonConfig] {
         &self.store.buttons
+    }
+
+    /// Get only enabled buttons.
+    pub fn enabled_buttons(&self) -> Vec<&ButtonConfig> {
+        self.store.buttons.iter().filter(|b| b.enabled).collect()
     }
 
     /// Find a button by ID.

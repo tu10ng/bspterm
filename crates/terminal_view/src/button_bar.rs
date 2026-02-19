@@ -5,10 +5,11 @@ use gpui::{
 };
 use language::Buffer;
 use project::Project;
+use std::path::Path;
 use std::{fs, path::PathBuf};
 use terminal::{ButtonBarStoreEntity, ButtonBarStoreEvent, ButtonConfig};
 use uuid::Uuid;
-use ui::{FluentBuilder, IconButton, IconName, IconSize, Label, Tooltip, prelude::*};
+use ui::{FluentBuilder, IconButton, IconName, IconSize, Label, Switch, ToggleState, prelude::*};
 use workspace::{
     ModalView, SaveIntent, Workspace,
     item::{Item, ItemEvent, SaveOptions, TabContentParams},
@@ -142,6 +143,12 @@ impl Item for ButtonScriptEditor {
     }
 }
 
+/// Information about a script file.
+struct ScriptInfo {
+    name: String,
+    path: PathBuf,
+}
+
 /// Configuration modal for the button bar.
 pub struct ButtonBarConfigModal {
     focus_handle: FocusHandle,
@@ -178,6 +185,55 @@ impl ButtonBarConfigModal {
 
     fn dismiss(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         cx.emit(DismissEvent);
+    }
+
+    fn scan_scripts(scripts_dir: &Path) -> Vec<ScriptInfo> {
+        let mut scripts = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(scripts_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.file_name().is_some_and(|n| n == "bspterm.py") {
+                    continue;
+                }
+                if path.extension().is_some_and(|ext| ext == "py") {
+                    if let Some(name) = path.file_stem() {
+                        scripts.push(ScriptInfo {
+                            name: name.to_string_lossy().to_string(),
+                            path,
+                        });
+                    }
+                }
+            }
+        }
+        scripts.sort_by(|a, b| a.name.cmp(&b.name));
+        scripts
+    }
+
+    fn toggle_script(script_path: PathBuf, enabled: bool, cx: &mut App) {
+        let Some(store) = ButtonBarStoreEntity::try_global(cx) else {
+            return;
+        };
+
+        let existing = store
+            .read(cx)
+            .buttons()
+            .iter()
+            .find(|b| b.script_path == script_path)
+            .map(|b| b.id);
+
+        store.update(cx, |store, cx| {
+            if let Some(id) = existing {
+                store.update_button(id, |b| b.enabled = enabled, cx);
+            } else if enabled {
+                let label = script_path
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let mut button = ButtonConfig::new(label, script_path);
+                button.enabled = true;
+                store.add_button(button, cx);
+            }
+        });
     }
 
     fn add_button(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -237,12 +293,15 @@ impl Render for ButtonBarConfigModal {
         let store = ButtonBarStoreEntity::global(cx);
         let buttons = store.read(cx).buttons().to_vec();
 
+        let scripts_dir = paths::config_dir().join("scripts");
+        let all_scripts = Self::scan_scripts(&scripts_dir);
+
         v_flex()
             .id("button-bar-config-modal")
             .elevation_3(cx)
-            .p_4()
-            .gap_4()
-            .w(px(400.0))
+            .p_3()
+            .gap_2()
+            .w(px(320.0))
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(|this, _: &menu::Cancel, window, cx| {
                 this.dismiss(window, cx);
@@ -252,9 +311,9 @@ impl Render for ButtonBarConfigModal {
                     .justify_between()
                     .child(
                         div()
-                            .text_lg()
+                            .text_sm()
                             .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .child("Configure Button Bar"),
+                            .child("快捷按钮配置"),
                     )
                     .child(
                         IconButton::new("close-modal", IconName::Close)
@@ -266,82 +325,43 @@ impl Render for ButtonBarConfigModal {
             )
             .child(
                 v_flex()
-                    .gap_2()
-                    .when(buttons.is_empty(), |this| {
+                    .gap_1()
+                    .when(all_scripts.is_empty(), |this| {
                         this.child(
                             div()
+                                .text_sm()
                                 .text_color(cx.theme().colors().text_muted)
-                                .child("No buttons configured. Add a button below."),
+                                .child("脚本目录为空，点击下方按钮添加脚本"),
                         )
                     })
-                    .children(buttons.iter().enumerate().map(|(index, button)| {
-                        let button_id = button.id;
-                        let label = button.label.clone();
-                        let script_path = button.script_path.display().to_string();
-                        let can_move_up = index > 0;
-                        let can_move_down = index < buttons.len() - 1;
-                        let store = store.clone();
-                        let store_up = store.clone();
-                        let store_down = store.clone();
+                    .children(all_scripts.iter().map(|script| {
+                        let is_enabled = buttons
+                            .iter()
+                            .find(|b| b.script_path == script.path)
+                            .map(|b| b.enabled)
+                            .unwrap_or(false);
+                        let script_path = script.path.clone();
+                        let script_name = script.name.clone();
 
                         h_flex()
-                            .gap_2()
-                            .p_2()
-                            .rounded_md()
-                            .bg(cx.theme().colors().element_background)
+                            .py_1()
+                            .px_2()
+                            .rounded_sm()
+                            .justify_between()
+                            .hover(|s| s.bg(cx.theme().colors().element_hover))
+                            .child(div().text_sm().child(script_name.clone()))
                             .child(
-                                v_flex()
-                                    .flex_1()
-                                    .gap_0p5()
-                                    .child(div().text_sm().font_weight(gpui::FontWeight::MEDIUM).child(label))
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(cx.theme().colors().text_muted)
-                                            .child(script_path),
-                                    ),
-                            )
-                            .when(can_move_up, |this| {
-                                this.child(
-                                    IconButton::new(
-                                        SharedString::from(format!("move-up-{}", button_id)),
-                                        IconName::ArrowUp,
-                                    )
-                                    .icon_size(IconSize::Small)
-                                    .tooltip(Tooltip::text("Move Up"))
-                                    .on_click(move |_, _window, cx| {
-                                        store_up.update(cx, |store, cx| {
-                                            store.move_button(button_id, index.saturating_sub(1), cx);
-                                        });
-                                    }),
+                                Switch::new(
+                                    SharedString::from(format!("script-switch-{}", script_name)),
+                                    if is_enabled {
+                                        ToggleState::Selected
+                                    } else {
+                                        ToggleState::Unselected
+                                    },
                                 )
-                            })
-                            .when(can_move_down, |this| {
-                                this.child(
-                                    IconButton::new(
-                                        SharedString::from(format!("move-down-{}", button_id)),
-                                        IconName::ArrowDown,
-                                    )
-                                    .icon_size(IconSize::Small)
-                                    .tooltip(Tooltip::text("Move Down"))
-                                    .on_click(move |_, _window, cx| {
-                                        store_down.update(cx, |store, cx| {
-                                            store.move_button(button_id, index + 2, cx);
-                                        });
-                                    }),
-                                )
-                            })
-                            .child(
-                                IconButton::new(
-                                    SharedString::from(format!("remove-btn-{}", button_id)),
-                                    IconName::Trash,
-                                )
-                                .icon_size(IconSize::Small)
-                                .tooltip(Tooltip::text("Remove"))
-                                .on_click(move |_, _window, cx| {
-                                    store.update(cx, |store, cx| {
-                                        store.remove_button(button_id, cx);
-                                    });
+                                .on_click(move |state, _window, cx| {
+                                    let enabled = *state == ToggleState::Selected;
+                                    Self::toggle_script(script_path.clone(), enabled, cx);
                                 }),
                             )
                     })),
