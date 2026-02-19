@@ -112,21 +112,21 @@ Thank you for taking on the task of packaging Zed!
 
 Zed has two main binaries:
 
-- You will need to build `crates/cli` and make its binary available in `$PATH` with the name `zed`.
-- You will need to build `crates/zed` and put it at `$PATH/to/cli/../../libexec/zed-editor`. For example, if you are going to put the cli at `~/.local/bin/zed` put zed at `~/.local/libexec/zed-editor`. As some linux distributions (notably Arch) discourage the use of `libexec`, you can also put this binary at `$PATH/to/cli/../../lib/zed/zed-editor` (e.g. `~/.local/lib/zed/zed-editor`) instead.
-- If you are going to provide a `.desktop` file you can find a template in `crates/zed/resources/zed.desktop.in`, and use `envsubst` to populate it with the values required. This file should also be renamed to `$APP_ID.desktop` so that the file [follows the FreeDesktop standards](https://github.com/zed-industries/zed/issues/12707#issuecomment-2168742761). You should also make this desktop file executable (`chmod 755`).
-- You will need to ensure that the necessary libraries are installed. You can get the current list by [inspecting the built binary](https://github.com/zed-industries/zed/blob/935cf542aebf55122ce6ed1c91d0fe8711970c82/script/bundle-linux#L65-L67) on your system.
-- For an example of a complete build script, see [script/bundle-linux](https://github.com/zed-industries/zed/blob/935cf542aebf55122ce6ed1c91d0fe8711970c82/script/bundle-linux).
-- You can disable Zed's auto updates and provide instructions for users who try to update Zed manually by building (or running) Zed with the environment variable `ZED_UPDATE_EXPLANATION`. For example: `ZED_UPDATE_EXPLANATION="Please use flatpak to update zed."`.
-- Make sure to update the contents of the `crates/zed/RELEASE_CHANNEL` file to 'nightly', 'preview', or 'stable', with no newline. This will cause Zed to use the credentials manager to remember a user's login.
+- You will need to build `crates/cli` and make its binary available in `$PATH` with the name `bspterm`.
+- You will need to build `crates/bspterm` and put it at `$PATH/to/cli/../../libexec/bspterm-editor`. For example, if you are going to put the cli at `~/.local/bin/bspterm` put bspterm at `~/.local/libexec/bspterm-editor`. As some linux distributions (notably Arch) discourage the use of `libexec`, you can also put this binary at `$PATH/to/cli/../../lib/bspterm/bspterm-editor` (e.g. `~/.local/lib/bspterm/bspterm-editor`) instead.
+- If you are going to provide a `.desktop` file you can find a template in `crates/bspterm/resources/bspterm.desktop.in`, and use `envsubst` to populate it with the values required. This file should also be renamed to `$APP_ID.desktop` so that the file follows the FreeDesktop standards. You should also make this desktop file executable (`chmod 755`).
+- You will need to ensure that the necessary libraries are installed. You can get the current list by inspecting the built binary in `script/bundle-linux` on your system.
+- For an example of a complete build script, see `script/bundle-linux`.
+- You can disable Bspterm's auto updates and provide instructions for users who try to update Bspterm manually by building (or running) Bspterm with the environment variable `BSPTERM_UPDATE_EXPLANATION`. For example: `BSPTERM_UPDATE_EXPLANATION="Please use flatpak to update bspterm."`.
+- Make sure to update the contents of the `crates/bspterm/RELEASE_CHANNEL` file to 'nightly', 'preview', or 'stable', with no newline. This will cause Bspterm to use the credentials manager to remember a user's login.
 
 ### Other things to note
 
-At Zed, our priority has been to move fast and bring the latest technology to our users. We've long been frustrated at having software that is slow, out of date, or hard to configure, and so we've built our editor to those tastes.
+Bspterm is forked from Zed, which prioritizes moving fast and bringing the latest technology to users.
 
-However, we realize that many distros have other priorities. We want to work with everyone to bring Zed to their favorite platforms. But there is a long way to go:
+There is a long way to go for broad distribution support:
 
-- Zed is a fast-moving early-phase project. We typically release 2-3 builds per week to fix user-reported issues and release major features.
+- Bspterm is an early-phase project that may release updates frequently to fix issues and add features.
 - There are a couple of other `zed` binaries that may be present on Linux systems ([1](https://openzfs.github.io/openzfs-docs/man/v2.2/8/zed.8.html), [2](https://zed.brimdata.io/docs/commands/zed)). If you want to rename our CLI binary because of these issues, we suggest `zedit`, `zeditor`, or `zed-cli`.
 - Zed automatically installs the correct version of common developer tools in the same way as rustup/rbenv/pyenv, etc. We understand this is contentious, [see here](https://github.com/zed-industries/zed/issues/12589).
 - We allow users to install extensions locally and from [zed-industries/extensions](https://github.com/zed-industries/extensions). These extensions may install further tooling as needed, such as language servers. In the long run, we would like to make this safer, [see here](https://github.com/zed-industries/zed/issues/12358).

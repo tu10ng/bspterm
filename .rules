@@ -44,7 +44,7 @@ script/linux
 This is a fork of [Zed](https://github.com/zed-industries/zed), a GPU-accelerated code editor. Key crates:
 
 - **gpui** (`crates/gpui`): GPU-accelerated UI framework providing state management, concurrency primitives, and rendering. The core abstraction layer.
-- **zed** (`crates/zed`): Main application entry point that ties everything together.
+- **bspterm** (`crates/bspterm`): Main application entry point that ties everything together.
 - **editor** (`crates/editor`): Core text editor component used for both code editing and input fields. Handles LSP display features.
 - **workspace** (`crates/workspace`): Window management, local state serialization, and project grouping.
 - **project** (`crates/project`): File management, navigation, and LSP communication.
@@ -176,39 +176,16 @@ Often event handlers will want to update the entity that's in the current `Conte
 
 ## Drag and Drop
 
-### Classic Pitfall: `on_drag_move` fires for ALL registered handlers
+**Pitfall:** `on_drag_move` fires for ALL registered handlers (Capture phase). Always check bounds:
 
-`on_drag_move` events fire during the Capture phase, which means ALL elements with registered `on_drag_move` handlers will receive the event, regardless of where the mouse actually is. This can cause unexpected behavior where a "background" or "blank-area" handler overwrites the target set by specific item handlers.
-
-**Wrong:**
 ```rust
-// Background area - this handler fires even when mouse is over list items!
-div()
-    .id("blank-area")
-    .on_drag_move::<DraggedItem>(cx.listener(
-        |this, _event, _window, cx| {
-            this.drag_target = Some(DragTarget::Root);  // Overwrites item targets!
-            cx.notify();
-        },
-    ))
+.on_drag_move::<DraggedItem>(cx.listener(|this, event: &DragMoveEvent<DraggedItem>, _window, cx| {
+    if event.bounds.contains(&event.event.position) {  // Required check!
+        this.drag_target = Some(DragTarget::Root);
+        cx.notify();
+    }
+}))
 ```
-
-**Correct:**
-```rust
-// Background area - check bounds before setting target
-div()
-    .id("blank-area")
-    .on_drag_move::<DraggedItem>(cx.listener(
-        |this, event: &DragMoveEvent<DraggedItem>, _window, cx| {
-            if event.bounds.contains(&event.event.position) {
-                this.drag_target = Some(DragTarget::Root);
-                cx.notify();
-            }
-        },
-    ))
-```
-
-Always use `event.bounds.contains(&event.event.position)` in `on_drag_move` handlers to ensure the mouse is actually within the element's bounds. See `project_panel` for reference implementation.
 
 ## Actions
 
@@ -220,152 +197,28 @@ Action handlers can be registered on an element via the event handler `.on_actio
 
 ## Keyboard Shortcuts and Key Bindings
 
-GPUI provides a comprehensive system for handling keyboard shortcuts, from single keys to multi-keystroke sequences.
+Keystroke format: `[ctrl-][alt-][shift-][cmd-]key` (e.g., `"ctrl-a"`, `"cmd-k left"` for multi-keystroke)
 
-### Key Files
-
-| Purpose | File Path |
-|---------|-----------|
-| Keystroke parsing | `crates/gpui/src/platform/keystroke.rs` |
-| KeyBinding structure | `crates/gpui/src/keymap/binding.rs` |
-| Keymap management | `crates/gpui/src/keymap.rs` |
-| Context matching | `crates/gpui/src/keymap/context.rs` |
-| Key dispatch tree | `crates/gpui/src/key_dispatch.rs` |
-| Action definition | `crates/gpui/src/action.rs` |
-| Window event handling | `crates/gpui/src/window.rs` |
-| Element interaction | `crates/gpui/src/elements/div.rs` |
-
-### Keystroke Format
-
-```
-Format: [secondary-][ctrl-][alt-][shift-][cmd-][fn-]key
-Examples: "a", "ctrl-a", "shift-enter", "cmd-k left" (multi-keystroke sequence)
-```
-
-### Defining Actions
-
-**Simple actions (no data):**
+**Defining actions:**
 ```rust
-actions!(editor, [MoveUp, MoveDown, MoveLeft, MoveRight]);
+actions!(editor, [MoveUp, MoveDown]);  // Simple actions
 ```
 
-**Actions with data:**
+**Registering bindings and handlers:**
 ```rust
-#[derive(Clone, PartialEq, Deserialize, JsonSchema, Action)]
-#[action(namespace = editor)]
-#[serde(deny_unknown_fields)]
-pub struct SelectNext {
-    #[serde(default)]
-    pub replace_newest: bool,
-}
-```
+KeyBinding::new("cmd-z", UndoAction, Some("Editor"))  // With context predicate
 
-### Registering Key Bindings
-
-```rust
-KeyBinding::new("cmd-z", UndoAction, Some("Editor"))  // With context
-KeyBinding::new("ctrl-k left", SomeAction, None)       // Multi-keystroke, no context
-```
-
-**Context predicate syntax:**
-- `"Editor"` - simple component name
-- `"editor && vim_mode == normal"` - AND combination
-- `"!(editor)"` - negation
-- `"Workspace > Editor"` - ancestor-descendant relationship
-
-### Registering Action Handlers on Elements
-
-**Named action handlers:**
-```rust
 div()
-    .key_context("Editor")  // Scope bindings to this context
+    .key_context("Editor")
     .on_action(cx.listener(Self::handle_undo))
-    .on_action(cx.listener(Self::handle_redo))
+    .on_key_down(cx.listener(|this, event, window, cx| { /* raw key */ }))
 ```
 
-**Raw key event handlers:**
-```rust
-div()
-    .on_key_down(cx.listener(|this, event, window, cx| {
-        // Handle KeyDownEvent
-        if should_consume {
-            cx.stop_propagation();  // Prevent bubbling
-        }
-    }))
-    .capture_key_down(cx.listener(|this, event, window, cx| {
-        // Capture phase handler (fires before bubble)
-    }))
-```
+**Context predicates:** `"Editor"`, `"editor && vim_mode == normal"`, `"!(editor)"`, `"Workspace > Editor"`
 
-### Handler Context Types
+**Event phases:** Capture (root→focused) then Bubble (focused→root). Use `cx.stop_propagation()` to halt.
 
-| Context Type | Purpose | Available In |
-|-------------|---------|--------------|
-| `&A` | Action data | All handlers |
-| `&mut Window` | Window operations | All handlers |
-| `&mut App` | Global state, spawn tasks | All handlers |
-| `&mut Context<T>` | Entity-specific: notify, subscribe | Via `cx.listener()` |
-| `DispatchPhase` | Capture or Bubble phase | Window-level `on_action` only |
-
-### Event Dispatch Phases
-
-```rust
-pub enum DispatchPhase {
-    Capture,  // Root → Focused element (fires first)
-    Bubble,   // Focused element → Root (default)
-}
-```
-
-Events propagate in two phases:
-1. **Capture**: From root down to focused element
-2. **Bubble**: From focused element up to root
-
-Call `cx.stop_propagation()` to prevent further propagation.
-
-### Multi-Keystroke Sequences
-
-Multi-keystroke bindings (e.g., `"ctrl-k left"`) use a pending state machine:
-1. First keystroke partially matches → stored in pending state
-2. Subsequent keystrokes complete the sequence → action executed
-3. 1-second timeout → pending keystrokes replayed as individual events
-
-### Tab Key Handling
-
-Tab is **not** automatically handled. Explicit binding required:
-
-```rust
-actions!(example, [Tab, TabPrev]);
-
-cx.bind_keys([
-    KeyBinding::new("tab", Tab, None),
-    KeyBinding::new("shift-tab", TabPrev, None),
-]);
-
-fn on_tab(&mut self, _: &Tab, window: &mut Window, cx: &mut Context<Self>) {
-    window.focus_next(cx);
-}
-
-fn on_tab_prev(&mut self, _: &TabPrev, window: &mut Window, cx: &mut Context<Self>) {
-    window.focus_prev(cx);
-}
-```
-
-### Complete Event Flow
-
-```
-Platform Key Event
-    ↓
-window.dispatch_key_event()
-    ├─ Build dispatch path (root → focused element)
-    ├─ Check keystroke interceptors
-    ├─ Attempt multi-keystroke binding match
-    ├─ If pending: Store and wait for timeout
-    ├─ If matched: Execute binding
-    │   └─ dispatch_action_on_node()
-    │       ├─ Capture phase (root → focused)
-    │       └─ Bubble phase (focused → root)
-    └─ Else: Dispatch raw key events to listeners
-```
+**Tab handling:** Not automatic. Bind explicitly with `KeyBinding::new("tab", Tab, None)` and call `window.focus_next(cx)`.
 
 ## Notify
 
@@ -376,10 +229,6 @@ When a view's state has changed in a way that may affect its rendering, it shoul
 While updating an entity (`cx: Context<T>`), it can emit an event using `cx.emit(event)`. Entities register which events they can emit by declaring `impl EventEmitter<EventType> for EntityType {}`.
 
 Other entities can then register a callback to handle these events by doing `cx.subscribe(other_entity, |this, other_entity, event, cx| ...)`. This will return a `Subscription` which deregisters the callback when dropped.  Typically `cx.subscribe` happens when creating a new entity and the subscriptions are stored in a `_subscriptions: Vec<Subscription>` field.
-
-## Build guidelines
-
-- Use `./script/clippy` instead of `cargo clippy`
 
 ## Session Management
 
@@ -399,27 +248,9 @@ The terminal crate includes a session management system for persistent SSH/Telne
 - `GlobalSessionStore`: Global marker for `cx.global()` access
 - `SessionStoreEvent`: Events for UI subscription (Changed, SessionAdded, SessionRemoved)
 
-### Usage
+**Usage:** `SessionStoreEntity::init(cx)` on startup, then `SessionStoreEntity::global(cx)` to access. Subscribe to `SessionStoreEvent` for changes.
 
-```rust
-// Initialize on app startup
-SessionStoreEntity::init(cx);
-
-// Access globally
-let sessions = SessionStoreEntity::global(cx);
-sessions.update(cx, |store, cx| {
-    store.add_session(config, parent_id, cx);
-});
-
-// Subscribe to changes
-cx.subscribe(&sessions, |this, _, event, cx| {
-    // Handle SessionStoreEvent
-});
-```
-
-### Persistence
-
-Sessions are stored in `~/.config/bspterm/sessions.json` (or platform equivalent via `paths::sessions_file()`).
+**Persistence:** `~/.config/bspterm/sessions.json`
 
 ## Telnet Connection
 
@@ -444,74 +275,30 @@ telnet/
 - `build_naws()`: Generates window size subnegotiation packet (RFC 1073)
 - IAC escaping: 255 255 → single 255
 
-### TelnetConfig (`mod.rs`)
+### Key Types
 
-```rust
-pub struct TelnetConfig {
-    pub host: String,
-    pub port: u16,
-    pub username: Option<String>,
-    pub password: Option<String>,
-    pub encoding: Option<String>,
-    pub terminal_type: String,  // default: "xterm-256color"
-}
-```
+- `TelnetConfig`: Connection settings (host, port, username, password, encoding, terminal_type)
+- `TelnetSession`: TCP connection lifecycle management
+- `TelnetTerminalConnection`: Implements `TerminalConnection` trait (same interface as SSH)
 
-### TelnetSession (`session.rs`)
-
-Manages TCP connection lifecycle:
-- `connect()`: Establishes TCP connection, returns read/write halves for the channel task
-
-### TelnetTerminalConnection (`terminal.rs`)
-
-Implements `TerminalConnection` trait (same interface as SSH):
-- Uses `TelnetChannelCommand` enum (Write, Resize, Close)
-- Channel task with `futures::select_biased!` for concurrent I/O
-- Automatic NAWS window size updates after negotiation
-
-### Usage
-
-```rust
-// Create terminal with Telnet connection
-let terminal = TerminalBuilder::new_with_telnet(
-    telnet_config,
-    cursor_shape,
-    alternate_scroll,
-    max_scroll_history_lines,
-    window_id,
-    cx,
-    path_style,
-).await?;
-
-// Or connect via quick_add helper
-connect_telnet(telnet_config, workspace, pane, window, cx);
-```
-
-### Converting from SessionStore config
-
-```rust
-use terminal::connection::telnet::TelnetConfig;
-
-let telnet_session_config: TelnetSessionConfig = /* from session store */;
-let config: TelnetConfig = (&telnet_session_config).into();
-```
+**Usage:** `TerminalBuilder::new_with_telnet(config, ...)` or `connect_telnet(config, workspace, pane, window, cx)`
 
 ## Terminal Keybinding Interception
 
-The terminal view intercepts keystrokes to decide whether they should be sent to the shell or handled by Zed's action system (`crates/terminal_view/src/terminal_view.rs`).
+The terminal view intercepts keystrokes to decide whether they should be sent to the shell or handled by Bspterm's action system (`crates/terminal_view/src/terminal_view.rs`).
 
 ### Behavior
 
 When `send_keybindings_to_shell` setting is enabled, keystrokes are intercepted and checked:
 
-1. **Explicit skip list**: Keystrokes in `keybindings_to_skip_shell` setting are always handled by Zed
+1. **Explicit skip list**: Keystrokes in `keybindings_to_skip_shell` setting are always handled by Bspterm
 2. **Terminal-context bindings**: Only keybindings with `"context": "Terminal"` predicate are intercepted
 3. **Global bindings**: Keybindings without a Terminal context predicate are sent to the shell
 
 ### Key Functions
 
 - `should_skip_shell()`: Main decision function combining all checks
-- `keystroke_has_zed_action_binding()`: Checks if keystroke has a Terminal-context keybinding
+- `keystroke_has_bspterm_action_binding()`: Checks if keystroke has a Terminal-context keybinding
 - `predicate_contains_terminal()`: Recursively checks if a `KeyBindingContextPredicate` contains "Terminal"
 
 ### Examples
@@ -519,9 +306,9 @@ When `send_keybindings_to_shell` setting is enabled, keystrokes are intercepted 
 | Keystroke | Action | Context | Result |
 |-----------|--------|---------|--------|
 | `ctrl-p` | `menu::SelectPrevious` | Global | Sent to shell |
-| `ctrl-v` | `terminal::Paste` | Terminal | Intercepted by Zed |
+| `ctrl-v` | `terminal::Paste` | Terminal | Intercepted by Bspterm |
 | `ctrl-c` | `terminal::SendKeystroke` | Terminal | Sent to shell (explicitly forwarded) |
-| `ctrl-shift-c` | `terminal::Copy` | Terminal | Intercepted by Zed |
+| `ctrl-shift-c` | `terminal::Copy` | Terminal | Intercepted by Bspterm |
 
 ### Special Actions
 
@@ -547,92 +334,26 @@ The `remote_explorer` crate (`crates/remote_explorer`) provides a panel for brow
 
 ### Integration Points
 
-- **Action**: `zed_actions::remote_explorer::ToggleFocus`
+- **Action**: `bspterm_actions::remote_explorer::ToggleFocus`
 - **Menu**: View > Remote Explorer
 - **Icon**: Server icon in left dock
 - **Position**: Left or Right dock (default: Left)
 - **Priority**: `activation_priority = 10`
 
-### Usage
 
-```rust
-// In app initialization (already done in zed crate)
-remote_explorer::init(cx);
+### Quick Add Area (`crates/remote_explorer/src/quick_add/`)
 
-// Panel is automatically loaded via initialize_workspace()
-let remote_explorer = RemoteExplorer::load(workspace_handle.clone(), cx.clone());
-```
+Auto-recognize input supports flexible IP detection anywhere in the string:
 
-### Quick Add Area
+| Format | Example | Result |
+|--------|---------|--------|
+| IP only | `192.168.1.1` | Telnet:23 |
+| IP:port | `192.168.1.1:22` | SSH:22 |
+| With credentials | `192.168.1.1 root/pass` | Telnet with auth |
+| Name prefix | `管理网口192.168.1.1` | Name includes prefix |
+| Bulk (环境/后台) | `环境192.168.1.1\troot\tpass` | Telnet, grouped by IP |
 
-The Remote Explorer panel includes a Quick Add area (`crates/remote_explorer/src/quick_add/`) for rapidly adding new connections.
-
-#### Auto-Recognize Input
-
-The auto-recognize input field (`auto_recognize.rs`) supports flexible parsing with IP detection anywhere in the input string.
-
-| Format | Example | Session Name | Result |
-|--------|---------|--------------|--------|
-| IP only | `192.168.1.1` | "192.168.1.1" | Telnet on port 23 |
-| IP:port | `192.168.1.1:22` | "192.168.1.1:22" | SSH on port 22 |
-| IP user pass | `192.168.1.1 root password` | "192.168.1.1" | Telnet with credentials |
-| IP user pass port | `192.168.1.1 root password 2323` | "192.168.1.1" | Telnet on custom port |
-| Slash credentials | `192.168.1.1 user/pass` | "192.168.1.1" | Telnet, user/pass parsed |
-| Name prefix | `管理网口127.0.0.1` | "管理网口127.0.0.1" | Telnet, name includes prefix |
-| Name + credentials | `管理网口127.0.0.1 root/Root@123` | "管理网口127.0.0.1" | Telnet with credentials |
-| Name with spaces | `dev server 192.168.1.1 root/pass` | "dev server 192.168.1.1" | Telnet with credentials |
-| Name + port | `测试10.0.0.1:22 admin pass` | "测试10.0.0.1:22" | SSH with credentials |
-| Multiple (comma) | `192.168.1.1, 192.168.1.2` | — | Multiple connections |
-| Multiple (newline) | Line-separated IPs | — | Multiple connections |
-| Session env info | `环境192.168.1.1\troot\tpass` | — | Telnet (see below) |
-| Session env info | `后台192.168.1.1\tadmin\tpass` | — | SSH (see below) |
-
-**Parsing Algorithm:**
-1. Scans input to find IPv4 address anywhere in the string
-2. Session name = everything from start up to and including IP:port
-3. Credentials parsed from remaining text after IP:port
-4. Supports multiple credential separators: tab (`\t`), slash (`/`), or space
-
-**Credential Formats:**
-- Tab-separated: `user\tpass`
-- Slash-separated: `user/pass`
-- Space-separated: `user pass` or `user pass port`
-
-#### Session Env Info Format (环境/后台)
-
-Special format for bulk importing sessions from "复制环境信息" (Copy Environment Info):
-
-- **Telnet**: `环境<host>[:<port>]\t<username>\t<password>` (default port 23)
-- **SSH**: `后台<host>[:<port>]\t<username>\t<password>` (default port 22)
-
-**Import behavior:**
-1. Entries are grouped by host IP address
-2. A `SessionGroup` is created for each unique IP (group name = IP address)
-3. All sessions for that IP are added to the group
-4. Sessions are auto-saved without establishing connections
-
-**Example input:**
-```
-环境192.168.1.1	root	pass1
-后台192.168.1.1	admin	pass2
-环境192.168.1.2	root	pass3
-```
-
-**Result:** Two groups "192.168.1.1" and "192.168.1.2", each containing their respective sessions.
-
-**Session naming:**
-- Telnet: `<host>` or `<host>:<port>` (no username prefix)
-- SSH: `<username>@<host>` or `<username>@<host>:<port>`
-
-#### Key Functions
-
-- `parse_connection_text()`: Main parser for all input formats
-- `parse_single_entry()`: Parses one connection entry with IP scanning
-- `find_ipv4_position()`: Scans string to locate IPv4 address position
-- `parse_credentials_flexible()`: Parses credentials with tab/slash/space separators
-- `is_session_env_info_format()`: Detects 环境/后台 format
-- `parse_session_env_info_entry()`: Parses single 环境/后台 entry
-- `import_session_env_info()`: Handles grouping and saving for bulk import
+**Credential separators:** tab, slash, or space. **Bulk import:** `环境` = Telnet, `后台` = SSH.
 
 ## Terminal Reconnection
 
@@ -654,40 +375,10 @@ When reconnecting, the existing `Terminal` entity is reused rather than creating
 
 ### Reconnection Flow
 
-1. User triggers reconnect (e.g., presses Enter when disconnected)
-2. "Connecting..." message is printed to terminal
-3. `terminal.reconnect(cx)` creates new connection with existing `events_tx`
-4. On success: `terminal.set_connection(connection)` updates the terminal, "Connected" message printed
-5. On failure: Error message printed with retry prompt
-6. Scrollback history remains intact throughout
-
-### Usage
-
-```rust
-// In terminal_view.rs
-fn reconnect_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-    // Print connecting message
-    self.terminal.update(cx, |terminal, cx| {
-        terminal.write_output(b"\x1b[36mConnecting...\x1b[0m\r\n", cx);
-    });
-
-    let reconnect_task = self.terminal.update(cx, |terminal, cx| terminal.reconnect(cx));
-
-    cx.spawn_in(window, async move |this, cx| {
-        match reconnect_task.await {
-            Ok(connection) => {
-                this.update(cx, |this, cx| {
-                    this.terminal.update(cx, |terminal, cx| {
-                        terminal.set_connection(connection);
-                    });
-                })?;
-            }
-            Err(err) => { /* handle error */ }
-        }
-        anyhow::Ok(())
-    }).detach_and_log_err(cx);
-}
-```
+1. User triggers reconnect → "Connecting..." printed
+2. `terminal.reconnect(cx)` creates new connection with existing `events_tx`
+3. On success: `terminal.set_connection(connection)` updates terminal
+4. Scrollback history remains intact throughout
 
 ## Editor Panel
 
@@ -707,352 +398,74 @@ The `editor_panel` crate (`crates/editor_panel`) provides a dockable panel for c
 
 ### Integration Points
 
-- **Action**: `zed_actions::editor_panel::ToggleFocus`
+- **Action**: `editor_panel::ToggleFocus`
 - **Position**: Left, Right, or Bottom dock (default: Right)
 - **Auto-close**: Panel closes automatically when last tab is closed
 
 ## Terminal Python Scripting
 
-The terminal scripting system allows Python scripts to automate terminal sessions via a Unix socket JSON-RPC server.
-
-### Architecture
-
-```
-+------------------+     Unix Socket      +--------------------+
-|  Python Script   | <------------------> |  Scripting Server  |
-|  (bspterm.py)    |    JSON-RPC 2.0      |  (Rust crate)      |
-+------------------+                      +--------------------+
-        ^                                          |
-        |                                 +--------v--------+
-+-------+--------+                        | Terminal Entity |
-| Script Panel   |                        | (PTY/SSH/Telnet)|
-| (UI 管理面板)   |                        +-----------------+
-+----------------+
-```
-
-### Crates
-
-| Crate | Path | Purpose |
-|-------|------|---------|
-| `terminal_scripting` | `crates/terminal_scripting/` | Unix socket server, JSON-RPC protocol, terminal registry |
-| `script_panel` | `crates/script_panel/` | UI panel for script management and execution |
-
-### Terminal Registry
-
-Terminals are automatically registered when created (`TerminalView::new()`) and tracked for focus changes:
-
-```rust
-// In terminal_view.rs
-let scripting_id = TerminalRegistry::register(&terminal, term_name, cx);
-
-// On focus
-TerminalRegistry::set_focused(Some(id), cx);
-```
-
-The registry uses `WeakEntity<Terminal>` references, so terminals are automatically cleaned up when dropped.
+Python scripts automate terminal sessions via Unix socket JSON-RPC (`crates/terminal_scripting/`, `crates/script_panel/`).
 
 ### JSON-RPC Methods
 
-| Method | Description |
-|--------|-------------|
-| `session.current` | Get current focused terminal |
-| `session.list` | List all terminal sessions |
-| `session.create_ssh` | Create background SSH connection (no UI) |
-| `session.create_telnet` | Create background Telnet connection (no UI) |
-| `terminal.send` | Send raw input to terminal |
-| `terminal.read` | Read current screen content |
-| `terminal.wait_for` | Wait for pattern in output (regex) |
-| `terminal.run` | Run command and wait for completion |
-| `terminal.close` | Close terminal connection |
+`session.current`, `session.list`, `session.create_ssh`, `session.create_telnet`, `terminal.send`, `terminal.read`, `terminal.wait_for`, `terminal.run`, `terminal.close`
 
-### Python Client Library
-
-Location: `assets/scripts/bspterm.py` (auto-installed to `~/.config/bspterm/scripts/`)
+### Python Client (`assets/scripts/bspterm.py`)
 
 ```python
-from bspterm import current_terminal, Session, SSH, Telnet
+from bspterm import current_terminal, SSH, Telnet
 
-# Scenario 1: Operate on focused terminal
+# Focused terminal
 term = current_terminal()
 output = term.run("ls -la")
-print(output)
 
-# Scenario 2: List all sessions
-sessions = Session.list()
-for s in sessions:
-    print(f"{s.id}: {s.name}")
-
-# Scenario 3: Background SSH connection
+# Background SSH
 term = SSH.connect("192.168.1.1", user="root", password="secret")
 term.wait_for("$")
-output = term.run("hostname")
+term.run("hostname")
 term.close()
-
-# Scenario 4: Background Telnet connection
-term = Telnet.connect("192.168.1.1", port=23)
-term.wait_for("login:")
-term.send("admin\n")
-term.wait_for(">")
-output = term.run("show version")
-term.close()
-
-# Scenario 5: Interactive commands
-term = current_terminal()
-term.send("passwd\n")
-term.wait_for("New password:")
-term.send("newpass123\n")
-term.wait_for("Retype")
-term.send("newpass123\n")
 ```
 
 ### Script Panel
 
-- **Location**: Bottom dock (View > Script Panel)
 - **Action**: `bspterm_actions::script_panel::ToggleFocus`
-- **Scripts Directory**: `~/.config/bspterm/scripts/*.py`
-
-Features:
-- Script list with refresh button
-- Run/Stop controls
-- Real-time output display
-- Automatic focus terminal binding (via `BSPTERM_CURRENT_TERMINAL` env var)
-
-### Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `BSPTERM_SOCKET` | Unix socket path for JSON-RPC server |
-| `BSPTERM_CURRENT_TERMINAL` | Terminal ID of focused terminal when script started |
-| `PYTHONPATH` | Set to scripts directory for `bspterm` module import |
-
-### Testing
-
-1. Build and run: `cargo run`
-2. Open a terminal (Ctrl+`)
-3. Open Script Panel (View > Script Panel)
-4. Create test script `~/.config/bspterm/scripts/hello.py`:
-```python
-from bspterm import current_terminal
-term = current_terminal()
-print(f"Terminal ID: {term.id}")
-output = term.run("echo 'Hello from Python!'")
-print(f"Output: {output}")
-```
-5. Click Run and observe output in Script Panel
-
-### Non-blocking I/O
-
-The script runner uses non-blocking I/O to prevent UI hangs:
-- stdout/stderr are set to `O_NONBLOCK` via `fcntl`
-- `read_output()` handles `WouldBlock` errors gracefully
-- Output is polled during render cycles
+- **Scripts**: `~/.config/bspterm/scripts/*.py`
+- **Env vars**: `BSPTERM_SOCKET`, `BSPTERM_CURRENT_TERMINAL`
 
 ## Terminal Automation Rules
 
-The terminal includes a rule-based automation system for auto-login and other automated actions (`crates/terminal/src/rule_store.rs`, `crates/terminal/src/rule_engine.rs`, `crates/rule_editor/`).
+Rule-based automation for auto-login (`crates/terminal/src/rule_store.rs`, `crates/terminal/src/rule_engine.rs`, `crates/rule_editor/`).
 
-### Architecture
+### Data Structures
 
-```
-Terminal Event (Wakeup/Connected/Disconnected)
-       ↓
-  RuleEngine.check(event_type, screen_content)
-       ↓
-  Filter rules by trigger → Pattern Match? → Execute Action
-       ↓
-  SendCredential / SendText / RunPython / etc.
-```
+- `AutomationRule`: id, name, enabled, trigger, max_triggers, condition, action
+- `TriggerEvent`: Wakeup (output received), Connected, Disconnected
+- `RuleCondition`: Pattern, ConnectionType, All (AND), Any (OR)
+- `RuleAction`: SendText, SendCredential, RunPython, Sequence, Delay
 
-### Data Structures (`crates/terminal/src/rule_store.rs`)
+### RuleEngine
 
 ```rust
-pub struct AutomationRule {
-    pub id: Uuid,
-    pub name: String,
-    pub enabled: bool,
-    pub trigger: TriggerEvent,      // When to check this rule
-    pub max_triggers: Option<u32>,  // Max times to trigger per connection (None = unlimited)
-    pub condition: RuleCondition,
-    pub action: RuleAction,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
-pub enum TriggerEvent {
-    #[default]
-    Wakeup,       // New output received (most common)
-    Connected,    // Connection established
-    Disconnected, // Connection lost
-}
-
-pub enum RuleCondition {
-    Pattern { pattern: String, case_insensitive: bool },
-    ConnectionType { protocol: Protocol },  // Ssh or Telnet
-    All { conditions: Vec<RuleCondition> }, // AND logic
-    Any { conditions: Vec<RuleCondition> }, // OR logic
-}
-
-pub enum RuleAction {
-    SendText { text: String, append_newline: bool },
-    SendCredential { credential_type: CredentialType }, // Username or Password
-    RunPython { code: String },
-    Sequence { actions: Vec<RuleAction> },
-    Delay { milliseconds: u64 },
-}
-```
-
-### RuleStore and GPUI Integration
-
-- `RuleStore`: Holds rules, handles save/load from JSON
-- `RuleStoreEntity`: GPUI entity with auto-save and event emission
-- `RuleStoreEvent`: Events for UI subscription (Changed, RuleAdded, RuleRemoved)
-
-```rust
-// Initialize on app startup
-RuleStoreEntity::init(cx);
-
-// Access globally
-let rules = RuleStoreEntity::global(cx);
-rules.update(cx, |store, cx| {
-    store.add_rule(rule, cx);
-});
-
-// Subscribe to changes
-cx.subscribe(&rules, |this, _, event, cx| {
-    // Handle RuleStoreEvent
-});
-```
-
-### Persistence
-
-Rules are stored in `~/.config/bspterm/terminal_rules.json` (via `paths::terminal_rules_file()`).
-
-### RuleEngine (`crates/terminal/src/rule_engine.rs`)
-
-The rule engine compiles regex patterns at initialization and tracks trigger counts per connection.
-
-```rust
-// Create engine with connection info and rules
 let engine = RuleEngine::new(&connection_info, &rules);
-
-// Check rules for a trigger event
 let actions = engine.check(TriggerEvent::Wakeup, &screen_content);
-
-// Execute matched actions
-for action in actions {
-    match action.action {
-        RuleAction::SendCredential { credential_type } => {
-            if let Some(cred) = engine.get_credential(&credential_type) {
-                terminal.input(format!("{}\n", cred).into_bytes());
-            }
-        }
-        RuleAction::SendText { text, append_newline } => { /* ... */ }
-        // ...
-    }
-}
 ```
 
-**Key features:**
-- Pre-compiled regex patterns for performance
-- Cooldown mechanism (2 seconds) prevents rapid repeated triggering
-- `max_triggers` limit per rule per connection
-- `reset_counts()` for reconnection scenarios
+**Features:** Pre-compiled regex, 2s cooldown, `max_triggers` limit per connection.
 
 ### Terminal Integration
 
-The rule engine is integrated into `Terminal` (`crates/terminal/src/terminal.rs`):
+- `init_rule_engine()`: Called on connection established
+- `check_rules(trigger, cx)`: Called on Wakeup and connection state changes
 
-- `init_rule_engine()`: Called when connection is established
-- `check_rules(trigger, cx)`: Called on Wakeup events (new output) and connection state changes
-- `execute_rule_action(action, cx)`: Executes matched actions
-
-### Rule Editor Panel (`crates/rule_editor/`)
-
-A dockable panel for managing automation rules.
-
-**Module Structure:**
-```
-crates/rule_editor/
-├── Cargo.toml
-└── src/
-    ├── rule_editor.rs       # Main panel with rule list
-    └── rule_edit_modal.rs   # Modal for creating/editing rules
-```
-
-**Panel Features:**
-- List of rules with enable/disable checkboxes
-- Edit and Delete buttons per rule
-- "Add Rule" button to create new rules
-- Subscribes to `RuleStoreEntity` for automatic updates
-
-**Modal Features:**
-- Name, Pattern (regex), and Send Text input fields
-- Trigger selection (Wakeup, Connected)
-- Protocol selection (Telnet, SSH)
-- Action type selection (Send Credential, Send Text)
-- Credential type selection (Username, Password)
-
-### Integration Points
+### Rule Editor Panel
 
 - **Action**: `bspterm_actions::rule_editor::ToggleFocus`
 - **Position**: Right dock
-- **Icon**: Cog icon
-- **Priority**: `activation_priority = 11`
 
-### Default Auto-Login Rules
+**Persistence:** `~/.config/bspterm/terminal_rules.json`
+**Defaults:** `assets/settings/default_terminal_rules.json`
 
-Default rules are stored in `assets/settings/default_terminal_rules.json`:
-
-```json
-{
-  "rules": [
-    {
-      "name": "Telnet Username Prompt",
-      "enabled": true,
-      "trigger": "Wakeup",
-      "max_triggers": 1,
-      "condition": {
-        "type": "All",
-        "conditions": [
-          { "type": "ConnectionType", "protocol": "Telnet" },
-          { "type": "Pattern", "pattern": "(?i)(username|login|user)\\s*:", "case_insensitive": true }
-        ]
-      },
-      "action": { "type": "SendCredential", "credential_type": "Username" }
-    },
-    {
-      "name": "Telnet Password Prompt",
-      "enabled": true,
-      "trigger": "Wakeup",
-      "max_triggers": 1,
-      "condition": {
-        "type": "All",
-        "conditions": [
-          { "type": "ConnectionType", "protocol": "Telnet" },
-          { "type": "Pattern", "pattern": "(?i)password\\s*:", "case_insensitive": true }
-        ]
-      },
-      "action": { "type": "SendCredential", "credential_type": "Password" }
-    }
-  ]
-}
-```
-
-### Testing
-
-Run rule engine tests:
-```sh
-cargo test -p terminal rule_engine
-```
-
-Tests cover:
-- Pattern matching (case-sensitive and case-insensitive)
-- Connection type conditions
-- max_triggers limit enforcement
-- Trigger event filtering
-- Any/All condition logic
-- Credential retrieval
-- Disabled rules ignored
-- Reset counts functionality
+**Test:** `cargo test -p terminal rule_engine`
 
 ## Zed 遗留命名
 

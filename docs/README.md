@@ -6,9 +6,9 @@
 
 ---
 
-Welcome to Zed's documentation.
+Welcome to Bspterm's documentation.
 
-This is built on push to `main` and published automatically to [https://zed.dev/docs](https://zed.dev/docs).
+This documentation is inherited from Zed and covers both the editor functionality and Bspterm's core remote connection features.
 
 To preview the docs locally you will need to install [mdBook](https://rust-lang.github.io/mdBook/) (`cargo install mdbook@0.4.40`) and then run:
 
