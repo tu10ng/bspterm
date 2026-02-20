@@ -260,6 +260,12 @@ pub fn abbreviations_file() -> &'static PathBuf {
     ABBREVIATIONS_FILE.get_or_init(|| config_dir().join("abbreviations.json"))
 }
 
+/// Returns the path to the `shortcut_bar.json` file for terminal shortcut bar configuration.
+pub fn shortcut_bar_file() -> &'static PathBuf {
+    static SHORTCUT_BAR_FILE: OnceLock<PathBuf> = OnceLock::new();
+    SHORTCUT_BAR_FILE.get_or_init(|| config_dir().join("shortcut_bar.json"))
+}
+
 /// Returns the path to the global settings file.
 pub fn global_settings_file() -> &'static PathBuf {
     static GLOBAL_SETTINGS_FILE: OnceLock<PathBuf> = OnceLock::new();

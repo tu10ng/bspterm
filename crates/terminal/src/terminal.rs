@@ -5,6 +5,7 @@ pub mod mappings;
 pub mod rule_engine;
 pub mod rule_store;
 pub mod session_store;
+pub mod shortcut_bar_store;
 
 pub use alacritty_terminal;
 
@@ -28,6 +29,11 @@ pub use rule_store::{
 };
 
 pub use rule_engine::{ConnectionContext, MatchedAction, RuleEngine};
+
+pub use shortcut_bar_store::{
+    GlobalShortcutBarStore, PredefinedShortcut, ShortcutBarStore, ShortcutBarStoreEntity,
+    ShortcutBarStoreEvent, ShortcutEntry, PREDEFINED_SHORTCUTS,
+};
 
 pub use crate::connection::ssh::{SshAuthConfig, SshConfig};
 pub use crate::connection::telnet::TelnetConfig;

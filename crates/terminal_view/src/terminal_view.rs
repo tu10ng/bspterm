@@ -1,6 +1,7 @@
 mod abbr_bar;
 mod button_bar;
 mod persistence;
+mod shortcut_bar;
 mod ssh_connect_modal;
 pub mod terminal_element;
 pub mod terminal_panel;
@@ -74,12 +75,14 @@ use bspterm_actions::{
         ToggleAbbrExpansion,
     },
     terminal_button_bar::{ConfigureButtonBar, ToggleButtonBar},
+    terminal_shortcut_bar::{AddShortcut, ConfigureShortcutBar, RemoveShortcut, ToggleShortcutBar},
 };
 use abbr_bar::{AbbrBarConfigModal, AddAbbrModal, EditAbbrModal};
 use button_bar::ButtonBarScriptRunner;
+use shortcut_bar::ShortcutBarConfigModal;
 use terminal::{
     AbbreviationProtocol, AbbreviationStoreEntity, AbbreviationStoreEvent, ButtonBarStoreEntity,
-    ButtonBarStoreEvent,
+    ButtonBarStoreEvent, ShortcutBarStoreEntity, ShortcutBarStoreEvent,
 };
 use terminal_scripting::{ScriptingServer, TerminalRegistry};
 
@@ -164,6 +167,7 @@ pub fn init(cx: &mut App) {
     terminal_panel::init(cx);
     ButtonBarStoreEntity::init(cx);
     AbbreviationStoreEntity::init(cx);
+    ShortcutBarStoreEntity::init(cx);
 
     register_serializable_item::<TerminalView>(cx);
 
@@ -221,6 +225,9 @@ pub struct TerminalView {
     _abbr_store_subscription: Option<Subscription>,
     /// Currently selected abbreviation for context menu operations
     selected_abbr: Option<uuid::Uuid>,
+    _shortcut_bar_subscription: Option<Subscription>,
+    /// Currently selected shortcut for context menu operations
+    selected_shortcut: Option<uuid::Uuid>,
     _subscriptions: Vec<Subscription>,
     _terminal_subscriptions: Vec<Subscription>,
 }
@@ -369,6 +376,12 @@ impl TerminalView {
             })
         });
 
+        let shortcut_bar_subscription = ShortcutBarStoreEntity::try_global(cx).map(|store| {
+            cx.subscribe(&store, |_this, _, _event: &ShortcutBarStoreEvent, cx| {
+                cx.notify();
+            })
+        });
+
         Self {
             terminal,
             workspace: workspace_handle,
@@ -401,6 +414,8 @@ impl TerminalView {
             button_drag_target: None,
             _abbr_store_subscription: abbr_store_subscription,
             selected_abbr: None,
+            _shortcut_bar_subscription: shortcut_bar_subscription,
+            selected_shortcut: None,
             _subscriptions: subscriptions,
             _terminal_subscriptions: terminal_subscriptions,
         }
@@ -1458,6 +1473,241 @@ print(output)
             .into_any_element()
     }
 
+    fn toggle_shortcut_bar(
+        &mut self,
+        _: &ToggleShortcutBar,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(store) = ShortcutBarStoreEntity::try_global(cx) {
+            store.update(cx, |store, cx| {
+                store.toggle_visibility(cx);
+            });
+        }
+    }
+
+    fn configure_shortcut_bar(
+        &mut self,
+        _: &ConfigureShortcutBar,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.workspace
+            .update(cx, |workspace, cx| {
+                workspace.toggle_modal(window, cx, |window, cx| {
+                    ShortcutBarConfigModal::new(window, cx)
+                });
+            })
+            .ok();
+    }
+
+    fn add_shortcut(&mut self, _: &AddShortcut, _window: &mut Window, cx: &mut Context<Self>) {
+        let Some(shortcut_id) = self.selected_shortcut.take() else {
+            return;
+        };
+        let Some(store) = ShortcutBarStoreEntity::try_global(cx) else {
+            return;
+        };
+
+        store.update(cx, |store, cx| {
+            store.set_shortcut_enabled(shortcut_id, true, cx);
+        });
+    }
+
+    fn remove_shortcut(&mut self, _: &RemoveShortcut, _window: &mut Window, cx: &mut Context<Self>) {
+        let Some(shortcut_id) = self.selected_shortcut.take() else {
+            return;
+        };
+        let Some(store) = ShortcutBarStoreEntity::try_global(cx) else {
+            return;
+        };
+
+        store.update(cx, |store, cx| {
+            store.set_shortcut_enabled(shortcut_id, false, cx);
+        });
+    }
+
+    fn deploy_shortcut_context_menu(
+        &mut self,
+        shortcut_id: uuid::Uuid,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.selected_shortcut = Some(shortcut_id);
+
+        let context_menu = ContextMenu::build(window, cx, |menu, _, _| {
+            menu.context(self.focus_handle.clone())
+                .action("移除此快捷键", Box::new(RemoveShortcut))
+        });
+
+        window.focus(&context_menu.focus_handle(cx), cx);
+        let subscription = cx.subscribe_in(
+            &context_menu,
+            window,
+            |this, _, _: &DismissEvent, window, cx| {
+                if this.context_menu.as_ref().is_some_and(|context_menu| {
+                    context_menu.0.focus_handle(cx).contains_focused(window, cx)
+                }) {
+                    cx.focus_self(window);
+                }
+                this.context_menu.take();
+                cx.notify();
+            },
+        );
+
+        self.context_menu = Some((context_menu, position, subscription));
+    }
+
+    fn deploy_shortcut_bar_context_menu(
+        &mut self,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(store) = ShortcutBarStoreEntity::try_global(cx) else {
+            return;
+        };
+
+        let disabled_shortcuts: Vec<_> = store
+            .read(cx)
+            .disabled_shortcuts()
+            .into_iter()
+            .cloned()
+            .collect();
+
+        if disabled_shortcuts.is_empty() {
+            return;
+        }
+
+        let context_menu = ContextMenu::build(window, cx, |mut menu, _, _| {
+            menu = menu.context(self.focus_handle.clone());
+            for shortcut in disabled_shortcuts {
+                let shortcut_id = shortcut.id;
+                let display_text =
+                    SharedString::from(format!("{}→{}", shortcut.keybinding, shortcut.label));
+                menu = menu.custom_entry(
+                    move |_window, _cx| {
+                        div()
+                            .text_sm()
+                            .child(display_text.clone())
+                            .into_any_element()
+                    },
+                    move |_window, cx| {
+                        if let Some(store) = ShortcutBarStoreEntity::try_global(cx) {
+                            store.update(cx, |store, cx| {
+                                store.set_shortcut_enabled(shortcut_id, true, cx);
+                            });
+                        }
+                    },
+                );
+            }
+            menu
+        });
+
+        window.focus(&context_menu.focus_handle(cx), cx);
+        let subscription = cx.subscribe_in(
+            &context_menu,
+            window,
+            |this, _, _: &DismissEvent, window, cx| {
+                if this.context_menu.as_ref().is_some_and(|context_menu| {
+                    context_menu.0.focus_handle(cx).contains_focused(window, cx)
+                }) {
+                    cx.focus_self(window);
+                }
+                this.context_menu.take();
+                cx.notify();
+            },
+        );
+
+        self.context_menu = Some((context_menu, position, subscription));
+    }
+
+    fn render_shortcut_bar(&self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let Some(store) = ShortcutBarStoreEntity::try_global(cx) else {
+            return h_flex().id("terminal-shortcut-bar").into_any_element();
+        };
+
+        let enabled_shortcuts: Vec<_> = store
+            .read(cx)
+            .enabled_shortcuts()
+            .into_iter()
+            .cloned()
+            .collect();
+        let terminal_view_handle = cx.entity().downgrade();
+
+        h_flex()
+            .id("terminal-shortcut-bar")
+            .w_full()
+            .gap_2()
+            .px_2()
+            .py_1()
+            .border_t_1()
+            .border_color(cx.theme().colors().border)
+            .bg(cx.theme().colors().surface_background)
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                    this.deploy_shortcut_bar_context_menu(event.position, window, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().colors().text_muted)
+                    .child("快捷键"),
+            )
+            .children(enabled_shortcuts.iter().map(|shortcut| {
+                let shortcut_id = shortcut.id;
+                let keybinding = shortcut.keybinding.clone();
+                let label = shortcut.label.clone();
+                let terminal_view_handle = terminal_view_handle.clone();
+
+                div()
+                    .id(SharedString::from(format!("shortcut-tag-{}", shortcut_id)))
+                    .px_1p5()
+                    .py_0p5()
+                    .rounded_sm()
+                    .bg(cx.theme().colors().element_background)
+                    .border_1()
+                    .border_color(cx.theme().colors().border)
+                    .hover(|s| s.bg(cx.theme().colors().element_hover))
+                    .cursor_pointer()
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        move |event: &MouseDownEvent, window, cx| {
+                            terminal_view_handle
+                                .update(cx, |this, cx| {
+                                    this.deploy_shortcut_context_menu(shortcut_id, event.position, window, cx);
+                                })
+                                .ok();
+                            cx.stop_propagation();
+                        },
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .child(format!("{}→{}", keybinding, label)),
+                    )
+                    .into_any_element()
+            }))
+            .child(div().flex_1())
+            .child(
+                h_flex()
+                    .gap_1()
+                    .child(
+                        ui::IconButton::new("shortcut-bar-settings", ui::IconName::Settings)
+                            .icon_size(ui::IconSize::Small)
+                            .tooltip(Tooltip::text("配置快捷键"))
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.configure_shortcut_bar(&ConfigureShortcutBar, window, cx);
+                            })),
+                    ),
+            )
+            .into_any_element()
+    }
+
     fn show_character_palette(
         &mut self,
         _: &ShowCharacterPalette,
@@ -2294,6 +2544,9 @@ impl Render for TerminalView {
         let show_abbr_bar = AbbreviationStoreEntity::try_global(cx)
             .map(|store| store.read(cx).show_abbr_bar())
             .unwrap_or(false);
+        let show_shortcut_bar = ShortcutBarStoreEntity::try_global(cx)
+            .map(|store| store.read(cx).show_shortcut_bar())
+            .unwrap_or(false);
 
         v_flex()
             .id("terminal-view")
@@ -2337,6 +2590,10 @@ impl Render for TerminalView {
             .on_action(cx.listener(Self::edit_abbreviation))
             .on_action(cx.listener(Self::delete_abbreviation))
             .on_action(cx.listener(Self::toggle_abbr_expansion))
+            .on_action(cx.listener(Self::toggle_shortcut_bar))
+            .on_action(cx.listener(Self::configure_shortcut_bar))
+            .on_action(cx.listener(Self::add_shortcut))
+            .on_action(cx.listener(Self::remove_shortcut))
             .on_key_down(cx.listener(Self::key_down))
             .on_mouse_down(
                 MouseButton::Right,
@@ -2388,6 +2645,9 @@ impl Render for TerminalView {
             })
             .when(show_abbr_bar, |this| {
                 this.child(self.render_abbr_bar(window, cx))
+            })
+            .when(show_shortcut_bar, |this| {
+                this.child(self.render_shortcut_bar(window, cx))
             })
             .children(self.context_menu.as_ref().map(|(menu, position, _)| {
                 deferred(

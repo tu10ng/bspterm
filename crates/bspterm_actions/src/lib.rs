@@ -380,6 +380,24 @@ pub mod terminal_abbr_bar {
     );
 }
 
+pub mod terminal_shortcut_bar {
+    use gpui::actions;
+
+    actions!(
+        terminal_shortcut_bar,
+        [
+            /// Toggles the terminal shortcut bar visibility.
+            ToggleShortcutBar,
+            /// Opens the terminal shortcut bar configuration modal.
+            ConfigureShortcutBar,
+            /// Adds a shortcut to the shortcut bar display list.
+            AddShortcut,
+            /// Removes a shortcut from the shortcut bar display list.
+            RemoveShortcut
+        ]
+    );
+}
+
 pub mod feedback {
     use gpui::actions;
 
