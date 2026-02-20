@@ -1,3 +1,4 @@
+mod abbr_bar;
 mod button_bar;
 mod persistence;
 mod ssh_connect_modal;
@@ -49,7 +50,7 @@ use terminal_path_like_target::{hover_path_like_target, open_path_like_target};
 use terminal_scrollbar::TerminalScrollHandle;
 use terminal_slash_command::TerminalSlashCommand;
 use ui::{
-    ContextMenu, Divider, ScrollAxes, Scrollbars, Tooltip, WithScrollbar,
+    ContextMenu, Divider, ScrollAxes, Scrollbars, Switch, ToggleState, Tooltip, WithScrollbar,
     prelude::*,
     scrollbars::{self, GlobalSetting, ScrollbarVisibility},
 };
@@ -68,10 +69,18 @@ use workspace::{
 use bspterm_actions::{
     agent::AddSelectionToThread,
     assistant::InlineAssist,
+    terminal_abbr_bar::{
+        AddAbbreviation, ConfigureAbbrBar, DeleteAbbreviation, EditAbbreviation, ToggleAbbrBar,
+        ToggleAbbrExpansion,
+    },
     terminal_button_bar::{ConfigureButtonBar, ToggleButtonBar},
 };
+use abbr_bar::{AbbrBarConfigModal, AddAbbrModal, EditAbbrModal};
 use button_bar::ButtonBarScriptRunner;
-use terminal::{ButtonBarStoreEntity, ButtonBarStoreEvent};
+use terminal::{
+    AbbreviationProtocol, AbbreviationStoreEntity, AbbreviationStoreEvent, ButtonBarStoreEntity,
+    ButtonBarStoreEvent,
+};
 use terminal_scripting::{ScriptingServer, TerminalRegistry};
 
 struct ImeState {
@@ -154,6 +163,7 @@ pub fn init(cx: &mut App) {
     assistant_slash_command::init(cx);
     terminal_panel::init(cx);
     ButtonBarStoreEntity::init(cx);
+    AbbreviationStoreEntity::init(cx);
 
     register_serializable_item::<TerminalView>(cx);
 
@@ -208,6 +218,9 @@ pub struct TerminalView {
     /// Currently selected button for context menu operations (button_id, script_path)
     selected_button: Option<(uuid::Uuid, PathBuf)>,
     button_drag_target: Option<ButtonDragTarget>,
+    _abbr_store_subscription: Option<Subscription>,
+    /// Currently selected abbreviation for context menu operations
+    selected_abbr: Option<uuid::Uuid>,
     _subscriptions: Vec<Subscription>,
     _terminal_subscriptions: Vec<Subscription>,
 }
@@ -350,6 +363,12 @@ impl TerminalView {
             })
         });
 
+        let abbr_store_subscription = AbbreviationStoreEntity::try_global(cx).map(|store| {
+            cx.subscribe(&store, |_this, _, _event: &AbbreviationStoreEvent, cx| {
+                cx.notify();
+            })
+        });
+
         Self {
             terminal,
             workspace: workspace_handle,
@@ -380,6 +399,8 @@ impl TerminalView {
             _button_bar_subscription: button_bar_subscription,
             selected_button: None,
             button_drag_target: None,
+            _abbr_store_subscription: abbr_store_subscription,
+            selected_abbr: None,
             _subscriptions: subscriptions,
             _terminal_subscriptions: terminal_subscriptions,
         }
@@ -1168,6 +1189,275 @@ print(output)
         }
     }
 
+    fn toggle_abbr_bar(
+        &mut self,
+        _: &ToggleAbbrBar,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(store) = AbbreviationStoreEntity::try_global(cx) {
+            store.update(cx, |store, cx| {
+                store.toggle_visibility(cx);
+            });
+        }
+    }
+
+    fn configure_abbr_bar(
+        &mut self,
+        _: &ConfigureAbbrBar,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.workspace
+            .update(cx, |workspace, cx| {
+                workspace.toggle_modal(window, cx, |window, cx| {
+                    AbbrBarConfigModal::new(window, cx)
+                });
+            })
+            .ok();
+    }
+
+    fn add_abbreviation(
+        &mut self,
+        _: &AddAbbreviation,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let default_protocol = self
+            .terminal
+            .read(cx)
+            .get_current_protocol()
+            .unwrap_or(AbbreviationProtocol::All);
+
+        self.workspace
+            .update(cx, |workspace, cx| {
+                workspace.toggle_modal(window, cx, |window, cx| {
+                    AddAbbrModal::new(default_protocol, window, cx)
+                });
+            })
+            .ok();
+    }
+
+    fn edit_abbreviation(
+        &mut self,
+        _: &EditAbbreviation,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(abbr_id) = self.selected_abbr.take() else {
+            return;
+        };
+
+        self.workspace
+            .update(cx, |workspace, cx| {
+                workspace.toggle_modal(window, cx, |window, cx| {
+                    EditAbbrModal::new(abbr_id, window, cx)
+                });
+            })
+            .ok();
+    }
+
+    fn delete_abbreviation(
+        &mut self,
+        _: &DeleteAbbreviation,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(abbr_id) = self.selected_abbr.take() else {
+            return;
+        };
+        let Some(store) = AbbreviationStoreEntity::try_global(cx) else {
+            return;
+        };
+
+        store.update(cx, |store, cx| {
+            store.remove_abbreviation(abbr_id, cx);
+        });
+    }
+
+    fn toggle_abbr_expansion(
+        &mut self,
+        _: &ToggleAbbrExpansion,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(store) = AbbreviationStoreEntity::try_global(cx) {
+            store.update(cx, |store, cx| {
+                store.toggle_expansion(cx);
+            });
+        }
+    }
+
+    fn deploy_abbr_context_menu(
+        &mut self,
+        abbr_id: uuid::Uuid,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.selected_abbr = Some(abbr_id);
+
+        let context_menu = ContextMenu::build(window, cx, |menu, _, _| {
+            menu.context(self.focus_handle.clone())
+                .action("编辑", Box::new(EditAbbreviation))
+                .action("删除", Box::new(DeleteAbbreviation))
+        });
+
+        window.focus(&context_menu.focus_handle(cx), cx);
+        let subscription = cx.subscribe_in(
+            &context_menu,
+            window,
+            |this, _, _: &DismissEvent, window, cx| {
+                if this.context_menu.as_ref().is_some_and(|context_menu| {
+                    context_menu.0.focus_handle(cx).contains_focused(window, cx)
+                }) {
+                    cx.focus_self(window);
+                }
+                this.context_menu.take();
+                cx.notify();
+            },
+        );
+
+        self.context_menu = Some((context_menu, position, subscription));
+    }
+
+    fn deploy_abbr_bar_context_menu(
+        &mut self,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let context_menu = ContextMenu::build(window, cx, |menu, _, _| {
+            menu.context(self.focus_handle.clone())
+                .action("添加缩写", Box::new(AddAbbreviation))
+        });
+
+        window.focus(&context_menu.focus_handle(cx), cx);
+        let subscription = cx.subscribe_in(
+            &context_menu,
+            window,
+            |this, _, _: &DismissEvent, window, cx| {
+                if this.context_menu.as_ref().is_some_and(|context_menu| {
+                    context_menu.0.focus_handle(cx).contains_focused(window, cx)
+                }) {
+                    cx.focus_self(window);
+                }
+                this.context_menu.take();
+                cx.notify();
+            },
+        );
+
+        self.context_menu = Some((context_menu, position, subscription));
+    }
+
+    fn render_abbr_bar(&self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let Some(store) = AbbreviationStoreEntity::try_global(cx) else {
+            return h_flex().id("terminal-abbr-bar").into_any_element();
+        };
+
+        let protocol = self.terminal.read(cx).get_current_protocol();
+        let abbreviations: Vec<_> = store
+            .read(cx)
+            .abbreviations_for_protocol(protocol.as_ref())
+            .into_iter()
+            .cloned()
+            .collect();
+        let expansion_enabled = store.read(cx).expansion_enabled();
+        let terminal_view_handle = cx.entity().downgrade();
+
+        h_flex()
+            .id("terminal-abbr-bar")
+            .w_full()
+            .gap_2()
+            .px_2()
+            .py_1()
+            .border_t_1()
+            .border_color(cx.theme().colors().border)
+            .bg(cx.theme().colors().surface_background)
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                    this.deploy_abbr_bar_context_menu(event.position, window, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().colors().text_muted)
+                    .child("缩写"),
+            )
+            .children(abbreviations.iter().map(|abbr| {
+                let abbr_id = abbr.id;
+                let trigger = abbr.trigger.clone();
+                let expansion = abbr.expansion.clone();
+                let terminal_view_handle = terminal_view_handle.clone();
+
+                div()
+                    .id(SharedString::from(format!("abbr-tag-{}", abbr_id)))
+                    .px_1p5()
+                    .py_0p5()
+                    .rounded_sm()
+                    .bg(cx.theme().colors().element_background)
+                    .border_1()
+                    .border_color(cx.theme().colors().border)
+                    .hover(|s| s.bg(cx.theme().colors().element_hover))
+                    .cursor_pointer()
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        move |event: &MouseDownEvent, window, cx| {
+                            terminal_view_handle
+                                .update(cx, |this, cx| {
+                                    this.deploy_abbr_context_menu(abbr_id, event.position, window, cx);
+                                })
+                                .ok();
+                            cx.stop_propagation();
+                        },
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .child(format!("{}→{}", trigger, expansion)),
+                    )
+                    .into_any_element()
+            }))
+            .child(div().flex_1())
+            .child(
+                h_flex()
+                    .gap_1()
+                    .child(
+                        ui::IconButton::new("abbr-bar-add", ui::IconName::Plus)
+                            .icon_size(ui::IconSize::Small)
+                            .tooltip(Tooltip::text("添加缩写"))
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.add_abbreviation(&AddAbbreviation, window, cx);
+                            })),
+                    )
+                    .child(
+                        ui::IconButton::new("abbr-bar-settings", ui::IconName::Settings)
+                            .icon_size(ui::IconSize::Small)
+                            .tooltip(Tooltip::text("配置缩写"))
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.configure_abbr_bar(&ConfigureAbbrBar, window, cx);
+                            })),
+                    )
+                    .child(
+                        Switch::new(
+                            "abbr-expansion-switch",
+                            if expansion_enabled {
+                                ToggleState::Selected
+                            } else {
+                                ToggleState::Unselected
+                            },
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.toggle_abbr_expansion(&ToggleAbbrExpansion, window, cx);
+                        })),
+                    ),
+            )
+            .into_any_element()
+    }
+
     fn show_character_palette(
         &mut self,
         _: &ShowCharacterPalette,
@@ -1185,6 +1475,8 @@ print(output)
                 term.try_keystroke(
                     &Keystroke::parse("ctrl-cmd-space").unwrap(),
                     TerminalSettings::get_global(cx).option_as_meta,
+                    false,
+                    cx,
                 )
             });
         } else {
@@ -1774,9 +2066,18 @@ impl TerminalView {
     /// updates the cursor locally without sending data to the shell, so there's no
     /// shell output to automatically trigger a re-render.
     fn process_keystroke(&mut self, keystroke: &Keystroke, cx: &mut Context<Self>) -> bool {
+        let abbr_enabled = AbbreviationStoreEntity::try_global(cx)
+            .map(|store| store.read(cx).expansion_enabled())
+            .unwrap_or(false);
+
         let (handled, vi_mode_enabled) = self.terminal.update(cx, |term, cx| {
             (
-                term.try_keystroke(keystroke, TerminalSettings::get_global(cx).option_as_meta),
+                term.try_keystroke(
+                    keystroke,
+                    TerminalSettings::get_global(cx).option_as_meta,
+                    abbr_enabled,
+                    cx,
+                ),
                 term.vi_mode_enabled(),
             )
         });
@@ -1990,6 +2291,9 @@ impl Render for TerminalView {
         let show_button_bar = ButtonBarStoreEntity::try_global(cx)
             .map(|store| store.read(cx).show_button_bar())
             .unwrap_or(false);
+        let show_abbr_bar = AbbreviationStoreEntity::try_global(cx)
+            .map(|store| store.read(cx).show_abbr_bar())
+            .unwrap_or(false);
 
         v_flex()
             .id("terminal-view")
@@ -2027,6 +2331,12 @@ impl Render for TerminalView {
             .on_action(cx.listener(Self::rename_button_bar_button))
             .on_action(cx.listener(Self::hide_button_bar_button))
             .on_action(cx.listener(Self::delete_button_bar_button))
+            .on_action(cx.listener(Self::toggle_abbr_bar))
+            .on_action(cx.listener(Self::configure_abbr_bar))
+            .on_action(cx.listener(Self::add_abbreviation))
+            .on_action(cx.listener(Self::edit_abbreviation))
+            .on_action(cx.listener(Self::delete_abbreviation))
+            .on_action(cx.listener(Self::toggle_abbr_expansion))
             .on_key_down(cx.listener(Self::key_down))
             .on_mouse_down(
                 MouseButton::Right,
@@ -2075,6 +2385,9 @@ impl Render for TerminalView {
             )
             .when(show_button_bar, |this| {
                 this.child(self.render_button_bar(window, cx))
+            })
+            .when(show_abbr_bar, |this| {
+                this.child(self.render_abbr_bar(window, cx))
             })
             .children(self.context_menu.as_ref().map(|(menu, position, _)| {
                 deferred(

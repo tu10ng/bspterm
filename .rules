@@ -467,6 +467,49 @@ let actions = engine.check(TriggerEvent::Wakeup, &screen_content);
 
 **Test:** `cargo test -p terminal rule_engine`
 
+## Terminal Abbreviations
+
+Command abbreviation system for quick input expansion (`crates/terminal/src/abbr_store.rs`, `crates/terminal_view/src/abbr_bar.rs`).
+
+### Data Structures
+
+- `AbbreviationProtocol`: Protocol filter enum (`All`, `Ssh`, `Telnet`)
+- `Abbreviation`: Trigger word, expansion text, enabled flag, and protocol filter
+- `AbbreviationStore`: Collection of abbreviations with global settings
+- `AbbreviationStoreEntity`: GPUI entity with auto-save and event emission
+
+### Protocol Filtering
+
+Abbreviations can be scoped to specific connection types:
+
+| Protocol | Matches |
+|----------|---------|
+| `All` | All terminals (local, SSH, Telnet) |
+| `Ssh` | SSH connections only |
+| `Telnet` | Telnet connections only |
+
+```rust
+let protocol = terminal.get_current_protocol(); // Some(Ssh), Some(Telnet), or None
+let abbr = store.find_by_trigger("g", protocol.as_ref());
+let visible = store.abbreviations_for_protocol(protocol.as_ref());
+```
+
+### Expansion Behavior
+
+1. User types trigger word followed by space or Enter
+2. Terminal checks if word is at command position (first word or after `|`, `&&`, etc.)
+3. Abbreviation lookup filters by current terminal's protocol
+4. If matched: trigger is replaced with expansion text
+
+### UI Components
+
+- **Abbr Bar**: Shows protocol-filtered abbreviations for current terminal
+- **Add Modal**: Protocol selector defaults to current terminal's connection type
+- **Edit Modal**: Allows changing abbreviation's protocol
+- **Config Modal**: Lists all abbreviations with protocol labels
+
+**Persistence:** `~/.config/bspterm/abbreviations.json`
+
 ## Zed 遗留命名
 
 以下模块/文件保留了 Zed 命名，这是历史原因造成的：
