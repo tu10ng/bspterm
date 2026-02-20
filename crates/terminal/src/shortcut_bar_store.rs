@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use gpui::{App, AppContext as _, Context, Entity, EventEmitter, Global, Task};
@@ -10,179 +10,137 @@ fn default_true() -> bool {
     true
 }
 
-/// Configuration for a single shortcut entry in the shortcut bar.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ShortcutEntry {
-    pub id: Uuid,
-    pub action_type: String,
-    #[serde(default)]
-    pub keybinding: String,
-    #[serde(default)]
-    pub label: String,
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-}
-
-impl ShortcutEntry {
-    pub fn new(
-        action_type: impl Into<String>,
-        keybinding: impl Into<String>,
-        label: impl Into<String>,
-    ) -> Self {
-        Self {
-            id: Uuid::new_v4(),
-            action_type: action_type.into(),
-            keybinding: keybinding.into(),
-            label: label.into(),
-            enabled: true,
-        }
-    }
-
-    pub fn new_disabled(
-        action_type: impl Into<String>,
-        keybinding: impl Into<String>,
-        label: impl Into<String>,
-    ) -> Self {
-        Self {
-            id: Uuid::new_v4(),
-            action_type: action_type.into(),
-            keybinding: keybinding.into(),
-            label: label.into(),
-            enabled: false,
-        }
+/// Get the Chinese label for an action type.
+pub fn get_action_label(action: &str) -> &str {
+    match action {
+        "terminal::Copy" => "复制",
+        "terminal::Paste" => "粘贴",
+        "terminal::Clear" => "清屏",
+        "terminal::ClearScrollback" => "清除滚动",
+        "terminal::ScrollPageUp" => "上翻页",
+        "terminal::ScrollPageDown" => "下翻页",
+        "terminal::ScrollToTop" => "到顶部",
+        "terminal::ScrollToBottom" => "到底部",
+        "terminal::ScrollLineUp" => "上滚一行",
+        "terminal::ScrollLineDown" => "下滚一行",
+        "terminal::ToggleViMode" => "Vi模式",
+        "terminal::ReconnectTerminal" => "重连",
+        "terminal::DisconnectTerminal" => "断开",
+        "editor::SelectAll" => "全选",
+        _ => action,
     }
 }
 
-/// Predefined shortcut definitions for the Terminal context.
-pub struct PredefinedShortcut {
-    pub action_type: &'static str,
-    pub keybinding: &'static str,
-    pub label: &'static str,
-    pub default_enabled: bool,
-}
-
-pub const PREDEFINED_SHORTCUTS: &[PredefinedShortcut] = &[
-    PredefinedShortcut {
-        action_type: "terminal::Copy",
-        keybinding: "ctrl-shift-c",
-        label: "复制",
-        default_enabled: true,
-    },
-    PredefinedShortcut {
-        action_type: "terminal::Paste",
-        keybinding: "ctrl-shift-v",
-        label: "粘贴",
-        default_enabled: true,
-    },
-    PredefinedShortcut {
-        action_type: "terminal::Clear",
-        keybinding: "ctrl-l",
-        label: "清屏",
-        default_enabled: true,
-    },
-    PredefinedShortcut {
-        action_type: "terminal::ClearScrollback",
-        keybinding: "ctrl-shift-l",
-        label: "清除滚动",
-        default_enabled: false,
-    },
-    PredefinedShortcut {
-        action_type: "terminal::ScrollPageUp",
-        keybinding: "shift-pageup",
-        label: "上翻页",
-        default_enabled: false,
-    },
-    PredefinedShortcut {
-        action_type: "terminal::ScrollPageDown",
-        keybinding: "shift-pagedown",
-        label: "下翻页",
-        default_enabled: false,
-    },
-    PredefinedShortcut {
-        action_type: "terminal::ScrollToTop",
-        keybinding: "ctrl-home",
-        label: "到顶部",
-        default_enabled: false,
-    },
-    PredefinedShortcut {
-        action_type: "terminal::ScrollToBottom",
-        keybinding: "ctrl-end",
-        label: "到底部",
-        default_enabled: false,
-    },
-    PredefinedShortcut {
-        action_type: "editor::SelectAll",
-        keybinding: "ctrl-shift-a",
-        label: "全选",
-        default_enabled: false,
-    },
-    PredefinedShortcut {
-        action_type: "terminal::ToggleViMode",
-        keybinding: "ctrl-shift-space",
-        label: "Vi模式",
-        default_enabled: false,
-    },
-    PredefinedShortcut {
-        action_type: "terminal::ReconnectTerminal",
-        keybinding: "ctrl-shift-r",
-        label: "重连",
-        default_enabled: true,
-    },
-    PredefinedShortcut {
-        action_type: "terminal::DisconnectTerminal",
-        keybinding: "ctrl-shift-d",
-        label: "断开",
-        default_enabled: true,
-    },
+/// All system actions supported by the shortcut bar.
+pub const ALL_SYSTEM_ACTIONS: &[&str] = &[
+    "terminal::Copy",
+    "terminal::Paste",
+    "terminal::Clear",
+    "terminal::ClearScrollback",
+    "terminal::ScrollPageUp",
+    "terminal::ScrollPageDown",
+    "terminal::ScrollToTop",
+    "terminal::ScrollToBottom",
+    "terminal::ScrollLineUp",
+    "terminal::ScrollLineDown",
+    "terminal::ToggleViMode",
+    "terminal::ReconnectTerminal",
+    "terminal::DisconnectTerminal",
+    "editor::SelectAll",
 ];
 
-/// The shortcut bar store containing all shortcut configurations.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct ShortcutBarStore {
-    pub version: u32,
+/// A visible system shortcut (keybinding + action combination).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct VisibleShortcut {
+    pub keybinding: String,
+    pub action: String,
+}
+
+impl VisibleShortcut {
+    pub fn new(keybinding: impl Into<String>, action: impl Into<String>) -> Self {
+        Self {
+            keybinding: keybinding.into(),
+            action: action.into(),
+        }
+    }
+}
+
+/// A user-created script shortcut.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ScriptShortcut {
+    pub id: Uuid,
+    pub label: String,
+    pub keybinding: String,
+    pub script_path: PathBuf,
     #[serde(default)]
-    pub shortcuts: Vec<ShortcutEntry>,
+    pub hidden: bool,
+}
+
+impl ScriptShortcut {
+    pub fn new(
+        label: impl Into<String>,
+        keybinding: impl Into<String>,
+        script_path: impl Into<PathBuf>,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            label: label.into(),
+            keybinding: keybinding.into(),
+            script_path: script_path.into(),
+            hidden: false,
+        }
+    }
+}
+
+/// The shortcut bar configuration.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ShortcutBarConfig {
+    pub version: u32,
+    /// System shortcuts that are visible in the shortcut bar.
+    #[serde(default)]
+    pub visible_shortcuts: Vec<VisibleShortcut>,
+    /// User-created script shortcuts.
+    #[serde(default)]
+    pub script_shortcuts: Vec<ScriptShortcut>,
+    /// Whether to show the shortcut bar.
     #[serde(default = "default_true")]
     pub show_shortcut_bar: bool,
 }
 
-impl ShortcutBarStore {
-    pub const CURRENT_VERSION: u32 = 1;
+impl Default for ShortcutBarConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ShortcutBarConfig {
+    pub const CURRENT_VERSION: u32 = 3;
 
     pub fn new() -> Self {
         Self {
             version: Self::CURRENT_VERSION,
-            shortcuts: Vec::new(),
-            show_shortcut_bar: true,
-        }
-    }
-
-    pub fn with_defaults() -> Self {
-        let shortcuts = PREDEFINED_SHORTCUTS
-            .iter()
-            .map(|preset| {
-                if preset.default_enabled {
-                    ShortcutEntry::new(preset.action_type, preset.keybinding, preset.label)
-                } else {
-                    ShortcutEntry::new_disabled(preset.action_type, preset.keybinding, preset.label)
-                }
-            })
-            .collect();
-
-        Self {
-            version: Self::CURRENT_VERSION,
-            shortcuts,
+            visible_shortcuts: vec![
+                VisibleShortcut::new("ctrl-shift-c", "terminal::Copy"),
+                VisibleShortcut::new("ctrl-shift-v", "terminal::Paste"),
+            ],
+            script_shortcuts: Vec::new(),
             show_shortcut_bar: true,
         }
     }
 
     pub fn load_from_file(path: &Path) -> Result<Self> {
         if !path.exists() {
-            return Ok(Self::with_defaults());
+            return Ok(Self::new());
         }
         let content = fs::read_to_string(path)?;
-        let store: Self = serde_json::from_str(&content)?;
-        Ok(store.ensure_all_predefined())
+
+        if let Ok(config) = serde_json::from_str::<Self>(&content) {
+            if config.version >= Self::CURRENT_VERSION {
+                return Ok(config);
+            }
+        }
+
+        Ok(Self::new())
     }
 
     pub fn save_to_file(&self, path: &Path) -> Result<()> {
@@ -194,54 +152,59 @@ impl ShortcutBarStore {
         Ok(())
     }
 
-    fn ensure_all_predefined(mut self) -> Self {
-        for preset in PREDEFINED_SHORTCUTS {
-            let exists = self
-                .shortcuts
-                .iter()
-                .any(|s| s.action_type == preset.action_type);
-            if !exists {
-                let entry = if preset.default_enabled {
-                    ShortcutEntry::new(preset.action_type, preset.keybinding, preset.label)
-                } else {
-                    ShortcutEntry::new_disabled(preset.action_type, preset.keybinding, preset.label)
-                };
-                self.shortcuts.push(entry);
+    /// Check if a system shortcut is visible.
+    pub fn is_system_shortcut_visible(&self, keybinding: &str, action: &str) -> bool {
+        self.visible_shortcuts
+            .iter()
+            .any(|v| v.keybinding == keybinding && v.action == action)
+    }
+
+    /// Check if a system shortcut is hidden (convenience method).
+    pub fn is_system_shortcut_hidden(&self, keybinding: &str, action: &str) -> bool {
+        !self.is_system_shortcut_visible(keybinding, action)
+    }
+
+    /// Set visibility for a system shortcut.
+    pub fn set_system_shortcut_visible(&mut self, keybinding: &str, action: &str, visible: bool) {
+        if visible {
+            if !self.is_system_shortcut_visible(keybinding, action) {
+                self.visible_shortcuts
+                    .push(VisibleShortcut::new(keybinding, action));
             }
+        } else {
+            self.visible_shortcuts
+                .retain(|v| !(v.keybinding == keybinding && v.action == action));
         }
-        self
     }
 
-    pub fn add_shortcut(&mut self, entry: ShortcutEntry) {
-        self.shortcuts.push(entry);
+    pub fn add_script_shortcut(&mut self, shortcut: ScriptShortcut) {
+        self.script_shortcuts.push(shortcut);
     }
 
-    pub fn remove_shortcut(&mut self, id: Uuid) -> bool {
-        if let Some(pos) = self.shortcuts.iter().position(|s| s.id == id) {
-            self.shortcuts.remove(pos);
+    pub fn remove_script_shortcut(&mut self, id: Uuid) -> bool {
+        if let Some(pos) = self.script_shortcuts.iter().position(|s| s.id == id) {
+            self.script_shortcuts.remove(pos);
             return true;
         }
         false
     }
 
-    pub fn find_shortcut(&self, id: Uuid) -> Option<&ShortcutEntry> {
-        self.shortcuts.iter().find(|s| s.id == id)
+    pub fn find_script_shortcut(&self, id: Uuid) -> Option<&ScriptShortcut> {
+        self.script_shortcuts.iter().find(|s| s.id == id)
     }
 
-    pub fn find_shortcut_mut(&mut self, id: Uuid) -> Option<&mut ShortcutEntry> {
-        self.shortcuts.iter_mut().find(|s| s.id == id)
+    pub fn find_script_shortcut_mut(&mut self, id: Uuid) -> Option<&mut ScriptShortcut> {
+        self.script_shortcuts.iter_mut().find(|s| s.id == id)
     }
 
-    pub fn find_by_action_type(&self, action_type: &str) -> Option<&ShortcutEntry> {
-        self.shortcuts.iter().find(|s| s.action_type == action_type)
+    pub fn set_script_shortcut_hidden(&mut self, id: Uuid, hidden: bool) {
+        if let Some(shortcut) = self.find_script_shortcut_mut(id) {
+            shortcut.hidden = hidden;
+        }
     }
 
-    pub fn enabled_shortcuts(&self) -> Vec<&ShortcutEntry> {
-        self.shortcuts.iter().filter(|s| s.enabled).collect()
-    }
-
-    pub fn disabled_shortcuts(&self) -> Vec<&ShortcutEntry> {
-        self.shortcuts.iter().filter(|s| !s.enabled).collect()
+    pub fn visible_script_shortcuts(&self) -> Vec<&ScriptShortcut> {
+        self.script_shortcuts.iter().filter(|s| !s.hidden).collect()
     }
 }
 
@@ -249,17 +212,17 @@ impl ShortcutBarStore {
 #[derive(Clone, Debug)]
 pub enum ShortcutBarStoreEvent {
     Changed,
-    ShortcutAdded(Uuid),
-    ShortcutRemoved(Uuid),
+    ScriptShortcutAdded(Uuid),
+    ScriptShortcutRemoved(Uuid),
 }
 
 /// Global marker for cx.global access.
 pub struct GlobalShortcutBarStore(pub Entity<ShortcutBarStoreEntity>);
 impl Global for GlobalShortcutBarStore {}
 
-/// GPUI Entity wrapping ShortcutBarStore.
+/// GPUI Entity wrapping ShortcutBarConfig.
 pub struct ShortcutBarStoreEntity {
-    store: ShortcutBarStore,
+    config: ShortcutBarConfig,
     save_task: Option<Task<()>>,
 }
 
@@ -272,15 +235,15 @@ impl ShortcutBarStoreEntity {
             return;
         }
 
-        let store = ShortcutBarStore::load_from_file(paths::shortcut_bar_file()).unwrap_or_else(
+        let config = ShortcutBarConfig::load_from_file(paths::shortcut_bar_file()).unwrap_or_else(
             |err| {
                 log::error!("Failed to load shortcut bar config: {}", err);
-                ShortcutBarStore::with_defaults()
+                ShortcutBarConfig::new()
             },
         );
 
         let entity = cx.new(|_| Self {
-            store,
+            config,
             save_task: None,
         });
 
@@ -298,19 +261,19 @@ impl ShortcutBarStoreEntity {
             .map(|g| g.0.clone())
     }
 
-    /// Read-only access to store.
-    pub fn store(&self) -> &ShortcutBarStore {
-        &self.store
+    /// Read-only access to config.
+    pub fn config(&self) -> &ShortcutBarConfig {
+        &self.config
     }
 
     /// Get whether shortcut bar is visible.
     pub fn show_shortcut_bar(&self) -> bool {
-        self.store.show_shortcut_bar
+        self.config.show_shortcut_bar
     }
 
     /// Toggle shortcut bar visibility.
     pub fn toggle_visibility(&mut self, cx: &mut Context<Self>) {
-        self.store.show_shortcut_bar = !self.store.show_shortcut_bar;
+        self.config.show_shortcut_bar = !self.config.show_shortcut_bar;
         self.schedule_save(cx);
         cx.emit(ShortcutBarStoreEvent::Changed);
         cx.notify();
@@ -318,98 +281,95 @@ impl ShortcutBarStoreEntity {
 
     /// Set shortcut bar visibility.
     pub fn set_visibility(&mut self, visible: bool, cx: &mut Context<Self>) {
-        if self.store.show_shortcut_bar != visible {
-            self.store.show_shortcut_bar = visible;
+        if self.config.show_shortcut_bar != visible {
+            self.config.show_shortcut_bar = visible;
             self.schedule_save(cx);
             cx.emit(ShortcutBarStoreEvent::Changed);
             cx.notify();
         }
     }
 
-    /// Add a shortcut and trigger save.
-    pub fn add_shortcut(&mut self, entry: ShortcutEntry, cx: &mut Context<Self>) {
-        let id = entry.id;
-        self.store.add_shortcut(entry);
+    /// Check if a system shortcut is visible.
+    pub fn is_system_shortcut_visible(&self, keybinding: &str, action: &str) -> bool {
+        self.config.is_system_shortcut_visible(keybinding, action)
+    }
+
+    /// Check if a system shortcut is hidden (convenience method).
+    pub fn is_system_shortcut_hidden(&self, keybinding: &str, action: &str) -> bool {
+        self.config.is_system_shortcut_hidden(keybinding, action)
+    }
+
+    /// Set visibility for a system shortcut.
+    pub fn set_system_shortcut_visible(
+        &mut self,
+        keybinding: &str,
+        action: &str,
+        visible: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.config.set_system_shortcut_visible(keybinding, action, visible);
         self.schedule_save(cx);
-        cx.emit(ShortcutBarStoreEvent::ShortcutAdded(id));
+        cx.emit(ShortcutBarStoreEvent::Changed);
         cx.notify();
     }
 
-    /// Remove shortcut and trigger save.
-    pub fn remove_shortcut(&mut self, id: Uuid, cx: &mut Context<Self>) {
-        if self.store.remove_shortcut(id) {
-            self.schedule_save(cx);
-            cx.emit(ShortcutBarStoreEvent::ShortcutRemoved(id));
-            cx.notify();
-        }
+    /// Get all script shortcuts.
+    pub fn script_shortcuts(&self) -> &[ScriptShortcut] {
+        &self.config.script_shortcuts
     }
 
-    /// Update a shortcut and trigger save.
-    pub fn update_shortcut(
+    /// Get only visible script shortcuts.
+    pub fn visible_script_shortcuts(&self) -> Vec<&ScriptShortcut> {
+        self.config.visible_script_shortcuts()
+    }
+
+    /// Add a script shortcut.
+    pub fn add_script_shortcut(
         &mut self,
-        id: Uuid,
-        update_fn: impl FnOnce(&mut ShortcutEntry),
+        label: String,
+        keybinding: String,
+        script_path: PathBuf,
         cx: &mut Context<Self>,
     ) {
-        if let Some(entry) = self.store.find_shortcut_mut(id) {
-            update_fn(entry);
+        let shortcut = ScriptShortcut::new(label, keybinding, script_path);
+        let id = shortcut.id;
+        self.config.add_script_shortcut(shortcut);
+        self.schedule_save(cx);
+        cx.emit(ShortcutBarStoreEvent::ScriptShortcutAdded(id));
+        cx.notify();
+    }
+
+    /// Remove a script shortcut.
+    pub fn remove_script_shortcut(&mut self, id: Uuid, cx: &mut Context<Self>) {
+        if self.config.remove_script_shortcut(id) {
             self.schedule_save(cx);
-            cx.emit(ShortcutBarStoreEvent::Changed);
+            cx.emit(ShortcutBarStoreEvent::ScriptShortcutRemoved(id));
             cx.notify();
         }
     }
 
-    /// Toggle a shortcut's enabled state.
-    pub fn toggle_shortcut(&mut self, id: Uuid, cx: &mut Context<Self>) {
-        if let Some(entry) = self.store.find_shortcut_mut(id) {
-            entry.enabled = !entry.enabled;
-            self.schedule_save(cx);
-            cx.emit(ShortcutBarStoreEvent::Changed);
-            cx.notify();
-        }
+    /// Find a script shortcut by ID.
+    pub fn find_script_shortcut(&self, id: Uuid) -> Option<&ScriptShortcut> {
+        self.config.find_script_shortcut(id)
     }
 
-    /// Set a shortcut's enabled state.
-    pub fn set_shortcut_enabled(&mut self, id: Uuid, enabled: bool, cx: &mut Context<Self>) {
-        if let Some(entry) = self.store.find_shortcut_mut(id) {
-            if entry.enabled != enabled {
-                entry.enabled = enabled;
-                self.schedule_save(cx);
-                cx.emit(ShortcutBarStoreEvent::Changed);
-                cx.notify();
-            }
-        }
+    /// Set visibility for a script shortcut.
+    pub fn set_script_shortcut_hidden(&mut self, id: Uuid, hidden: bool, cx: &mut Context<Self>) {
+        self.config.set_script_shortcut_hidden(id, hidden);
+        self.schedule_save(cx);
+        cx.emit(ShortcutBarStoreEvent::Changed);
+        cx.notify();
     }
 
-    /// Get all shortcuts.
-    pub fn shortcuts(&self) -> &[ShortcutEntry] {
-        &self.store.shortcuts
-    }
-
-    /// Get only enabled shortcuts.
-    pub fn enabled_shortcuts(&self) -> Vec<&ShortcutEntry> {
-        self.store.enabled_shortcuts()
-    }
-
-    /// Get only disabled shortcuts.
-    pub fn disabled_shortcuts(&self) -> Vec<&ShortcutEntry> {
-        self.store.disabled_shortcuts()
-    }
-
-    /// Find a shortcut by ID.
-    pub fn find_shortcut(&self, id: Uuid) -> Option<&ShortcutEntry> {
-        self.store.find_shortcut(id)
-    }
-
-    /// Find a shortcut by action type.
-    pub fn find_by_action_type(&self, action_type: &str) -> Option<&ShortcutEntry> {
-        self.store.find_by_action_type(action_type)
+    /// Get all visible system shortcuts.
+    pub fn visible_shortcuts(&self) -> &[VisibleShortcut] {
+        &self.config.visible_shortcuts
     }
 
     fn schedule_save(&mut self, cx: &mut Context<Self>) {
-        let store = self.store.clone();
+        let config = self.config.clone();
         self.save_task = Some(cx.spawn(async move |_, _| {
-            if let Err(err) = store.save_to_file(paths::shortcut_bar_file()) {
+            if let Err(err) = config.save_to_file(paths::shortcut_bar_file()) {
                 log::error!("Failed to save shortcut bar config: {}", err);
             }
         }));

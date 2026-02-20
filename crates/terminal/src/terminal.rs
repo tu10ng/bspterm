@@ -31,8 +31,8 @@ pub use rule_store::{
 pub use rule_engine::{ConnectionContext, MatchedAction, RuleEngine};
 
 pub use shortcut_bar_store::{
-    GlobalShortcutBarStore, PredefinedShortcut, ShortcutBarStore, ShortcutBarStoreEntity,
-    ShortcutBarStoreEvent, ShortcutEntry, PREDEFINED_SHORTCUTS,
+    get_action_label, GlobalShortcutBarStore, ScriptShortcut, ShortcutBarConfig,
+    ShortcutBarStoreEntity, ShortcutBarStoreEvent, VisibleShortcut, ALL_SYSTEM_ACTIONS,
 };
 
 pub use crate::connection::ssh::{SshAuthConfig, SshConfig};
