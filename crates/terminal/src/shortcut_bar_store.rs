@@ -2,9 +2,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use gpui::{App, AppContext as _, Context, Entity, EventEmitter, Global, Task};
+use bspterm_actions::terminal_shortcut_bar::RunScriptShortcut;
+use gpui::{App, AppContext as _, Context, Entity, EventEmitter, Global, KeyBinding, Task};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::abbr_store::AbbreviationProtocol;
 
 fn default_true() -> bool {
     true
@@ -74,6 +77,9 @@ pub struct ScriptShortcut {
     pub script_path: PathBuf,
     #[serde(default)]
     pub hidden: bool,
+    /// Protocol filter: None means all protocols (including local)
+    #[serde(default)]
+    pub protocol: Option<AbbreviationProtocol>,
 }
 
 impl ScriptShortcut {
@@ -88,6 +94,23 @@ impl ScriptShortcut {
             keybinding: keybinding.into(),
             script_path: script_path.into(),
             hidden: false,
+            protocol: None,
+        }
+    }
+
+    pub fn with_protocol(
+        label: impl Into<String>,
+        keybinding: impl Into<String>,
+        script_path: impl Into<PathBuf>,
+        protocol: Option<AbbreviationProtocol>,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            label: label.into(),
+            keybinding: keybinding.into(),
+            script_path: script_path.into(),
+            hidden: false,
+            protocol,
         }
     }
 }
@@ -206,6 +229,29 @@ impl ShortcutBarConfig {
     pub fn visible_script_shortcuts(&self) -> Vec<&ScriptShortcut> {
         self.script_shortcuts.iter().filter(|s| !s.hidden).collect()
     }
+
+    /// Get visible script shortcuts filtered by protocol.
+    pub fn visible_script_shortcuts_for_protocol(
+        &self,
+        current_protocol: Option<&AbbreviationProtocol>,
+    ) -> Vec<&ScriptShortcut> {
+        self.script_shortcuts
+            .iter()
+            .filter(|s| !s.hidden && Self::protocol_matches(&s.protocol, current_protocol))
+            .collect()
+    }
+
+    /// Check if a shortcut's protocol filter matches the current terminal protocol.
+    fn protocol_matches(
+        shortcut_protocol: &Option<AbbreviationProtocol>,
+        current_protocol: Option<&AbbreviationProtocol>,
+    ) -> bool {
+        match shortcut_protocol {
+            None => true,
+            Some(AbbreviationProtocol::All) => true,
+            Some(p) => current_protocol == Some(p),
+        }
+    }
 }
 
 /// Events emitted by the shortcut bar store for UI subscription.
@@ -242,12 +288,71 @@ impl ShortcutBarStoreEntity {
             },
         );
 
+        for shortcut in &config.script_shortcuts {
+            Self::register_script_keybinding(shortcut, cx);
+        }
+
         let entity = cx.new(|_| Self {
             config,
             save_task: None,
         });
 
         cx.set_global(GlobalShortcutBarStore(entity));
+    }
+
+    /// Build context predicate string based on protocol filter.
+    fn build_context_predicate(protocol: &Option<AbbreviationProtocol>) -> &'static str {
+        match protocol {
+            Some(AbbreviationProtocol::Ssh) => "Terminal && protocol == ssh",
+            Some(AbbreviationProtocol::Telnet) => "Terminal && protocol == telnet",
+            Some(AbbreviationProtocol::All) | None => "Terminal",
+        }
+    }
+
+    /// Register a script shortcut's keybinding in the global keymap.
+    fn register_script_keybinding(shortcut: &ScriptShortcut, cx: &mut App) {
+        let context_predicate = Self::build_context_predicate(&shortcut.protocol);
+        let action = RunScriptShortcut {
+            script_id: shortcut.id.to_string(),
+        };
+        match KeyBinding::new(&shortcut.keybinding, action, Some(context_predicate)).keystrokes() {
+            [] => {
+                log::warn!(
+                    "Failed to parse keybinding for script shortcut: {}",
+                    shortcut.keybinding
+                );
+            }
+            _ => {
+                cx.bind_keys([KeyBinding::new(
+                    &shortcut.keybinding,
+                    RunScriptShortcut {
+                        script_id: shortcut.id.to_string(),
+                    },
+                    Some(context_predicate),
+                )]);
+                log::info!(
+                    "Registered script shortcut keybinding: {} -> {}",
+                    shortcut.keybinding,
+                    shortcut.label
+                );
+            }
+        }
+    }
+
+    /// Unregister a script shortcut's keybinding from the global keymap.
+    /// This is done by binding a NoAction to the same keystroke with the same context.
+    fn unregister_script_keybinding(shortcut: &ScriptShortcut, cx: &mut App) {
+        let context_predicate = Self::build_context_predicate(&shortcut.protocol);
+        cx.bind_keys([KeyBinding::new(
+            &shortcut.keybinding,
+            gpui::NoAction {},
+            Some(context_predicate),
+        )]);
+        log::info!(
+            "Unregistered script shortcut keybinding: {} -> {}",
+            shortcut.keybinding,
+            shortcut.label
+        );
     }
 
     /// Get global instance.
@@ -323,16 +428,26 @@ impl ShortcutBarStoreEntity {
         self.config.visible_script_shortcuts()
     }
 
+    /// Get visible script shortcuts filtered by protocol.
+    pub fn visible_script_shortcuts_for_protocol(
+        &self,
+        protocol: Option<&AbbreviationProtocol>,
+    ) -> Vec<&ScriptShortcut> {
+        self.config.visible_script_shortcuts_for_protocol(protocol)
+    }
+
     /// Add a script shortcut.
     pub fn add_script_shortcut(
         &mut self,
         label: String,
         keybinding: String,
         script_path: PathBuf,
+        protocol: Option<AbbreviationProtocol>,
         cx: &mut Context<Self>,
     ) {
-        let shortcut = ScriptShortcut::new(label, keybinding, script_path);
+        let shortcut = ScriptShortcut::with_protocol(label, keybinding, script_path, protocol);
         let id = shortcut.id;
+        Self::register_script_keybinding(&shortcut, cx);
         self.config.add_script_shortcut(shortcut);
         self.schedule_save(cx);
         cx.emit(ShortcutBarStoreEvent::ScriptShortcutAdded(id));
@@ -341,6 +456,9 @@ impl ShortcutBarStoreEntity {
 
     /// Remove a script shortcut.
     pub fn remove_script_shortcut(&mut self, id: Uuid, cx: &mut Context<Self>) {
+        if let Some(shortcut) = self.config.find_script_shortcut(id) {
+            Self::unregister_script_keybinding(shortcut, cx);
+        }
         if self.config.remove_script_shortcut(id) {
             self.schedule_save(cx);
             cx.emit(ShortcutBarStoreEvent::ScriptShortcutRemoved(id));

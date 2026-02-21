@@ -381,7 +381,7 @@ pub mod terminal_abbr_bar {
 }
 
 pub mod terminal_shortcut_bar {
-    use gpui::actions;
+    use gpui::{Action, actions};
 
     actions!(
         terminal_shortcut_bar,
@@ -396,6 +396,13 @@ pub mod terminal_shortcut_bar {
             RemoveShortcut
         ]
     );
+
+    /// Executes a script shortcut by its ID.
+    #[derive(Clone, PartialEq, serde::Deserialize, schemars::JsonSchema, Action)]
+    #[action(namespace = terminal_shortcut_bar)]
+    pub struct RunScriptShortcut {
+        pub script_id: String,
+    }
 }
 
 pub mod feedback {

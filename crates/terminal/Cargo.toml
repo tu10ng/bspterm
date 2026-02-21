@@ -22,6 +22,7 @@ doctest = false
 [dependencies]
 alacritty_terminal.workspace = true
 anyhow.workspace = true
+bspterm_actions.workspace = true
 collections.workspace = true
 futures.workspace = true
 gpui.workspace = true

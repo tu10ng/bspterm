@@ -75,7 +75,7 @@ use bspterm_actions::{
         ToggleAbbrExpansion,
     },
     terminal_button_bar::{ConfigureButtonBar, ToggleButtonBar},
-    terminal_shortcut_bar::{ConfigureShortcutBar, ToggleShortcutBar},
+    terminal_shortcut_bar::{ConfigureShortcutBar, RunScriptShortcut, ToggleShortcutBar},
 };
 use abbr_bar::{AbbrBarConfigModal, AddAbbrModal, EditAbbrModal};
 use button_bar::ButtonBarScriptRunner;
@@ -1518,6 +1518,61 @@ print(output)
             .ok();
     }
 
+    fn run_script_shortcut(
+        &mut self,
+        action: &RunScriptShortcut,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let script_id = match uuid::Uuid::parse_str(&action.script_id) {
+            Ok(id) => id,
+            Err(_) => {
+                log::error!("Invalid script shortcut ID: {}", action.script_id);
+                return;
+            }
+        };
+
+        let Some(store) = ShortcutBarStoreEntity::try_global(cx) else {
+            return;
+        };
+
+        let Some(shortcut) = store.read(cx).find_script_shortcut(script_id).cloned() else {
+            log::error!("Script shortcut not found: {}", script_id);
+            return;
+        };
+
+        let Some(socket_path) = ScriptingServer::get(cx) else {
+            log::error!("Scripting server not available for script shortcut");
+            return;
+        };
+
+        if let Some(runner) = &mut self.button_bar_runner {
+            runner.stop();
+        }
+
+        let terminal_id = self.scripting_id.map(|id| id.to_string());
+        let script_path =
+            shellexpand::tilde(&shortcut.script_path.to_string_lossy()).into_owned();
+        let mut runner = ButtonBarScriptRunner::new(
+            PathBuf::from(script_path),
+            socket_path,
+            terminal_id,
+        );
+
+        if let Err(err) = runner.start() {
+            log::error!("Failed to start script shortcut: {}", err);
+            return;
+        }
+
+        log::info!(
+            "Running script shortcut '{}' ({})",
+            shortcut.label,
+            shortcut.keybinding
+        );
+        self.button_bar_runner = Some(runner);
+        cx.notify();
+    }
+
     fn deploy_shortcut_context_menu(
         &mut self,
         shortcut_info: ShortcutContextInfo,
@@ -1628,6 +1683,7 @@ print(output)
         };
 
         let store_ref = store.read(cx);
+        let current_protocol = self.terminal.read(cx).get_current_protocol();
 
         #[derive(Clone)]
         enum DisplayItem {
@@ -1660,7 +1716,7 @@ print(output)
             }
         }
 
-        for shortcut in store_ref.visible_script_shortcuts() {
+        for shortcut in store_ref.visible_script_shortcuts_for_protocol(current_protocol.as_ref()) {
             display_items.push(DisplayItem::Script {
                 id: shortcut.id,
                 keybinding: shortcut.keybinding.clone(),
@@ -2027,11 +2083,21 @@ print(output)
         let mut dispatch_context = KeyContext::new_with_defaults();
         dispatch_context.add("Terminal");
 
-        if self.terminal.read(cx).vi_mode_enabled() {
+        let terminal = self.terminal.read(cx);
+
+        match terminal.get_current_protocol() {
+            Some(AbbreviationProtocol::Ssh) => dispatch_context.set("protocol", "ssh"),
+            Some(AbbreviationProtocol::Telnet) => dispatch_context.set("protocol", "telnet"),
+            Some(AbbreviationProtocol::All) | None => dispatch_context.set("protocol", "local"),
+        }
+
+        if terminal.vi_mode_enabled() {
             dispatch_context.add("vi_mode");
         }
 
-        let mode = self.terminal.read(cx).last_content.mode;
+        let mode = terminal.last_content.mode;
+        let has_selection = terminal.last_content.selection.is_some();
+
         dispatch_context.set(
             "screen",
             if mode.contains(TermMode::ALT_SCREEN) {
@@ -2100,7 +2166,7 @@ print(output)
             dispatch_context.set("mouse_format", format);
         };
 
-        if self.terminal.read(cx).last_content.selection.is_some() {
+        if has_selection {
             dispatch_context.add("selection");
         }
 
@@ -2633,6 +2699,7 @@ impl Render for TerminalView {
             .on_action(cx.listener(Self::toggle_abbr_expansion))
             .on_action(cx.listener(Self::toggle_shortcut_bar))
             .on_action(cx.listener(Self::configure_shortcut_bar))
+            .on_action(cx.listener(Self::run_script_shortcut))
             .on_key_down(cx.listener(Self::key_down))
             .on_mouse_down(
                 MouseButton::Right,

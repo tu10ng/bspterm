@@ -7,9 +7,9 @@ use gpui::{
     KeyContext, ParentElement, Render, Styled, Subscription, WeakEntity, Window,
 };
 use terminal::{
-    get_action_label, Clear, ClearScrollback, Copy, Paste, ScrollLineDown, ScrollLineUp,
-    ScrollPageDown, ScrollPageUp, ScrollToBottom, ScrollToTop, ShortcutBarStoreEntity,
-    ShortcutBarStoreEvent, ToggleViMode, ALL_SYSTEM_ACTIONS,
+    AbbreviationProtocol, get_action_label, Clear, ClearScrollback, Copy, Paste, ScrollLineDown,
+    ScrollLineUp, ScrollPageDown, ScrollPageUp, ScrollToBottom, ScrollToTop,
+    ShortcutBarStoreEntity, ShortcutBarStoreEvent, ToggleViMode, ALL_SYSTEM_ACTIONS,
 };
 
 use super::{DisconnectTerminal, ReconnectTerminal};
@@ -460,6 +460,31 @@ pub enum AddShortcutMode {
     SelectExisting,
 }
 
+fn shortcut_protocol_button(
+    id: &str,
+    protocol: Option<AbbreviationProtocol>,
+    current: &Option<AbbreviationProtocol>,
+    cx: &mut Context<AddShortcutModal>,
+) -> impl IntoElement {
+    let is_selected = &protocol == current;
+    let label = match &protocol {
+        None => "通用",
+        Some(AbbreviationProtocol::All) => "通用",
+        Some(AbbreviationProtocol::Ssh) => "SSH",
+        Some(AbbreviationProtocol::Telnet) => "Telnet",
+    };
+
+    Button::new(SharedString::from(id.to_string()), label)
+        .style(if is_selected {
+            ButtonStyle::Filled
+        } else {
+            ButtonStyle::Subtle
+        })
+        .on_click(cx.listener(move |this, _, _window, cx| {
+            this.set_protocol(protocol.clone(), cx);
+        }))
+}
+
 /// Modal for adding a new script shortcut.
 pub struct AddShortcutModal {
     focus_handle: FocusHandle,
@@ -469,6 +494,7 @@ pub struct AddShortcutModal {
     keybinding_editor: Entity<Editor>,
     selected_script: Option<PathBuf>,
     available_scripts: Vec<PathBuf>,
+    selected_protocol: Option<AbbreviationProtocol>,
     _subscription: Subscription,
 }
 
@@ -510,12 +536,18 @@ impl AddShortcutModal {
             keybinding_editor,
             selected_script: None,
             available_scripts,
+            selected_protocol: None,
             _subscription: subscription,
         }
     }
 
     fn dismiss(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         cx.emit(DismissEvent);
+    }
+
+    fn set_protocol(&mut self, protocol: Option<AbbreviationProtocol>, cx: &mut Context<Self>) {
+        self.selected_protocol = protocol;
+        cx.notify();
     }
 
     fn set_mode(&mut self, mode: AddShortcutMode, window: &mut Window, cx: &mut Context<Self>) {
@@ -584,9 +616,10 @@ if __name__ == "__main__":
             return;
         }
 
+        let protocol = self.selected_protocol.clone();
         if let Some(store) = ShortcutBarStoreEntity::try_global(cx) {
             store.update(cx, |store, cx| {
-                store.add_script_shortcut(label, keybinding, script_path.clone(), cx);
+                store.add_script_shortcut(label, keybinding, script_path.clone(), protocol, cx);
             });
         }
 
@@ -617,9 +650,10 @@ if __name__ == "__main__":
             return;
         }
 
+        let protocol = self.selected_protocol.clone();
         if let Some(store) = ShortcutBarStoreEntity::try_global(cx) {
             store.update(cx, |store, cx| {
-                store.add_script_shortcut(label, keybinding, script_path, cx);
+                store.add_script_shortcut(label, keybinding, script_path, protocol, cx);
             });
         }
 
@@ -688,6 +722,33 @@ if __name__ == "__main__":
                             .border_1()
                             .border_color(cx.theme().colors().border)
                             .child(self.keybinding_editor.clone()),
+                    ),
+            )
+            .child(
+                v_flex()
+                    .gap_1()
+                    .child(div().text_xs().text_color(cx.theme().colors().text_muted).child("适用范围"))
+                    .child(
+                        h_flex()
+                            .gap_1()
+                            .child(shortcut_protocol_button(
+                                "protocol-all",
+                                None,
+                                &self.selected_protocol,
+                                cx,
+                            ))
+                            .child(shortcut_protocol_button(
+                                "protocol-ssh",
+                                Some(AbbreviationProtocol::Ssh),
+                                &self.selected_protocol,
+                                cx,
+                            ))
+                            .child(shortcut_protocol_button(
+                                "protocol-telnet",
+                                Some(AbbreviationProtocol::Telnet),
+                                &self.selected_protocol,
+                                cx,
+                            )),
                     ),
             )
             .child(
@@ -784,6 +845,33 @@ if __name__ == "__main__":
                             .border_1()
                             .border_color(cx.theme().colors().border)
                             .child(self.keybinding_editor.clone()),
+                    ),
+            )
+            .child(
+                v_flex()
+                    .gap_1()
+                    .child(div().text_xs().text_color(cx.theme().colors().text_muted).child("适用范围"))
+                    .child(
+                        h_flex()
+                            .gap_1()
+                            .child(shortcut_protocol_button(
+                                "protocol-all-ex",
+                                None,
+                                &self.selected_protocol,
+                                cx,
+                            ))
+                            .child(shortcut_protocol_button(
+                                "protocol-ssh-ex",
+                                Some(AbbreviationProtocol::Ssh),
+                                &self.selected_protocol,
+                                cx,
+                            ))
+                            .child(shortcut_protocol_button(
+                                "protocol-telnet-ex",
+                                Some(AbbreviationProtocol::Telnet),
+                                &self.selected_protocol,
+                                cx,
+                            )),
                     ),
             )
             .child(

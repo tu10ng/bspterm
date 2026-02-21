@@ -18020,6 +18020,7 @@ dependencies = [
  "alacritty_terminal",
  "anyhow",
  "async-trait",
+ "bspterm_actions",
  "collections",
  "dirs 4.0.0",
  "futures 0.3.31",
