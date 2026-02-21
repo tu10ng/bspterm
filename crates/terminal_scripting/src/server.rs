@@ -138,10 +138,35 @@ impl ScriptingServer {
                 break;
             }
 
+            log::debug!("[scripting] Received request: {}", line.trim());
+            let request_start = std::time::Instant::now();
+
             let response = Self::process_message(&line, cx).await;
+
+            log::debug!(
+                "[scripting] Request processed in {:?}",
+                request_start.elapsed()
+            );
+
             let response_json = serde_json::to_string(&response)? + "\n";
-            writer.write_all(response_json.as_bytes()).await?;
-            writer.flush().await?;
+            match writer.write_all(response_json.as_bytes()).await {
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
+                    log::warn!(
+                        "[scripting] Client disconnected before response could be sent (request took {:?})",
+                        request_start.elapsed()
+                    );
+                    break;
+                }
+                Err(e) => return Err(e.into()),
+            }
+            if let Err(e) = writer.flush().await {
+                if e.kind() == std::io::ErrorKind::BrokenPipe {
+                    log::warn!("[scripting] Client disconnected during flush");
+                    break;
+                }
+                return Err(e.into());
+            }
         }
 
         Ok(())

@@ -289,6 +289,12 @@ async fn handle_terminal_run(
     let params: RunParams = serde_json::from_value(request.params.clone())
         .map_err(|e| JsonRpcError::invalid_params(e.to_string()))?;
 
+    log::info!(
+        "[terminal.run] Start processing command: {:?}, timeout_ms: {}",
+        params.command,
+        params.timeout_ms
+    );
+
     let prompt_pattern = params
         .prompt_pattern
         .unwrap_or_else(|| r"[$#>]\s*$".to_string());
@@ -299,14 +305,26 @@ async fn handle_terminal_run(
     let timeout = Duration::from_millis(params.timeout_ms);
     let start = std::time::Instant::now();
 
+    let update_start = std::time::Instant::now();
     let content_before = cx.update(|cx| {
         let terminal = TerminalRegistry::get_by_id_str(&terminal_id, cx)
             .map_err(|e| JsonRpcError::terminal_not_found(&e.to_string()))?;
         Ok::<_, JsonRpcError>(terminal.read(cx).get_content())
     })?;
+    log::info!(
+        "[terminal.run] First cx.update (get content) took {:?}",
+        update_start.elapsed()
+    );
 
-    let line_count_before = content_before.lines().count();
+    let content_before_trimmed = content_before.trim_end();
+    let line_count_before = content_before_trimmed.lines().count();
+    log::info!(
+        "[terminal.run] line_count_before: {}, last_line_before: {:?}",
+        line_count_before,
+        content_before_trimmed.lines().last()
+    );
 
+    let update_start = std::time::Instant::now();
     cx.update(|cx| {
         let terminal = TerminalRegistry::get_by_id_str(&terminal_id, cx)
             .map_err(|e| JsonRpcError::terminal_not_found(&e.to_string()))?;
@@ -316,19 +334,34 @@ async fn handle_terminal_run(
         });
         Ok::<_, JsonRpcError>(())
     })?;
+    log::info!(
+        "[terminal.run] Second cx.update (send command) took {:?}",
+        update_start.elapsed()
+    );
 
     // This handler runs in async context from Unix socket server, outside GPUI executor
     #[allow(clippy::disallowed_methods)]
     smol::Timer::after(Duration::from_millis(50)).await;
 
+    let mut poll_count = 0u32;
     loop {
+        poll_count += 1;
+        let update_start = std::time::Instant::now();
         let content = cx.update(|cx| {
             let terminal = TerminalRegistry::get_by_id_str(&terminal_id, cx)
                 .map_err(|e| JsonRpcError::terminal_not_found(&e.to_string()))?;
             Ok::<_, JsonRpcError>(terminal.read(cx).get_content())
         })?;
+        let update_elapsed = update_start.elapsed();
+        if update_elapsed > Duration::from_millis(100) {
+            log::warn!(
+                "[terminal.run] Poll #{} cx.update took {:?} (slow!)",
+                poll_count,
+                update_elapsed
+            );
+        }
 
-        let lines: Vec<&str> = content.lines().collect();
+        let lines: Vec<&str> = content.trim_end().lines().collect();
         if lines.len() > line_count_before {
             let last_line = lines.last().unwrap_or(&"");
             if regex.is_match(last_line) {
@@ -339,6 +372,11 @@ async fn handle_terminal_run(
                     .copied()
                     .collect();
                 let output = output_lines.join("\n");
+                log::info!(
+                    "[terminal.run] Command completed after {:?}, {} polls",
+                    start.elapsed(),
+                    poll_count
+                );
                 return Ok(json!({
                     "output": output,
                     "success": true
@@ -347,6 +385,16 @@ async fn handle_terminal_run(
         }
 
         if start.elapsed() >= timeout {
+            let last_line = lines.last().unwrap_or(&"");
+            log::warn!(
+                "[terminal.run] Timeout after {:?}, {} polls. lines.len(): {}, line_count_before: {}, last_line: {:?}, regex_match: {}",
+                start.elapsed(),
+                poll_count,
+                lines.len(),
+                line_count_before,
+                last_line,
+                regex.is_match(last_line)
+            );
             return Err(JsonRpcError::timeout("Command did not complete within timeout"));
         }
 
@@ -379,7 +427,7 @@ async fn handle_terminal_sendcmd(
         Ok::<_, JsonRpcError>(terminal.read(cx).get_content())
     })?;
 
-    let line_count_before = content_before.lines().count();
+    let line_count_before = content_before.trim_end().lines().count();
 
     cx.update(|cx| {
         let terminal = TerminalRegistry::get_by_id_str(&terminal_id, cx)
@@ -401,7 +449,7 @@ async fn handle_terminal_sendcmd(
             Ok::<_, JsonRpcError>(terminal.read(cx).get_content())
         })?;
 
-        let lines: Vec<&str> = content.lines().collect();
+        let lines: Vec<&str> = content.trim_end().lines().collect();
         if lines.len() > line_count_before {
             let last_line = lines.last().unwrap_or(&"");
             if regex.is_match(last_line) {
@@ -564,7 +612,7 @@ async fn handle_run_marked(
     let line_count_before = cx.update(|cx| {
         let terminal = TerminalRegistry::get_by_id_str(&terminal_id_str, cx)
             .map_err(|e| JsonRpcError::terminal_not_found(&e.to_string()))?;
-        Ok::<_, JsonRpcError>(terminal.read(cx).get_content().lines().count())
+        Ok::<_, JsonRpcError>(terminal.read(cx).get_content().trim_end().lines().count())
     })?;
 
     cx.update(|cx| {
@@ -591,7 +639,7 @@ async fn handle_run_marked(
             Ok::<_, JsonRpcError>(content)
         })?;
 
-        let lines: Vec<&str> = content.lines().collect();
+        let lines: Vec<&str> = content.trim_end().lines().collect();
         if lines.len() > line_count_before {
             let last_line = lines.last().unwrap_or(&"");
             if regex.is_match(last_line) {
