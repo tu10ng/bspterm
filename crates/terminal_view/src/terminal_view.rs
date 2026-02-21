@@ -57,11 +57,12 @@ use ui::{
 };
 use util::ResultExt;
 use workspace::{
-    CloseActiveItem, NewCenterTerminal, NewTerminal, ToolbarItemLocation, Workspace, WorkspaceId,
-    delete_unloaded_items,
+    CloseActiveItem, NewCenterTerminal, NewTerminal, Toast, ToolbarItemLocation, Workspace,
+    WorkspaceId, delete_unloaded_items,
     item::{
         BreadcrumbText, Item, ItemEvent, SerializableItem, TabContentParams, TabTooltipContent,
     },
+    notifications::NotificationId,
     register_serializable_item,
     searchable::{
         Direction, SearchEvent, SearchOptions, SearchToken, SearchableItem, SearchableItemHandle,
@@ -1157,7 +1158,9 @@ print(output)
         };
 
         let Some(socket_path) = ScriptingServer::get(cx) else {
+            let err_msg = "脚本服务不可用";
             log::error!("Scripting server not available for button bar script");
+            self.show_script_error(err_msg, cx);
             return;
         };
 
@@ -1176,6 +1179,7 @@ print(output)
 
         if let Err(err) = runner.start() {
             log::error!("Failed to start button bar script: {}", err);
+            self.show_script_error(&err.to_string(), cx);
             return;
         }
 
@@ -1183,7 +1187,23 @@ print(output)
         cx.notify();
     }
 
-    fn update_button_bar_runner(&mut self) {
+    fn show_script_error(&self, message: &str, cx: &mut Context<Self>) {
+        if let Some(workspace) = self.workspace.upgrade() {
+            workspace.update(cx, |workspace, cx| {
+                struct ScriptErrorToast;
+                workspace.show_toast(
+                    Toast::new(
+                        NotificationId::unique::<ScriptErrorToast>(),
+                        format!("脚本错误: {}", message),
+                    )
+                    .autohide(),
+                    cx,
+                );
+            });
+        }
+    }
+
+    fn update_button_bar_runner(&mut self, cx: &mut Context<Self>) {
         let Some(runner) = &mut self.button_bar_runner else {
             return;
         };
@@ -1195,17 +1215,25 @@ print(output)
             }
         }
 
-        // Check if script has finished
-        match runner.status() {
+        // Check if script has finished and collect error message if any
+        let status = runner.status();
+        let error_message = match &status {
             ScriptStatus::Finished(code) => {
                 log::debug!("Button bar script finished with code {}", code);
                 self.button_bar_runner = None;
+                None
             }
             ScriptStatus::Failed(err) => {
                 log::error!("Button bar script failed: {}", err);
+                let err_msg = err.clone();
                 self.button_bar_runner = None;
+                Some(err_msg)
             }
-            _ => {}
+            _ => None,
+        };
+
+        if let Some(err) = error_message {
+            self.show_script_error(&err, cx);
         }
     }
 
@@ -1527,7 +1555,9 @@ print(output)
         let script_id = match uuid::Uuid::parse_str(&action.script_id) {
             Ok(id) => id,
             Err(_) => {
+                let err_msg = format!("无效的脚本 ID: {}", action.script_id);
                 log::error!("Invalid script shortcut ID: {}", action.script_id);
+                self.show_script_error(&err_msg, cx);
                 return;
             }
         };
@@ -1537,12 +1567,16 @@ print(output)
         };
 
         let Some(shortcut) = store.read(cx).find_script_shortcut(script_id).cloned() else {
+            let err_msg = format!("未找到脚本快捷方式: {}", script_id);
             log::error!("Script shortcut not found: {}", script_id);
+            self.show_script_error(&err_msg, cx);
             return;
         };
 
         let Some(socket_path) = ScriptingServer::get(cx) else {
+            let err_msg = "脚本服务不可用";
             log::error!("Scripting server not available for script shortcut");
+            self.show_script_error(err_msg, cx);
             return;
         };
 
@@ -1561,6 +1595,7 @@ print(output)
 
         if let Err(err) = runner.start() {
             log::error!("Failed to start script shortcut: {}", err);
+            self.show_script_error(&err.to_string(), cx);
             return;
         }
 
@@ -2639,7 +2674,7 @@ impl Render for TerminalView {
         }
 
         // Update button bar runner status and log output
-        self.update_button_bar_runner();
+        self.update_button_bar_runner(cx);
 
         let terminal_handle = self.terminal.clone();
         let terminal_view_handle = cx.entity();
