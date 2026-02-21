@@ -3076,10 +3076,6 @@ impl Item for TerminalView {
         if self.needs_serialize {
             return true;
         }
-        // Always treat terminals with connection_info as dirty to ensure serialization during close
-        if self.terminal.read(cx).connection_info().is_some() {
-            return true;
-        }
         match self.terminal.read(cx).task() {
             Some(task) => task.status == TaskStatus::Running,
             None => self.has_bell(),
