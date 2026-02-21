@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
-use futures::{FutureExt, StreamExt};
+use futures::FutureExt;
 use gpui::{App, AsyncApp, Global, Task};
+use net::async_net::{UnixListener, UnixStream};
 use parking_lot::RwLock;
 use smol::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use smol::net::unix::UnixListener;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -91,21 +91,18 @@ impl ScriptingServer {
 
         log::info!("Scripting server listening on {:?}", socket_path);
 
-        let mut incoming = listener.incoming();
-
         loop {
             futures::select! {
-                stream = incoming.next().fuse() => {
-                    match stream {
-                        Some(Ok(stream)) => {
+                result = listener.accept().fuse() => {
+                    match result {
+                        Ok((stream, _)) => {
                             if let Err(e) = Self::handle_client(stream, cx).await {
                                 log::error!("Client error: {}", e);
                             }
                         }
-                        Some(Err(e)) => {
+                        Err(e) => {
                             log::error!("Accept error: {}", e);
                         }
-                        None => break,
                     }
                 }
                 _ = shutdown_rx.recv().fuse() => {
@@ -123,7 +120,7 @@ impl ScriptingServer {
     }
 
     async fn handle_client(
-        stream: smol::net::unix::UnixStream,
+        stream: UnixStream,
         cx: &mut AsyncApp,
     ) -> Result<()> {
         let (reader, writer) = smol::io::split(stream);
