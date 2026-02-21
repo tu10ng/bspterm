@@ -77,6 +77,7 @@ use std::{
     sync::atomic::{self, AtomicBool},
 };
 use editor_panel::EditorPanel;
+use terminal::ShortcutBarStoreEntity;
 use terminal_view::terminal_panel::{self, TerminalPanel};
 use theme::{ActiveTheme, GlobalTheme, SystemAppearance, ThemeRegistry, ThemeSettings};
 use ui::{PopoverMenuHandle, prelude::*};
@@ -1881,6 +1882,8 @@ fn reload_keymaps(cx: &mut App, mut user_key_bindings: Vec<KeyBinding>) {
         key_binding.set_meta(KeybindSource::User.meta());
     }
     cx.bind_keys(user_key_bindings);
+
+    ShortcutBarStoreEntity::re_register_keybindings(cx);
 
     let menus = app_menus(cx);
     cx.set_menus(menus);

@@ -2620,6 +2620,7 @@ dependencies = [
  "telemetry",
  "telemetry_events",
  "tempfile",
+ "terminal",
  "terminal_scripting",
  "terminal_view",
  "theme",

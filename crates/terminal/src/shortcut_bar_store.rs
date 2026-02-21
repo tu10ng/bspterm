@@ -366,6 +366,17 @@ impl ShortcutBarStoreEntity {
             .map(|g| g.0.clone())
     }
 
+    /// Re-register all script keybindings.
+    /// Called after keymap reload to restore script shortcuts.
+    pub fn re_register_keybindings(cx: &mut App) {
+        if let Some(store) = Self::try_global(cx) {
+            let shortcuts = store.read(cx).config.script_shortcuts.clone();
+            for shortcut in &shortcuts {
+                Self::register_script_keybinding(shortcut, cx);
+            }
+        }
+    }
+
     /// Read-only access to config.
     pub fn config(&self) -> &ShortcutBarConfig {
         &self.config
