@@ -178,6 +178,7 @@ pub enum Event {
     SelectionsChanged,
     NewNavigationTarget(Option<MaybeNavigationTarget>),
     Open(MaybeNavigationTarget),
+    LoginCompleted,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -467,6 +468,8 @@ impl TerminalBuilder {
             rule_engine: None,
             current_word_buffer: String::new(),
             current_line_buffer: String::new(),
+            login_completed: true,
+            login_waiters: Vec::new(),
         };
 
         Ok(TerminalBuilder {
@@ -709,6 +712,8 @@ impl TerminalBuilder {
                 rule_engine: None,
                 current_word_buffer: String::new(),
                 current_line_buffer: String::new(),
+                login_completed: true,
+                login_waiters: Vec::new(),
             };
 
             if !activation_script.is_empty() && no_task {
@@ -902,6 +907,8 @@ impl TerminalBuilder {
                 rule_engine: None,
                 current_word_buffer: String::new(),
                 current_line_buffer: String::new(),
+                login_completed: false,
+                login_waiters: Vec::new(),
             };
 
             terminal.init_rule_engine();
@@ -1061,6 +1068,8 @@ impl TerminalBuilder {
                 rule_engine: None,
                 current_word_buffer: String::new(),
                 current_line_buffer: String::new(),
+                login_completed: false,
+                login_waiters: Vec::new(),
             };
 
             terminal.init_rule_engine();
@@ -1233,6 +1242,8 @@ impl TerminalBuilder {
             rule_engine: None,
             current_word_buffer: String::new(),
             current_line_buffer: String::new(),
+            login_completed: false,
+            login_waiters: Vec::new(),
         };
 
         terminal.init_rule_engine();
@@ -1398,6 +1409,8 @@ pub struct Terminal {
     rule_engine: Option<rule_engine::RuleEngine>,
     current_word_buffer: String,
     current_line_buffer: String,
+    login_completed: bool,
+    login_waiters: Vec<futures::channel::oneshot::Sender<()>>,
 }
 
 struct CopyTemplate {
@@ -3247,6 +3260,77 @@ impl Terminal {
     }
 
     pub fn clone_builder(&self, cx: &App, cwd: Option<PathBuf>) -> Task<Result<TerminalBuilder>> {
+        // If there's remote connection info, clone the remote connection
+        if let Some(connection_info) = &self.connection_info {
+            return match connection_info {
+                ConnectionInfo::Ssh {
+                    host,
+                    port,
+                    username,
+                    password,
+                    private_key_path,
+                    passphrase,
+                    session_id,
+                } => {
+                    let auth = if let Some(key_path) = private_key_path {
+                        connection::ssh::SshAuthConfig::PrivateKey {
+                            path: key_path.clone(),
+                            passphrase: passphrase.clone(),
+                        }
+                    } else if let Some(pwd) = password {
+                        connection::ssh::SshAuthConfig::Password(pwd.clone())
+                    } else {
+                        connection::ssh::SshAuthConfig::Auto
+                    };
+
+                    let mut ssh_config =
+                        connection::ssh::SshConfig::new(host.clone(), *port).with_auth(auth);
+                    if let Some(user) = username {
+                        ssh_config = ssh_config.with_username(user.clone());
+                    }
+
+                    TerminalBuilder::new_with_ssh_and_session_id(
+                        ssh_config,
+                        *session_id,
+                        self.template.cursor_shape,
+                        self.template.alternate_scroll,
+                        self.template.max_scroll_history_lines,
+                        self.template.window_id,
+                        cx,
+                        self.path_style,
+                    )
+                }
+                ConnectionInfo::Telnet {
+                    host,
+                    port,
+                    username,
+                    password,
+                    session_id,
+                } => {
+                    let mut telnet_config =
+                        connection::telnet::TelnetConfig::new(host.clone(), *port);
+                    if let Some(user) = username {
+                        telnet_config = telnet_config.with_username(user.clone());
+                    }
+                    if let Some(pwd) = password {
+                        telnet_config = telnet_config.with_password(pwd.clone());
+                    }
+
+                    TerminalBuilder::new_with_telnet_and_session_id(
+                        telnet_config,
+                        *session_id,
+                        self.template.cursor_shape,
+                        self.template.alternate_scroll,
+                        self.template.max_scroll_history_lines,
+                        self.template.window_id,
+                        cx,
+                        self.path_style,
+                    )
+                }
+            };
+        }
+
+        // Local terminal: use original logic
         let working_directory = self.working_directory().or_else(|| cwd);
         TerminalBuilder::new(
             working_directory,
@@ -3388,10 +3472,23 @@ impl Terminal {
     fn check_rules(&mut self, trigger: rule_store::TriggerEvent, cx: &mut Context<Self>) {
         let content = self.get_screen_content();
         let matched_actions = if let Some(engine) = &mut self.rule_engine {
-            engine.check(trigger, &content)
+            engine.check(trigger.clone(), &content)
         } else {
+            if !self.login_completed && trigger == rule_store::TriggerEvent::Wakeup {
+                if self.detect_shell_prompt(&content) {
+                    self.mark_login_completed(cx);
+                }
+            }
             return;
         };
+
+        if matched_actions.is_empty() {
+            if !self.login_completed && trigger == rule_store::TriggerEvent::Wakeup {
+                if self.detect_shell_prompt(&content) {
+                    self.mark_login_completed(cx);
+                }
+            }
+        }
 
         for matched in matched_actions {
             log::debug!("Rule '{}' triggered, executing action", matched.rule_name);
@@ -3459,6 +3556,70 @@ impl Terminal {
         if let Some(engine) = &mut self.rule_engine {
             engine.reset_counts();
         }
+    }
+
+    /// Mark login as completed and notify all waiters.
+    fn mark_login_completed(&mut self, cx: &mut Context<Self>) {
+        if self.login_completed {
+            return;
+        }
+        self.login_completed = true;
+        for sender in self.login_waiters.drain(..) {
+            let _ = sender.send(());
+        }
+        cx.emit(Event::LoginCompleted);
+        log::debug!("Login completed for terminal");
+    }
+
+    /// Detect common shell prompts in terminal content.
+    fn detect_shell_prompt(&self, content: &str) -> bool {
+        // Find the last non-empty line (skip blank lines at the end of terminal screen)
+        let last_line = content
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .map(|line| line.trim())
+            .unwrap_or("");
+
+        if last_line.is_empty() {
+            return false;
+        }
+
+        static PROMPT_PATTERNS: &[&str] = &[
+            r"[$#>]\s*$",
+            r"<[^>]+>\s*$",
+            r"\[[^\]]+\]\s*$",
+        ];
+
+        for pattern in PROMPT_PATTERNS {
+            if let Ok(regex) = regex::Regex::new(pattern) {
+                if regex.is_match(last_line) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Check if login has completed.
+    pub fn is_login_completed(&self) -> bool {
+        self.login_completed
+    }
+
+    /// Wait for login to complete, returning a receiver that resolves when login is done.
+    pub fn wait_for_login(&mut self) -> futures::channel::oneshot::Receiver<()> {
+        let (sender, receiver) = futures::channel::oneshot::channel();
+        if self.login_completed {
+            let _ = sender.send(());
+        } else {
+            self.login_waiters.push(sender);
+        }
+        receiver
+    }
+
+    /// Reset login state (called on reconnection).
+    pub fn reset_login_state(&mut self) {
+        self.login_completed = false;
     }
 }
 

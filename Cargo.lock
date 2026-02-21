@@ -18065,6 +18065,7 @@ dependencies = [
  "gpui",
  "log",
  "net",
+ "notifications",
  "parking_lot",
  "regex",
  "serde",
@@ -18072,8 +18073,10 @@ dependencies = [
  "settings",
  "smol",
  "terminal",
+ "ui",
  "util",
  "uuid",
+ "workspace",
 ]
 
 [[package]]

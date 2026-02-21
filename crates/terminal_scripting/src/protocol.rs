@@ -265,3 +265,42 @@ pub struct SendCmdParams {
 fn default_strip_echo() -> bool {
     true
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SplitRightCloneParams {
+    pub terminal_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddSshToGroupParams {
+    pub group_id: String,
+    pub name: String,
+    pub host: String,
+    #[serde(default = "default_ssh_port")]
+    pub port: u16,
+    pub username: Option<String>,
+    pub password: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetCurrentGroupParams {
+    pub terminal_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToastParams {
+    pub message: String,
+    #[serde(default = "default_toast_level")]
+    pub level: String,
+}
+
+fn default_toast_level() -> String {
+    "info".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WaitForLoginParams {
+    pub terminal_id: String,
+    #[serde(default = "default_timeout")]
+    pub timeout_ms: u64,
+}

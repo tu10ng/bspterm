@@ -1,4 +1,5 @@
 use gpui::{App, AppContext, AsyncApp, Entity};
+use notifications::status_toast::{StatusToast, ToastIcon};
 use regex::Regex;
 use serde_json::{Value, json};
 use settings::Settings;
@@ -6,15 +7,21 @@ use std::time::Duration;
 use terminal::connection::ssh::{SshAuthConfig, SshConfig};
 use terminal::connection::telnet::TelnetConfig;
 use terminal::terminal_settings::{self, AlternateScroll, TerminalSettings};
-use terminal::{Terminal, TerminalBuilder};
+use terminal::{
+    AuthMethod, ConnectionInfo, SessionConfig, SessionStoreEntity, SshSessionConfig, Terminal,
+    TerminalBuilder,
+};
+use ui::{Color, IconName};
 use util::paths::PathStyle;
 use uuid::Uuid;
+use workspace::{SplitDirection, Workspace};
 
 use crate::protocol::{
-    CloseParams, CreateSshParams, CreateTelnetParams, CurrentTerminalParams, JsonRpcError,
-    JsonRpcRequest, JsonRpcResponse, ReadCommandOutputParams, ReadParams, ReadTimeRangeParams,
-    RunMarkedParams, RunParams, ScreenContent, SendCmdParams, SendParams, TrackReadParams,
-    TrackStartParams, TrackStopParams, WaitForParams,
+    AddSshToGroupParams, CloseParams, CreateSshParams, CreateTelnetParams, CurrentTerminalParams,
+    GetCurrentGroupParams, JsonRpcError, JsonRpcRequest, JsonRpcResponse, ReadCommandOutputParams,
+    ReadParams, ReadTimeRangeParams, RunMarkedParams, RunParams, ScreenContent, SendCmdParams,
+    SendParams, SplitRightCloneParams, ToastParams, TrackReadParams, TrackStartParams,
+    TrackStopParams, WaitForLoginParams, WaitForParams,
 };
 use crate::session::TerminalRegistry;
 
@@ -28,6 +35,7 @@ pub async fn handle_request(request: JsonRpcRequest, cx: &mut AsyncApp) -> JsonR
         "terminal.send" => handle_terminal_send(&request, cx).await,
         "terminal.read" => handle_terminal_read(&request, cx).await,
         "terminal.wait_for" => handle_terminal_wait_for(&request, cx).await,
+        "terminal.wait_for_login" => handle_terminal_wait_for_login(&request, cx).await,
         "terminal.run" => handle_terminal_run(&request, cx).await,
         "terminal.sendcmd" => handle_terminal_sendcmd(&request, cx).await,
         "terminal.close" => handle_terminal_close(&request, cx).await,
@@ -37,6 +45,10 @@ pub async fn handle_request(request: JsonRpcRequest, cx: &mut AsyncApp) -> JsonR
         "terminal.run_marked" => handle_run_marked(&request, cx).await,
         "terminal.read_command_output" => handle_read_command_output(&request, cx).await,
         "terminal.read_time_range" => handle_read_time_range(&request, cx).await,
+        "pane.split_right_clone" => handle_pane_split_right_clone(&request, cx).await,
+        "session.add_ssh_to_group" => handle_session_add_ssh_to_group(&request, cx).await,
+        "session.get_current_group" => handle_session_get_current_group(&request, cx).await,
+        "notify.toast" => handle_notify_toast(&request, cx).await,
         _ => Err(JsonRpcError::method_not_found(&request.method)),
     };
 
@@ -274,6 +286,40 @@ async fn handle_terminal_wait_for(
                 "Pattern '{}' not found within timeout",
                 params.pattern
             )));
+        }
+
+        // This handler runs in async context from Unix socket server, outside GPUI executor
+        #[allow(clippy::disallowed_methods)]
+        smol::Timer::after(Duration::from_millis(100)).await;
+    }
+}
+
+async fn handle_terminal_wait_for_login(
+    request: &JsonRpcRequest,
+    cx: &mut AsyncApp,
+) -> Result<Value, JsonRpcError> {
+    let params: WaitForLoginParams = serde_json::from_value(request.params.clone())
+        .map_err(|e| JsonRpcError::invalid_params(e.to_string()))?;
+
+    let terminal_id = params.terminal_id.clone();
+    let timeout = Duration::from_millis(params.timeout_ms);
+    let start = std::time::Instant::now();
+
+    loop {
+        let is_completed = cx.update(|cx| {
+            let terminal = TerminalRegistry::get_by_id_str(&terminal_id, cx)
+                .map_err(|e| JsonRpcError::terminal_not_found(&e.to_string()))?;
+            Ok::<_, JsonRpcError>(terminal.read(cx).is_login_completed())
+        })?;
+
+        if is_completed {
+            return Ok(json!({
+                "completed": true
+            }));
+        }
+
+        if start.elapsed() >= timeout {
+            return Err(JsonRpcError::timeout("Login did not complete within timeout"));
         }
 
         // This handler runs in async context from Unix socket server, outside GPUI executor
@@ -715,4 +761,223 @@ async fn handle_read_time_range(
             "content": content
         }))
     })
+}
+
+async fn handle_pane_split_right_clone(
+    request: &JsonRpcRequest,
+    cx: &mut AsyncApp,
+) -> Result<Value, JsonRpcError> {
+    let params: SplitRightCloneParams = serde_json::from_value(request.params.clone())
+        .map_err(|e| JsonRpcError::invalid_params(e.to_string()))?;
+
+    let terminal_id = Uuid::parse_str(&params.terminal_id)
+        .map_err(|_| JsonRpcError::invalid_params("Invalid terminal ID"))?;
+
+    let clone_task = cx.update(|cx| {
+        let _terminal = TerminalRegistry::get_terminal(terminal_id, cx)
+            .ok_or_else(|| JsonRpcError::terminal_not_found(&params.terminal_id))?;
+
+        let item_id = TerminalRegistry::get_item_id(terminal_id, cx)
+            .ok_or_else(|| JsonRpcError::internal_error("Terminal item_id not registered"))?;
+
+        let window_handle = cx
+            .active_window()
+            .ok_or_else(|| JsonRpcError::internal_error("No active window"))?;
+
+        window_handle
+            .update(cx, |_, window, cx| -> Result<_, JsonRpcError> {
+                let workspace_entity = window
+                    .root::<Workspace>()
+                    .flatten()
+                    .ok_or(JsonRpcError::internal_error("No workspace found"))?;
+
+                let pane_to_split = workspace_entity
+                    .read(cx)
+                    .panes()
+                    .iter()
+                    .find_map(|pane: &Entity<workspace::Pane>| {
+                        for item in pane.read(cx).items() {
+                            if item.item_id() == item_id {
+                                return Some(pane.clone());
+                            }
+                        }
+                        None
+                    });
+
+                let pane = pane_to_split.ok_or_else(|| {
+                    JsonRpcError::internal_error("Terminal not found in any pane")
+                })?;
+
+                let clone_task =
+                    workspace_entity.update(cx, |workspace: &mut Workspace, cx| {
+                        workspace.split_and_clone(pane, SplitDirection::Right, window, cx)
+                    });
+
+                Ok(clone_task)
+            })
+            .map_err(|e| JsonRpcError::internal_error(format!("Window update failed: {:?}", e)))?
+    })?;
+
+    let new_pane = clone_task
+        .await
+        .ok_or_else(|| JsonRpcError::internal_error("Failed to clone terminal"))?;
+
+    let new_terminal_id = cx.update(|cx| -> Option<Uuid> {
+        let active_item = new_pane.read(cx).active_item()?;
+        let new_item_id = active_item.item_id();
+        TerminalRegistry::find_by_item_id(new_item_id, cx)
+    });
+
+    let new_terminal_id =
+        new_terminal_id.ok_or_else(|| JsonRpcError::internal_error("Cloned terminal not registered"))?;
+
+    Ok(json!({
+        "new_terminal_id": new_terminal_id.to_string()
+    }))
+}
+
+async fn handle_session_add_ssh_to_group(
+    request: &JsonRpcRequest,
+    cx: &mut AsyncApp,
+) -> Result<Value, JsonRpcError> {
+    let params: AddSshToGroupParams = serde_json::from_value(request.params.clone())
+        .map_err(|e| JsonRpcError::invalid_params(e.to_string()))?;
+
+    let group_id = Uuid::parse_str(&params.group_id)
+        .map_err(|_| JsonRpcError::invalid_params("Invalid group ID"))?;
+
+    let ssh_config = SshSessionConfig::new(&params.host, params.port);
+    let ssh_config = if let Some(username) = params.username {
+        ssh_config.with_username(username)
+    } else {
+        ssh_config
+    };
+    let ssh_config = if let Some(password) = params.password {
+        ssh_config.with_auth(AuthMethod::Password { password })
+    } else {
+        ssh_config
+    };
+
+    let session_config = SessionConfig::new_ssh(&params.name, ssh_config);
+    let session_id = session_config.id;
+
+    cx.update(|cx| {
+        let session_store = SessionStoreEntity::try_global(cx)
+            .ok_or_else(|| JsonRpcError::internal_error("Session store not initialized"))?;
+
+        session_store.update(cx, |store, cx| {
+            if store.store().find_node(group_id).is_none() {
+                return Err(JsonRpcError::invalid_params("Group not found"));
+            }
+            store.add_session(session_config, Some(group_id), cx);
+            Ok(())
+        })?;
+
+        Ok(json!({
+            "session_id": session_id.to_string()
+        }))
+    })
+}
+
+async fn handle_session_get_current_group(
+    request: &JsonRpcRequest,
+    cx: &mut AsyncApp,
+) -> Result<Value, JsonRpcError> {
+    let params: GetCurrentGroupParams = serde_json::from_value(request.params.clone())
+        .map_err(|e| JsonRpcError::invalid_params(e.to_string()))?;
+
+    let terminal_id = if let Some(id_str) = params.terminal_id {
+        Uuid::parse_str(&id_str).map_err(|_| JsonRpcError::invalid_params("Invalid terminal ID"))?
+    } else {
+        cx.update(|cx| TerminalRegistry::focused_id(cx))
+            .ok_or_else(|| JsonRpcError::internal_error("No focused terminal"))?
+    };
+
+    cx.update(|cx| {
+        let terminal = TerminalRegistry::get_terminal(terminal_id, cx)
+            .ok_or_else(|| JsonRpcError::terminal_not_found(&terminal_id.to_string()))?;
+
+        let connection_info = terminal.read(cx).connection_info();
+        let session_id = match connection_info {
+            Some(ConnectionInfo::Ssh { session_id, .. }) => session_id,
+            Some(ConnectionInfo::Telnet { session_id, .. }) => session_id,
+            None => {
+                return Ok(json!({
+                    "group_id": null,
+                    "session_id": null
+                }))
+            }
+        };
+
+        let Some(session_id) = session_id else {
+            return Ok(json!({
+                "group_id": null,
+                "session_id": null
+            }));
+        };
+
+        let session_store = SessionStoreEntity::try_global(cx)
+            .ok_or_else(|| JsonRpcError::internal_error("Session store not initialized"))?;
+
+        let group_id = session_store.read(cx).store().find_node_location(*session_id);
+
+        match group_id {
+            Some((Some(parent_id), _)) => Ok(json!({
+                "group_id": parent_id.to_string(),
+                "session_id": session_id.to_string()
+            })),
+            Some((None, _)) => Ok(json!({
+                "group_id": null,
+                "session_id": session_id.to_string()
+            })),
+            None => Ok(json!({
+                "group_id": null,
+                "session_id": session_id.to_string()
+            })),
+        }
+    })
+}
+
+async fn handle_notify_toast(
+    request: &JsonRpcRequest,
+    cx: &mut AsyncApp,
+) -> Result<Value, JsonRpcError> {
+    let params: ToastParams = serde_json::from_value(request.params.clone())
+        .map_err(|e| JsonRpcError::invalid_params(e.to_string()))?;
+
+    cx.update(|cx| {
+        let window_handle = cx
+            .active_window()
+            .ok_or_else(|| JsonRpcError::internal_error("No active window"))?;
+
+        window_handle
+            .update(cx, |_, window, cx| -> Result<(), JsonRpcError> {
+                let workspace_entity = window
+                    .root::<Workspace>()
+                    .flatten()
+                    .ok_or(JsonRpcError::internal_error("No workspace found"))?;
+
+                let message = params.message.clone();
+                let level = params.level.clone();
+
+                let toast = StatusToast::new(&message, cx, |toast, _cx| {
+                    let icon = match level.as_str() {
+                        "error" => ToastIcon::new(IconName::XCircle).color(Color::Error),
+                        "warning" => ToastIcon::new(IconName::Warning).color(Color::Warning),
+                        "success" => ToastIcon::new(IconName::Check).color(Color::Success),
+                        _ => ToastIcon::new(IconName::Info).color(Color::Muted),
+                    };
+                    toast.icon(icon)
+                });
+
+                workspace_entity.update(cx, |workspace: &mut Workspace, cx| {
+                    workspace.toggle_status_toast(toast, cx);
+                });
+
+                Ok(())
+            })
+            .map_err(|e| JsonRpcError::internal_error(format!("Window update failed: {:?}", e)))?
+    })?;
+
+    Ok(json!({"success": true}))
 }

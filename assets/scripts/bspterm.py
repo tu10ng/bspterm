@@ -457,6 +457,30 @@ class Terminal:
         })
         return result["content"]
 
+    def wait_for_login(self, timeout: float = 30.0) -> None:
+        """
+        Wait for auto-login to complete.
+
+        This blocks until the terminal's auto-login rules have finished
+        executing and a shell prompt is detected. Use this after cloning
+        a terminal to ensure the new connection is ready for commands.
+
+        Args:
+            timeout: Maximum time to wait in seconds (default: 30.0)
+
+        Raises:
+            TimeoutError: If login does not complete within timeout
+
+        Example:
+            cloned = Pane.split_right_clone(term.id)
+            cloned.wait_for_login()  # Wait for auto-login to complete
+            cloned.sendcmd("ls -la")  # Now safe to send commands
+        """
+        self._client.call("terminal.wait_for_login", {
+            "terminal_id": self.id,
+            "timeout_ms": int(timeout * 1000),
+        })
+
 
 @dataclass
 class SessionInfo:
@@ -499,6 +523,123 @@ class Session:
             result.get("connected", True),
             result.get("type", "unknown"),
         )
+
+    @staticmethod
+    def get_current_group(terminal_id: str = None) -> Dict[str, Optional[str]]:
+        """
+        Get the session group info for a terminal.
+
+        Args:
+            terminal_id: Terminal ID (optional, defaults to current terminal)
+
+        Returns:
+            Dict with group_id and session_id (both may be None for local terminals)
+        """
+        client = _get_client()
+        params = {}
+        if terminal_id:
+            params["terminal_id"] = terminal_id
+        result = client.call("session.get_current_group", params)
+        return {
+            "group_id": result.get("group_id"),
+            "session_id": result.get("session_id"),
+        }
+
+    @staticmethod
+    def add_ssh_to_group(
+        group_id: str,
+        name: str,
+        host: str,
+        port: int = 22,
+        username: str = None,
+        password: str = None,
+    ) -> str:
+        """
+        Add an SSH session configuration to a session group.
+
+        This adds the session config to the session store but does NOT
+        open a terminal window.
+
+        Args:
+            group_id: ID of the session group to add to
+            name: Display name for the session
+            host: SSH hostname or IP
+            port: SSH port (default: 22)
+            username: SSH username
+            password: SSH password
+
+        Returns:
+            The new session's ID
+        """
+        client = _get_client()
+        params = {
+            "group_id": group_id,
+            "name": name,
+            "host": host,
+            "port": port,
+        }
+        if username:
+            params["username"] = username
+        if password:
+            params["password"] = password
+
+        result = client.call("session.add_ssh_to_group", params)
+        return result["session_id"]
+
+
+class Pane:
+    """Pane operations."""
+
+    @staticmethod
+    def split_right_clone(
+        terminal_id: str = None,
+        wait_for_login: bool = False,
+        login_timeout: float = 30.0,
+    ) -> Terminal:
+        """
+        Split the pane containing the terminal to the right and clone it.
+
+        Creates a new terminal view in a pane to the right of the current one,
+        connected to the same session.
+
+        Args:
+            terminal_id: Terminal ID to clone (optional, defaults to current terminal)
+            wait_for_login: If True, wait for auto-login to complete before returning.
+                           Use this when the cloned terminal needs to connect and
+                           authenticate before you can send commands.
+            login_timeout: Timeout in seconds for waiting for login (default: 30.0)
+
+        Returns:
+            Terminal instance for the cloned terminal
+
+        Example:
+            # Clone and immediately send commands (may conflict with auto-login)
+            cloned = Pane.split_right_clone(term.id)
+
+            # Clone and wait for login before sending commands (safe)
+            cloned = Pane.split_right_clone(term.id, wait_for_login=True)
+            cloned.sendcmd("screen-length 0 temporary")
+        """
+        client = _get_client()
+        if terminal_id is None:
+            terminal_id = current_terminal().id
+        result = client.call("pane.split_right_clone", {"terminal_id": terminal_id})
+        term = Terminal(result["new_terminal_id"])
+        if wait_for_login:
+            term.wait_for_login(timeout=login_timeout)
+        return term
+
+
+def toast(message: str, level: str = "info") -> None:
+    """
+    Show a toast notification.
+
+    Args:
+        message: The message to display
+        level: Notification level - "info", "success", "warning", or "error"
+    """
+    client = _get_client()
+    client.call("notify.toast", {"message": message, "level": level})
 
 
 def current_terminal() -> Terminal:
@@ -664,8 +805,10 @@ __all__ = [
     "Terminal",
     "SessionInfo",
     "Session",
+    "Pane",
     "SSH",
     "Telnet",
     "current_terminal",
     "new_terminal",
+    "toast",
 ]

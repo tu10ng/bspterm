@@ -287,19 +287,20 @@ impl RemoteExplorer {
             return;
         };
 
+        let session_id = session.id;
         match &session.protocol {
             ProtocolConfig::Ssh(ssh_config) => {
                 let workspace = self.workspace.clone();
                 let pane = self.get_terminal_pane(cx);
                 if let (Some(workspace), Some(pane)) = (workspace.upgrade(), pane) {
-                    connect_ssh(ssh_config.clone(), workspace, pane, window, cx);
+                    connect_ssh(ssh_config.clone(), Some(session_id), workspace, pane, window, cx);
                 }
             }
             ProtocolConfig::Telnet(telnet_config) => {
                 let workspace = self.workspace.clone();
                 let pane = self.get_terminal_pane(cx);
                 if let (Some(workspace), Some(pane)) = (workspace.upgrade(), pane) {
-                    connect_telnet(telnet_config.clone(), workspace, pane, window, cx);
+                    connect_telnet(telnet_config.clone(), Some(session_id), workspace, pane, window, cx);
                 }
             }
         }
@@ -447,10 +448,10 @@ impl RemoteExplorer {
         {
             match result {
                 ConnectionResult::Ssh(ssh_config, workspace, pane) => {
-                    connect_ssh(ssh_config, workspace, pane, window, cx);
+                    connect_ssh(ssh_config, None, workspace, pane, window, cx);
                 }
                 ConnectionResult::Telnet(telnet_config, workspace, pane) => {
-                    connect_telnet(telnet_config, workspace, pane, window, cx);
+                    connect_telnet(telnet_config, None, workspace, pane, window, cx);
                 }
             }
         }
@@ -463,7 +464,7 @@ impl RemoteExplorer {
             .quick_add_area
             .handle_telnet_connect(workspace, pane, window, cx)
         {
-            connect_telnet(telnet_config, workspace, pane, window, cx);
+            connect_telnet(telnet_config, None, workspace, pane, window, cx);
         }
     }
 
@@ -474,7 +475,7 @@ impl RemoteExplorer {
             .quick_add_area
             .handle_ssh_connect(workspace, pane, window, cx)
         {
-            connect_ssh(ssh_config, workspace, pane, window, cx);
+            connect_ssh(ssh_config, None, workspace, pane, window, cx);
         }
     }
 

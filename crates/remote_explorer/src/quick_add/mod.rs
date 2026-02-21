@@ -418,6 +418,7 @@ fn format_session_name(host: &str, port: u16, username: &Option<String>, default
 
 pub fn connect_ssh<T: 'static>(
     ssh_config: terminal::SshSessionConfig,
+    session_id: Option<uuid::Uuid>,
     workspace: Entity<Workspace>,
     pane: Entity<Pane>,
     window: &mut Window,
@@ -438,8 +439,9 @@ pub fn connect_ssh<T: 'static>(
     let window_id = window.window_handle().window_id().as_u64();
     let weak_workspace = workspace.downgrade();
 
-    let terminal_task = TerminalBuilder::new_with_ssh(
+    let terminal_task = TerminalBuilder::new_with_ssh_and_session_id(
         config,
+        session_id,
         cursor_shape,
         alternate_scroll,
         max_scroll_history_lines,
@@ -482,6 +484,7 @@ pub fn connect_ssh<T: 'static>(
 
 pub fn connect_telnet<T: 'static>(
     telnet_config: terminal::TelnetSessionConfig,
+    session_id: Option<uuid::Uuid>,
     workspace: Entity<Workspace>,
     pane: Entity<Pane>,
     window: &mut Window,
@@ -502,8 +505,9 @@ pub fn connect_telnet<T: 'static>(
     let window_id = window.window_handle().window_id().as_u64();
     let weak_workspace = workspace.downgrade();
 
-    let terminal_task = TerminalBuilder::new_with_telnet(
+    let terminal_task = TerminalBuilder::new_with_telnet_and_session_id(
         config,
+        session_id,
         cursor_shape,
         alternate_scroll,
         max_scroll_history_lines,

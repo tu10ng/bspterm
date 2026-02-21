@@ -1,5 +1,5 @@
 use anyhow::Result;
-use gpui::{App, Entity, Global, WeakEntity};
+use gpui::{App, Entity, EntityId, Global, WeakEntity};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,14 +13,16 @@ pub struct TerminalSession {
     pub id: Uuid,
     pub name: String,
     pub terminal: WeakEntity<Terminal>,
+    pub item_id: Option<EntityId>,
 }
 
 impl TerminalSession {
-    pub fn new(name: String, terminal: WeakEntity<Terminal>) -> Self {
+    pub fn new(name: String, terminal: WeakEntity<Terminal>, item_id: Option<EntityId>) -> Self {
         Self {
             id: Uuid::new_v4(),
             name,
             terminal,
+            item_id,
         }
     }
 
@@ -73,12 +75,35 @@ impl TerminalRegistry {
     }
 
     pub fn register(terminal: &Entity<Terminal>, name: String, cx: &App) -> Uuid {
+        Self::register_with_item_id(terminal, name, None, cx)
+    }
+
+    pub fn register_with_item_id(
+        terminal: &Entity<Terminal>,
+        name: String,
+        item_id: Option<EntityId>,
+        cx: &App,
+    ) -> Uuid {
         let global = cx.global::<GlobalTerminalRegistry>();
         let mut inner = global.0.write();
-        let session = TerminalSession::new(name, terminal.downgrade());
+        let session = TerminalSession::new(name, terminal.downgrade(), item_id);
         let id = session.id;
         inner.sessions.insert(id, session);
         id
+    }
+
+    pub fn get_item_id(id: Uuid, cx: &App) -> Option<EntityId> {
+        let global = cx.global::<GlobalTerminalRegistry>();
+        let inner = global.0.read();
+        inner.sessions.get(&id).and_then(|s| s.item_id)
+    }
+
+    pub fn set_item_id(id: Uuid, item_id: EntityId, cx: &App) {
+        let global = cx.global::<GlobalTerminalRegistry>();
+        let mut inner = global.0.write();
+        if let Some(session) = inner.sessions.get_mut(&id) {
+            session.item_id = Some(item_id);
+        }
     }
 
     pub fn unregister(id: Uuid, cx: &App) {
@@ -227,6 +252,17 @@ impl TerminalRegistry {
 
         let tracker = inner.trackers.get(&terminal_id)?;
         Some(tracker.elapsed_ms())
+    }
+
+    pub fn find_by_item_id(item_id: EntityId, cx: &App) -> Option<Uuid> {
+        let global = cx.global::<GlobalTerminalRegistry>();
+        let inner = global.0.read();
+        for (id, session) in inner.sessions.iter() {
+            if session.item_id == Some(item_id) {
+                return Some(*id);
+            }
+        }
+        None
     }
 }
 

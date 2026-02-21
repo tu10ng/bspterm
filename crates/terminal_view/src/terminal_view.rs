@@ -368,7 +368,13 @@ impl TerminalView {
 
         let scripting_id = {
             let term_name = terminal.read(cx).title(false);
-            Some(TerminalRegistry::register(&terminal, term_name, cx))
+            let item_id = cx.entity().entity_id();
+            Some(TerminalRegistry::register_with_item_id(
+                &terminal,
+                term_name,
+                Some(item_id),
+                cx,
+            ))
         };
 
         let button_bar_subscription = ButtonBarStoreEntity::try_global(cx).map(|store| {
@@ -2414,6 +2420,9 @@ fn subscribe_for_terminal_events(
                 Event::SelectionsChanged => {
                     window.invalidate_character_coordinates();
                     cx.emit(SearchEvent::ActiveMatchChanged)
+                }
+                Event::LoginCompleted => {
+                    log::debug!("Terminal login completed");
                 }
             }
         },

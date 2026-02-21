@@ -23,11 +23,18 @@ const SCRIPT_PANEL_KEY: &str = "ScriptPanel";
 
 const BSPTERM_PY: &[u8] = include_bytes!("../../../assets/scripts/bspterm.py");
 
+const DEFAULT_SCRIPTS: &[(&str, &[u8])] = &[
+    (
+        "ne5000e_mpu_collector.py",
+        include_bytes!("../../../assets/scripts/ne5000e_mpu_collector.py"),
+    ),
+];
+
 fn scripts_dir() -> PathBuf {
     paths::config_dir().join("scripts")
 }
 
-fn ensure_bspterm_library() {
+fn ensure_default_scripts() {
     let scripts_dir = scripts_dir();
 
     if let Err(e) = std::fs::create_dir_all(&scripts_dir) {
@@ -36,16 +43,24 @@ fn ensure_bspterm_library() {
     }
 
     let bspterm_path = scripts_dir.join("bspterm.py");
-
     if let Err(e) = std::fs::write(&bspterm_path, BSPTERM_PY) {
         log::error!("Failed to write bspterm.py: {}", e);
     } else {
         log::info!("Installed bspterm.py to {:?}", bspterm_path);
     }
+
+    for (name, content) in DEFAULT_SCRIPTS {
+        let script_path = scripts_dir.join(name);
+        if let Err(e) = std::fs::write(&script_path, content) {
+            log::error!("Failed to write {}: {}", name, e);
+        } else {
+            log::info!("Installed {} to {:?}", name, script_path);
+        }
+    }
 }
 
 pub fn init(cx: &mut App) {
-    ensure_bspterm_library();
+    ensure_default_scripts();
 
     cx.observe_new(|workspace: &mut Workspace, _, _| {
         workspace.register_action(|workspace, _: &ToggleFocus, window, cx| {
