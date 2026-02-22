@@ -2,6 +2,7 @@ mod group_edit_modal;
 mod quick_add;
 mod session_edit_modal;
 
+use std::collections::HashMap;
 use std::ops::Range;
 use std::time::Duration;
 
@@ -18,8 +19,8 @@ use terminal::{
     SessionStoreEvent,
 };
 use ui::{
-    prelude::*, Color, ContextMenu, Disclosure, Icon, IconName, IconSize, Label, LabelSize,
-    ListItem, ListItemSpacing, h_flex, v_flex,
+    prelude::*, Color, ContextMenu, Disclosure, Icon, IconName, IconSize, Indicator, Label,
+    LabelSize, ListItem, ListItemSpacing, Tooltip, h_flex, v_flex,
 };
 use uuid::Uuid;
 use workspace::{
@@ -33,6 +34,15 @@ pub use quick_add::*;
 pub use session_edit_modal::SessionEditModal;
 
 const REMOTE_EXPLORER_PANEL_KEY: &str = "RemoteExplorerPanel";
+
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum PingStatus {
+    #[default]
+    Unknown,
+    Checking,
+    Reachable,
+    Unreachable,
+}
 
 fn format_session_env_info(session: &SessionConfig) -> String {
     match &session.protocol {
@@ -152,6 +162,9 @@ pub struct RemoteExplorer {
     context_menu: Option<(Entity<ContextMenu>, Point<Pixels>, Subscription)>,
     drag_target: Option<DragTarget>,
     hover_expand_task: Option<Task<()>>,
+    ping_status: HashMap<Uuid, PingStatus>,
+    ping_tasks: HashMap<Uuid, Task<()>>,
+    ping_refresh_task: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -223,6 +236,9 @@ impl RemoteExplorer {
             context_menu: None,
             drag_target: None,
             hover_expand_task: None,
+            ping_status: HashMap::new(),
+            ping_tasks: HashMap::new(),
+            ping_refresh_task: None,
             _subscriptions: vec![
                 session_store_subscription,
                 username_subscription,
@@ -231,6 +247,7 @@ impl RemoteExplorer {
         };
 
         this.update_visible_entries(cx);
+        this.start_ping_refresh_loop(window, cx);
         this
     }
 
@@ -257,6 +274,85 @@ impl RemoteExplorer {
                     Self::flatten_nodes(&group.children, depth + 1, result);
                 }
             }
+        }
+    }
+
+    fn start_ping_refresh_loop(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.schedule_ping_for_visible_sessions(cx);
+
+        self.ping_refresh_task = Some(cx.spawn_in(window, async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_secs(5))
+                    .await;
+                this.update(&mut cx.clone(), |this, cx| {
+                    this.schedule_ping_for_visible_sessions(cx);
+                })
+                .ok();
+            }
+        }));
+    }
+
+    fn schedule_ping_for_visible_sessions(&mut self, cx: &mut Context<Self>) {
+        for entry in &self.visible_entries {
+            if let SessionNode::Session(session) = &entry.node {
+                let id = entry.id;
+
+                if self.ping_tasks.contains_key(&id) {
+                    continue;
+                }
+
+                let (host, port) = match &session.protocol {
+                    ProtocolConfig::Ssh(ssh) => (ssh.host.clone(), ssh.port),
+                    ProtocolConfig::Telnet(telnet) => (telnet.host.clone(), telnet.port),
+                };
+
+                self.ping_status.insert(id, PingStatus::Checking);
+
+                let task = cx.spawn(async move |this, cx| {
+                    let executor = cx.background_executor().clone();
+                    let executor_for_spawn = executor.clone();
+                    let reachable = executor
+                        .spawn(async move {
+                            Self::check_reachability(&host, port, &executor_for_spawn).await
+                        })
+                        .await;
+
+                    this.update(&mut cx.clone(), |this, cx| {
+                        let status = if reachable {
+                            PingStatus::Reachable
+                        } else {
+                            PingStatus::Unreachable
+                        };
+                        this.ping_status.insert(id, status);
+                        this.ping_tasks.remove(&id);
+                        cx.notify();
+                    })
+                    .ok();
+                });
+
+                self.ping_tasks.insert(id, task);
+            }
+        }
+        cx.notify();
+    }
+
+    async fn check_reachability(
+        host: &str,
+        port: u16,
+        executor: &gpui::BackgroundExecutor,
+    ) -> bool {
+        use futures::{FutureExt as _, select_biased};
+        use smol::net::TcpStream;
+
+        let addr = format!("{}:{}", host, port);
+        let timeout = Duration::from_secs(3);
+
+        let connect_future = async { TcpStream::connect(&addr).await.is_ok() };
+
+        select_biased! {
+            result = connect_future.fuse() => result,
+            _ = executor.timer(timeout).fuse() => false,
         }
     }
 
@@ -987,11 +1083,26 @@ impl RemoteExplorer {
                     },
                 ))
             })
-            .start_slot(
-                Icon::new(icon)
-                    .color(Color::Muted)
-                    .size(IconSize::Small),
-            )
+            .start_slot({
+                let ping_status = self.ping_status.get(&id).copied().unwrap_or_default();
+                let (indicator_color, tooltip_text) = match ping_status {
+                    PingStatus::Unknown => (Color::Muted, "连通性未知"),
+                    PingStatus::Checking => (Color::Muted, "正在检测..."),
+                    PingStatus::Reachable => (Color::Success, "服务器可达"),
+                    PingStatus::Unreachable => (Color::Error, "服务器不可达"),
+                };
+                h_flex()
+                    .gap_1()
+                    .when(!is_group, |this| {
+                        this.child(
+                            div()
+                                .id(SharedString::from(format!("ping-indicator-{}", id)))
+                                .child(Indicator::dot().color(indicator_color))
+                                .tooltip(Tooltip::text(tooltip_text)),
+                        )
+                    })
+                    .child(Icon::new(icon).color(Color::Muted).size(IconSize::Small))
+            })
             .child(Label::new(name));
 
         let before_line = div()
