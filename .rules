@@ -314,6 +314,33 @@ When `send_keybindings_to_shell` setting is enabled, keystrokes are intercepted 
 
 - `terminal::SendKeystroke` and `terminal::SendText` are always sent to the shell, even with Terminal context
 
+## Terminal Gutter
+
+The terminal gutter displays line numbers and timestamps in the left margin (`crates/terminal_view/src/terminal_element.rs`).
+
+### Display Logic
+
+Both line numbers and timestamps only appear on lines that have actual content (terminal output). This is determined by checking `terminal.get_line_timestamp(grid_line)`:
+
+| Feature | Condition | Behavior |
+|---------|-----------|----------|
+| Line numbers | `get_line_timestamp().is_some()` | Only on lines with output |
+| Timestamps | `get_line_timestamp().is_some()` | Only on lines with output |
+| Empty lines | No timestamp | No gutter content displayed |
+
+### Key Functions
+
+- `layout_gutter()`: Calculates gutter dimensions and creates `GutterLineEntry` for each visible row
+- `paint_gutter()`: Renders line numbers and timestamps based on `GutterLineEntry` data
+- `get_line_timestamp()`: Returns `Option<DateTime>` indicating if a line has content
+
+### Settings
+
+- `gutter.line_numbers`: Enable/disable line numbers
+- `gutter.timestamps`: Enable/disable timestamps
+- `gutter.relative_line_numbers`: Show relative line numbers in vi mode
+- `gutter.timestamp_format`: Format string for timestamp display
+
 ## Remote Explorer Panel
 
 The `remote_explorer` crate (`crates/remote_explorer`) provides a panel for browsing saved SSH/Telnet sessions in a tree view.

@@ -183,7 +183,7 @@ fn peek_available(handle: std::os::windows::io::RawHandle) -> usize {
     let mut available: u32 = 0;
     unsafe {
         let _ = PeekNamedPipe(
-            HANDLE(handle as isize),
+            HANDLE(handle),
             None,
             0,
             None,
