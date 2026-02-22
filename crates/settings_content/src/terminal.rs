@@ -155,6 +155,8 @@ pub struct TerminalSettingsContent {
     pub toolbar: Option<TerminalToolbarContent>,
     /// Scrollbar-related settings
     pub scrollbar: Option<ScrollbarSettingsContent>,
+    /// Gutter-related settings for line numbers and timestamps
+    pub gutter: Option<TerminalGutterContent>,
     /// The minimum APCA perceptual contrast between foreground and background colors.
     ///
     /// APCA (Accessible Perceptual Contrast Algorithm) is more accurate than WCAG 2.x,
@@ -398,6 +400,36 @@ pub struct TerminalToolbarContent {
     ///
     /// Default: true
     pub breadcrumbs: Option<bool>,
+}
+
+// Gutter related settings
+#[with_fallible_options]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema, MergeFrom, PartialEq, Eq)]
+pub struct TerminalGutterContent {
+    /// Whether to display line numbers in the terminal gutter.
+    /// Line numbers are absolute from the start of scrollback (line 1 = oldest line in history).
+    ///
+    /// Default: true
+    pub line_numbers: Option<bool>,
+    /// Whether to display timestamps in the terminal gutter.
+    /// Timestamps show when each line was output.
+    ///
+    /// Default: true
+    pub timestamps: Option<bool>,
+    /// The format string for timestamps using strftime syntax.
+    /// Common formats:
+    /// - "%H:%M:%S" (24-hour time)
+    /// - "%I:%M:%S %p" (12-hour time with AM/PM)
+    /// - "%H:%M" (hours and minutes only)
+    ///
+    /// Default: "%H:%M:%S"
+    pub timestamp_format: Option<String>,
+    /// Whether to use relative line numbers in vi mode.
+    /// When enabled, the current cursor line shows the absolute line number,
+    /// while other lines show their distance from the cursor line.
+    ///
+    /// Default: false
+    pub relative_line_numbers: Option<bool>,
 }
 
 #[derive(

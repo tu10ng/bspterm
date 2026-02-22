@@ -21,6 +21,25 @@ pub struct Toolbar {
     pub breadcrumbs: bool,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub struct GutterSettings {
+    pub line_numbers: bool,
+    pub timestamps: bool,
+    pub timestamp_format: String,
+    pub relative_line_numbers: bool,
+}
+
+impl Default for GutterSettings {
+    fn default() -> Self {
+        Self {
+            line_numbers: true,
+            timestamps: true,
+            timestamp_format: "%H:%M:%S".to_string(),
+            relative_line_numbers: false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, RegisterSetting)]
 pub struct TerminalSettings {
     pub shell: Shell,
@@ -47,6 +66,7 @@ pub struct TerminalSettings {
     pub scroll_multiplier: f32,
     pub toolbar: Toolbar,
     pub scrollbar: ScrollbarSettings,
+    pub gutter: GutterSettings,
     pub minimum_contrast: f32,
     pub path_hyperlink_regexes: Vec<String>,
     pub path_hyperlink_timeout_ms: u64,
@@ -120,6 +140,17 @@ impl settings::Settings for TerminalSettings {
             },
             scrollbar: ScrollbarSettings {
                 show: user_content.scrollbar.unwrap().show,
+            },
+            gutter: {
+                let gutter_content = user_content.gutter.unwrap_or_default();
+                GutterSettings {
+                    line_numbers: gutter_content.line_numbers.unwrap_or(true),
+                    timestamps: gutter_content.timestamps.unwrap_or(true),
+                    timestamp_format: gutter_content
+                        .timestamp_format
+                        .unwrap_or_else(|| "%H:%M:%S".to_string()),
+                    relative_line_numbers: gutter_content.relative_line_numbers.unwrap_or(false),
+                }
             },
             minimum_contrast: user_content.minimum_contrast.unwrap(),
             path_hyperlink_regexes: project_content

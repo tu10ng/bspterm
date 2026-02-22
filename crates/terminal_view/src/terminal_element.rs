@@ -4,7 +4,7 @@ use gpui::{
     Element, ElementId, Entity, FocusHandle, Font, FontFeatures, FontStyle, FontWeight,
     GlobalElementId, HighlightStyle, Hitbox, Hsla, InputHandler, InteractiveElement, Interactivity,
     IntoElement, LayoutId, Length, ModifiersChangedEvent, MouseButton, MouseMoveEvent, Pixels,
-    Point, StatefulInteractiveElement, StrikethroughStyle, Styled, TextRun, TextStyle,
+    Point, ShapedLine, StatefulInteractiveElement, StrikethroughStyle, Styled, TextRun, TextStyle,
     UTF16Selection, UnderlineStyle, WeakEntity, WhiteSpace, Window, div, fill, point, px, relative,
     size,
 };
@@ -23,7 +23,7 @@ use terminal::{
             CursorShape as AlacCursorShape, NamedColor,
         },
     },
-    terminal_settings::TerminalSettings,
+    terminal_settings::{GutterSettings, TerminalSettings},
 };
 use theme::{ActiveTheme, Theme, ThemeSettings};
 use ui::utils::ensure_minimum_contrast;
@@ -35,6 +35,39 @@ use std::mem;
 use std::{fmt::Debug, ops::RangeInclusive, rc::Rc};
 
 use crate::{BlockContext, BlockProperties, ContentMode, TerminalMode, TerminalView};
+
+/// Gutter dimensions for line numbers and timestamps.
+#[derive(Clone, Debug)]
+pub struct TerminalGutterDimensions {
+    pub left_padding: Pixels,
+    pub line_number_width: Pixels,
+    pub separator_width: Pixels,
+    pub timestamp_width: Pixels,
+    pub right_padding: Pixels,
+    pub total_width: Pixels,
+}
+
+impl TerminalGutterDimensions {
+    fn empty() -> Self {
+        Self {
+            left_padding: px(0.),
+            line_number_width: px(0.),
+            separator_width: px(0.),
+            timestamp_width: px(0.),
+            right_padding: px(0.),
+            total_width: px(0.),
+        }
+    }
+}
+
+/// A single gutter line entry containing line number and/or timestamp.
+#[derive(Debug)]
+#[allow(dead_code)]
+struct GutterLineEntry {
+    line_number: Option<ShapedLine>,
+    timestamp: Option<ShapedLine>,
+    is_cursor_line: bool,
+}
 
 /// The information generated during layout that is necessary for painting.
 pub struct LayoutState {
@@ -50,6 +83,10 @@ pub struct LayoutState {
     display_offset: usize,
     hyperlink_tooltip: Option<AnyElement>,
     gutter: Pixels,
+    gutter_dimensions: TerminalGutterDimensions,
+    gutter_entries: Vec<GutterLineEntry>,
+    #[allow(dead_code)]
+    gutter_settings: GutterSettings,
     block_below_cursor_element: Option<AnyElement>,
     base_text_style: TextStyle,
     content_mode: ContentMode,
@@ -513,6 +550,221 @@ impl TerminalElement {
         }
     }
 
+    fn layout_gutter(
+        terminal: &Terminal,
+        visible_rows: std::ops::Range<i32>,
+        history_size: usize,
+        display_offset: usize,
+        cursor_line: i32,
+        vi_mode: bool,
+        gutter_settings: &GutterSettings,
+        text_style: &TextStyle,
+        theme: &Theme,
+        window: &mut Window,
+        _cx: &App,
+    ) -> (TerminalGutterDimensions, Vec<GutterLineEntry>) {
+        if !gutter_settings.line_numbers && !gutter_settings.timestamps {
+            return (TerminalGutterDimensions::empty(), Vec::new());
+        }
+
+        let font_size = text_style.font_size.to_pixels(window.rem_size());
+        let font = text_style.font();
+        let line_number_color = theme.colors().editor_line_number;
+        let active_line_number_color = theme.colors().editor_active_line_number;
+
+        let total_lines = history_size + visible_rows.len();
+        let max_line_number_digits = total_lines.to_string().len();
+        let padding = px(4.);
+        let separator_width = px(8.);
+
+        let sample_number = "9".repeat(max_line_number_digits);
+        let sample_line_number = window
+            .text_system()
+            .shape_line(
+                sample_number.into(),
+                font_size,
+                &[TextRun {
+                    len: max_line_number_digits,
+                    font: font.clone(),
+                    color: line_number_color,
+                    ..Default::default()
+                }],
+                None,
+            );
+        let line_number_width = if gutter_settings.line_numbers {
+            sample_line_number.width
+        } else {
+            px(0.)
+        };
+
+        let sample_timestamp = "00:00:00";
+        let sample_ts_line = window
+            .text_system()
+            .shape_line(
+                sample_timestamp.into(),
+                font_size,
+                &[TextRun {
+                    len: 8,
+                    font: font.clone(),
+                    color: line_number_color,
+                    ..Default::default()
+                }],
+                None,
+            );
+        let timestamp_width = if gutter_settings.timestamps {
+            sample_ts_line.width
+        } else {
+            px(0.)
+        };
+
+        let total_width = padding
+            + line_number_width
+            + if gutter_settings.line_numbers && gutter_settings.timestamps {
+                separator_width
+            } else {
+                px(0.)
+            }
+            + timestamp_width
+            + padding;
+
+        let dimensions = TerminalGutterDimensions {
+            left_padding: padding,
+            line_number_width,
+            separator_width: if gutter_settings.line_numbers && gutter_settings.timestamps {
+                separator_width
+            } else {
+                px(0.)
+            },
+            timestamp_width,
+            right_padding: padding,
+            total_width,
+        };
+
+        let mut entries = Vec::with_capacity(visible_rows.len());
+
+        for screen_row in visible_rows {
+            let grid_line = screen_row - display_offset as i32;
+
+            let is_cursor_line = vi_mode && grid_line == cursor_line;
+            let color = if is_cursor_line {
+                active_line_number_color
+            } else {
+                line_number_color
+            };
+
+            let line_number = if gutter_settings.line_numbers {
+                // Only show line numbers on lines that have actual content (same as timestamps)
+                if terminal.get_line_timestamp(grid_line).is_some() {
+                    let absolute_line = (history_size as i32 + grid_line + 1) as usize;
+                    let display_number = if vi_mode
+                        && gutter_settings.relative_line_numbers
+                        && !is_cursor_line
+                    {
+                        (grid_line - cursor_line).unsigned_abs() as usize
+                    } else {
+                        absolute_line
+                    };
+                    let number_str =
+                        format!("{:>width$}", display_number, width = max_line_number_digits);
+                    let shaped = window.text_system().shape_line(
+                        number_str.into(),
+                        font_size,
+                        &[TextRun {
+                            len: max_line_number_digits,
+                            font: font.clone(),
+                            color,
+                            ..Default::default()
+                        }],
+                        None,
+                    );
+                    Some(shaped)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            let timestamp = if gutter_settings.timestamps {
+                if let Some(ts) = terminal.get_line_timestamp(grid_line) {
+                    let ts_str = ts.format(&gutter_settings.timestamp_format).to_string();
+                    let ts_len = ts_str.len();
+                    let shaped = window.text_system().shape_line(
+                        ts_str.into(),
+                        font_size,
+                        &[TextRun {
+                            len: ts_len,
+                            font: font.clone(),
+                            color,
+                            ..Default::default()
+                        }],
+                        None,
+                    );
+                    Some(shaped)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            entries.push(GutterLineEntry {
+                line_number,
+                timestamp,
+                is_cursor_line,
+            });
+        }
+
+        (dimensions, entries)
+    }
+
+    fn paint_gutter(
+        gutter_dimensions: &TerminalGutterDimensions,
+        gutter_entries: &[GutterLineEntry],
+        bounds: Bounds<Pixels>,
+        line_height: Pixels,
+        scroll_top: Pixels,
+        gutter_background: Hsla,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        if gutter_dimensions.total_width <= px(0.) {
+            return;
+        }
+
+        let gutter_bounds = Bounds {
+            origin: bounds.origin,
+            size: size(gutter_dimensions.total_width, bounds.size.height),
+        };
+        window.paint_quad(fill(gutter_bounds, gutter_background));
+
+        let mut y = bounds.origin.y - scroll_top;
+
+        for entry in gutter_entries {
+            if let Some(ref line_number) = entry.line_number {
+                let x = bounds.origin.x
+                    + gutter_dimensions.left_padding
+                    + gutter_dimensions.line_number_width
+                    - line_number.width;
+                line_number
+                    .paint(point(x, y), line_height, gpui::TextAlign::Right, None, window, cx)
+                    .log_err();
+            }
+
+            if let Some(ref timestamp) = entry.timestamp {
+                let x = bounds.origin.x
+                    + gutter_dimensions.left_padding
+                    + gutter_dimensions.line_number_width
+                    + gutter_dimensions.separator_width;
+                timestamp
+                    .paint(point(x, y), line_height, gpui::TextAlign::Left, None, window, cx)
+                    .log_err();
+            }
+
+            y += line_height;
+        }
+    }
+
     /// Checks if a character is a decorative block/box-like character that should
     /// preserve its exact colors without contrast adjustment.
     ///
@@ -950,18 +1202,50 @@ impl Element for TerminalElement {
                 let text_system = cx.text_system();
                 let player_color = theme.players().local();
                 let match_color = theme.colors().search_match_background;
+                let gutter_settings = terminal_settings.gutter.clone();
+
                 let gutter;
-                let (dimensions, line_height_px) = {
+                let (dimensions, line_height_px, gutter_dimensions, gutter_entries) = {
                     let rem_size = window.rem_size();
                     let font_pixels = text_style.font_size.to_pixels(rem_size);
-                    let line_height = f32::from(font_pixels) * line_height;
+                    let line_height_computed = f32::from(font_pixels) * line_height;
                     let font_id = cx.text_system().resolve_font(&text_style.font());
 
                     let cell_width = text_system
                         .advance(font_id, font_pixels, 'm')
                         .unwrap()
                         .width;
-                    gutter = cell_width;
+
+                    // Sync terminal state before reading display_offset to ensure scroll events are processed.
+                    // This fixes the issue where gutter timestamps wouldn't update immediately after scrolling.
+                    self.terminal.update(cx, |terminal, cx| {
+                        terminal.sync(window, cx);
+                    });
+
+                    let terminal = self.terminal.read(cx);
+                    let history_size = terminal.history_size();
+                    let cursor_line = terminal.cursor_line();
+                    let vi_mode = terminal.vi_mode_enabled();
+                    let display_offset = terminal.last_content.display_offset;
+                    let screen_lines = terminal.viewport_lines();
+
+                    let visible_rows = 0..(screen_lines as i32);
+
+                    let (gutter_dims, gutter_entries) = Self::layout_gutter(
+                        terminal,
+                        visible_rows,
+                        history_size,
+                        display_offset,
+                        cursor_line,
+                        vi_mode,
+                        &gutter_settings,
+                        &text_style,
+                        &theme,
+                        window,
+                        cx,
+                    );
+
+                    gutter = cell_width + gutter_dims.total_width;
 
                     let mut size = bounds.size;
                     size.width -= gutter;
@@ -977,8 +1261,10 @@ impl Element for TerminalElement {
                     origin.x += gutter;
 
                     (
-                        TerminalBounds::new(px(line_height), cell_width, Bounds { origin, size }),
-                        line_height,
+                        TerminalBounds::new(px(line_height_computed), cell_width, Bounds { origin, size }),
+                        line_height_computed,
+                        gutter_dims,
+                        gutter_entries,
                     )
                 };
 
@@ -989,7 +1275,6 @@ impl Element for TerminalElement {
                 let (last_hovered_word, hover_tooltip) =
                     self.terminal.update(cx, |terminal, cx| {
                         terminal.set_size(dimensions);
-                        terminal.sync(window, cx);
 
                         if window.modifiers().secondary()
                             && bounds.contains(&window.mouse_position())
@@ -1219,6 +1504,9 @@ impl Element for TerminalElement {
                     display_offset,
                     hyperlink_tooltip,
                     gutter,
+                    gutter_dimensions,
+                    gutter_entries,
+                    gutter_settings,
                     block_below_cursor_element,
                     base_text_style: text_style,
                     content_mode,
@@ -1242,6 +1530,19 @@ impl Element for TerminalElement {
             let scroll_top = self.terminal_view.read(cx).scroll_top;
 
             window.paint_quad(fill(bounds, layout.background_color));
+
+            let gutter_background = cx.theme().colors().editor_gutter_background;
+            Self::paint_gutter(
+                &layout.gutter_dimensions,
+                &layout.gutter_entries,
+                bounds,
+                layout.dimensions.line_height,
+                scroll_top,
+                gutter_background,
+                window,
+                cx,
+            );
+
             let origin =
                 bounds.origin + Point::new(layout.gutter, px(0.)) - Point::new(px(0.), scroll_top);
 

@@ -106,6 +106,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use chrono::{DateTime, Local};
 use thiserror::Error;
 
 use gpui::{
@@ -477,6 +478,9 @@ impl TerminalBuilder {
             login_completed: true,
             login_waiters: Vec::new(),
             initial_connecting: false,
+            line_timestamps: HashMap::default(),
+            last_cursor_line: 0,
+            last_topmost_line: 0,
         };
 
         Ok(TerminalBuilder {
@@ -722,6 +726,9 @@ impl TerminalBuilder {
                 login_completed: true,
                 login_waiters: Vec::new(),
                 initial_connecting: false,
+                line_timestamps: HashMap::default(),
+                last_cursor_line: 0,
+                last_topmost_line: 0,
             };
 
             if !activation_script.is_empty() && no_task {
@@ -918,6 +925,9 @@ impl TerminalBuilder {
                 login_completed: false,
                 login_waiters: Vec::new(),
                 initial_connecting: false,
+                line_timestamps: HashMap::default(),
+                last_cursor_line: 0,
+                last_topmost_line: 0,
             };
 
             terminal.init_rule_engine();
@@ -1080,6 +1090,9 @@ impl TerminalBuilder {
                 login_completed: false,
                 login_waiters: Vec::new(),
                 initial_connecting: false,
+                line_timestamps: HashMap::default(),
+                last_cursor_line: 0,
+                last_topmost_line: 0,
             };
 
             terminal.init_rule_engine();
@@ -1255,6 +1268,9 @@ impl TerminalBuilder {
             login_completed: false,
             login_waiters: Vec::new(),
             initial_connecting: false,
+            line_timestamps: HashMap::default(),
+            last_cursor_line: 0,
+            last_topmost_line: 0,
         };
 
         terminal.init_rule_engine();
@@ -1423,6 +1439,12 @@ pub struct Terminal {
     login_completed: bool,
     login_waiters: Vec<futures::channel::oneshot::Sender<()>>,
     initial_connecting: bool,
+    /// Maps grid line index (can be negative for scrollback) to output timestamp
+    line_timestamps: HashMap<i32, DateTime<Local>>,
+    /// Tracks the last known cursor line to detect new output
+    last_cursor_line: i32,
+    /// Tracks the last known topmost line to detect scrolling
+    last_topmost_line: i32,
 }
 
 struct CopyTemplate {
@@ -1545,6 +1567,8 @@ impl Terminal {
                         self.process_ssh_input(&data);
                     }
                 }
+
+                self.record_output_timestamps();
 
                 self.check_rules(rule_store::TriggerEvent::Wakeup, cx);
 
@@ -1906,6 +1930,14 @@ impl Terminal {
 
     pub fn viewport_lines(&self) -> usize {
         self.term.lock_unfair().screen_lines()
+    }
+
+    pub fn history_size(&self) -> usize {
+        self.term.lock_unfair().history_size()
+    }
+
+    pub fn cursor_line(&self) -> i32 {
+        self.term.lock_unfair().grid().cursor.point.line.0
     }
 
     //To test:
@@ -2411,6 +2443,60 @@ impl Terminal {
         }
 
         self.last_content = Self::make_content(&terminal, &self.last_content);
+    }
+
+    /// Records timestamps for lines that received output.
+    /// Called when Wakeup event is processed (actual data arrival), NOT during sync.
+    ///
+    /// Uses self.last_cursor_line as reference point - this is where the cursor
+    /// was after the PREVIOUS Wakeup, so the difference represents new output.
+    ///
+    /// When content scrolls (topmost_line becomes more negative), we adjust all
+    /// timestamp keys by the scroll delta so they continue to match their content.
+    fn record_output_timestamps(&mut self) {
+        let term = self.term.lock();
+        let cursor_line = term.grid().cursor.point.line.0;
+        let topmost_line = term.topmost_line().0;
+        let now = Local::now();
+
+        // Detect scrolling: topmost_line becoming more negative means content scrolled up
+        let scroll_delta = self.last_topmost_line - topmost_line;
+        if scroll_delta > 0 {
+            // Content scrolled up by scroll_delta lines, adjust all timestamp keys
+            self.line_timestamps = self
+                .line_timestamps
+                .drain()
+                .map(|(line, ts)| (line - scroll_delta, ts))
+                .collect();
+            // Also adjust last_cursor_line to match the shifted content
+            self.last_cursor_line -= scroll_delta;
+        }
+
+        // Record timestamps for new output lines
+        if cursor_line != self.last_cursor_line {
+            let (start, end) = if cursor_line > self.last_cursor_line {
+                (self.last_cursor_line, cursor_line)
+            } else {
+                (cursor_line, self.last_cursor_line)
+            };
+            for line in start..=end {
+                self.line_timestamps.insert(line, now);
+            }
+        } else {
+            self.line_timestamps.insert(cursor_line, now);
+        }
+
+        // Update tracking state
+        self.last_cursor_line = cursor_line;
+        self.last_topmost_line = topmost_line;
+
+        // Clean up timestamps that have scrolled out of history
+        self.line_timestamps
+            .retain(|&line, _| line >= topmost_line);
+    }
+
+    pub fn get_line_timestamp(&self, line: i32) -> Option<DateTime<Local>> {
+        self.line_timestamps.get(&line).copied()
     }
 
     fn make_content(term: &Term<ZedListener>, last_content: &TerminalContent) -> TerminalContent {
