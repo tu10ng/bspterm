@@ -3,6 +3,7 @@ mod quick_add;
 mod session_edit_modal;
 
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::ops::Range;
 use std::time::Duration;
 
@@ -14,6 +15,8 @@ use gpui::{
     Styled, Subscription, Task, UniformListScrollHandle, WeakEntity, Window, anchored, deferred,
     px, uniform_list,
 };
+use lan_discovery::{DiscoveredUser, LanDiscoveryEntity, LanDiscoveryEvent};
+use lan_messaging::{ChatModal, UserIdentity};
 use terminal::{
     AuthMethod, ProtocolConfig, SessionConfig, SessionGroup, SessionNode, SessionStoreEntity,
     SessionStoreEvent,
@@ -151,6 +154,7 @@ impl Render for DraggedSessionView {
 
 pub struct RemoteExplorer {
     session_store: Entity<SessionStoreEntity>,
+    lan_discovery: Option<Entity<LanDiscoveryEntity>>,
     focus_handle: FocusHandle,
     scroll_handle: UniformListScrollHandle,
     visible_entries: Vec<FlattenedEntry>,
@@ -180,6 +184,7 @@ impl RemoteExplorer {
 
     pub fn new(workspace: &Workspace, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let session_store = SessionStoreEntity::global(cx);
+        let lan_discovery = LanDiscoveryEntity::try_global(cx);
         let focus_handle = cx.focus_handle();
         let weak_workspace = workspace.weak_handle();
 
@@ -192,6 +197,17 @@ impl RemoteExplorer {
                     this.update_visible_entries(cx);
                 }
             });
+
+        let lan_discovery_subscription = lan_discovery.as_ref().map(|discovery| {
+            cx.subscribe(discovery, |_this, _, event, cx| match event {
+                LanDiscoveryEvent::UserDiscovered(_)
+                | LanDiscoveryEvent::UserUpdated(_)
+                | LanDiscoveryEvent::UserOffline(_)
+                | LanDiscoveryEvent::SessionsChanged => {
+                    cx.notify();
+                }
+            })
+        });
 
         let quick_add_area =
             QuickAddArea::new(session_store.clone(), weak_workspace.clone(), window, cx);
@@ -223,8 +239,18 @@ impl RemoteExplorer {
                 }
             });
 
+        let mut subscriptions = vec![
+            session_store_subscription,
+            username_subscription,
+            password_subscription,
+        ];
+        if let Some(sub) = lan_discovery_subscription {
+            subscriptions.push(sub);
+        }
+
         let mut this = Self {
             session_store,
+            lan_discovery,
             focus_handle,
             scroll_handle: UniformListScrollHandle::new(),
             visible_entries: Vec::new(),
@@ -239,11 +265,7 @@ impl RemoteExplorer {
             ping_status: HashMap::new(),
             ping_tasks: HashMap::new(),
             ping_refresh_task: None,
-            _subscriptions: vec![
-                session_store_subscription,
-                username_subscription,
-                password_subscription,
-            ],
+            _subscriptions: subscriptions,
         };
 
         this.update_visible_entries(cx);
@@ -399,6 +421,43 @@ impl RemoteExplorer {
                     connect_telnet(telnet_config.clone(), Some(session_id), workspace, pane, window, cx);
                 }
             }
+        }
+    }
+
+    fn get_users_for_session(&self, session: &SessionConfig, cx: &App) -> Vec<DiscoveredUser> {
+        let Some(discovery) = &self.lan_discovery else {
+            return Vec::new();
+        };
+
+        let (host, port) = match &session.protocol {
+            ProtocolConfig::Ssh(ssh) => (&ssh.host, ssh.port),
+            ProtocolConfig::Telnet(telnet) => (&telnet.host, telnet.port),
+        };
+
+        discovery
+            .read(cx)
+            .users_for_host(host, port)
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    fn open_chat_with_user(
+        &mut self,
+        user: &DiscoveredUser,
+        session_context: Option<Uuid>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let target_user = UserIdentity::new(&user.employee_id, &user.name);
+        let target_ip = user.ip_addresses.first().copied().unwrap_or(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+
+        if let Some(workspace) = self.workspace.upgrade() {
+            workspace.update(cx, |workspace, cx| {
+                workspace.toggle_modal(window, cx, |window, cx| {
+                    ChatModal::new(target_user, target_ip, session_context, window, cx)
+                });
+            });
         }
     }
 
@@ -1103,7 +1162,75 @@ impl RemoteExplorer {
                     })
                     .child(Icon::new(icon).color(Color::Muted).size(IconSize::Small))
             })
-            .child(Label::new(name));
+            .child(Label::new(name))
+            .end_slot({
+                let users = if !is_group {
+                    match &entry.node {
+                        SessionNode::Session(session) => self.get_users_for_session(session, cx),
+                        _ => Vec::new(),
+                    }
+                } else {
+                    Vec::new()
+                };
+
+                let users_clone = users.clone();
+                let session_id = id;
+
+                h_flex()
+                    .gap_px()
+                    .children(users.into_iter().take(3).enumerate().map(|(idx, user)| {
+                        let initials = user.initials();
+                        let tooltip_text = format!("{} ({})", user.name, user.employee_id);
+                        let bg_colors = [
+                            gpui::rgb(0x3B82F6),
+                            gpui::rgb(0x10B981),
+                            gpui::rgb(0xF59E0B),
+                            gpui::rgb(0xEF4444),
+                            gpui::rgb(0x8B5CF6),
+                        ];
+                        let bg_color = bg_colors[idx % bg_colors.len()];
+
+                        div()
+                            .id(SharedString::from(format!("user-avatar-{}-{}", id, idx)))
+                            .w_5()
+                            .h_5()
+                            .rounded_full()
+                            .bg(bg_color)
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .cursor_pointer()
+                            .child(
+                                Label::new(initials)
+                                    .size(LabelSize::XSmall)
+                                    .color(Color::Default),
+                            )
+                            .tooltip(Tooltip::text(tooltip_text))
+                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                                this.open_chat_with_user(&user, Some(session_id), window, cx);
+                            }))
+                    }))
+                    .when(users_clone.len() > 3, |this| {
+                        let remaining = users_clone.len() - 3;
+                        this.child(
+                            div()
+                                .id(SharedString::from(format!("user-avatar-more-{}", id)))
+                                .w_5()
+                                .h_5()
+                                .rounded_full()
+                                .bg(theme.colors().element_background)
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .child(
+                                    Label::new(format!("+{}", remaining))
+                                        .size(LabelSize::XSmall)
+                                        .color(Color::Muted),
+                                )
+                                .tooltip(Tooltip::text(format!("还有 {} 位用户", remaining))),
+                        )
+                    })
+            });
 
         let before_line = div()
             .w_full()

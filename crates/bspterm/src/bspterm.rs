@@ -378,6 +378,14 @@ pub fn initialize_workspace(
             return;
         };
 
+        if let Some(user_store) = local_user::LocalUserStoreEntity::try_global(cx) {
+            if !user_store.read(cx).is_logged_in() {
+                workspace.toggle_modal(window, cx, |window, cx| {
+                    local_user::LocalLoginModal::new(window, cx)
+                });
+            }
+        }
+
         let workspace_handle = cx.entity();
         let center_pane = workspace.active_pane().clone();
         initialize_pane(workspace, &center_pane, window, cx);
@@ -679,6 +687,7 @@ fn initialize_panels(
             cx.clone(),
         );
         let debug_panel = DebugPanel::load(workspace_handle.clone(), cx);
+        let user_info_panel = user_info_panel::UserInfoPanel::load(workspace_handle.clone(), cx.clone());
 
         async fn add_panel_when_ready(
             panel_task: impl Future<Output = anyhow::Result<Entity<impl workspace::Panel>>> + 'static,
@@ -707,6 +716,7 @@ fn initialize_panels(
             add_panel_when_ready(channels_panel, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(notification_panel, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(debug_panel, workspace_handle.clone(), cx.clone()),
+            add_panel_when_ready(user_info_panel, workspace_handle.clone(), cx.clone()),
             initialize_agent_panel(workspace_handle.clone(), prompt_builder, cx.clone()).map(|r| r.log_err()),
             initialize_agents_panel(workspace_handle, cx.clone()).map(|r| r.log_err())
         );

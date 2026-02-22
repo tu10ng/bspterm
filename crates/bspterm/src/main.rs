@@ -674,6 +674,11 @@ fn main() {
         terminal_view::init(cx);
         terminal_scripting::init(cx);
         script_panel::init(cx);
+        local_user::init(cx);
+        lan_discovery::init(cx);
+        lan_messaging::init(cx);
+        user_info_panel::init(cx);
+        terminal::ActiveSessionTrackerEntity::init(cx);
         editor_panel::init(cx);
         journal::init(app_state.clone(), cx);
         encoding_selector::init(cx);

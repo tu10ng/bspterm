@@ -1,5 +1,5 @@
 [package]
-name = "remote_explorer"
+name = "user_info_panel"
 version = "0.1.0"
 edition.workspace = true
 publish.workspace = true
@@ -9,25 +9,16 @@ license = "GPL-3.0-or-later"
 workspace = true
 
 [lib]
-path = "src/remote_explorer.rs"
+path = "src/user_info_panel.rs"
 doctest = false
 
 [dependencies]
 anyhow.workspace = true
-editor.workspace = true
 gpui.workspace = true
 lan_discovery.workspace = true
 lan_messaging.workspace = true
 local_user.workspace = true
 log.workspace = true
-menu.workspace = true
-settings.workspace = true
-smol.workspace = true
-futures.workspace = true
-terminal.workspace = true
-terminal_view.workspace = true
 ui.workspace = true
-util.workspace = true
 workspace.workspace = true
-uuid.workspace = true
 bspterm_actions.workspace = true

@@ -1,4 +1,5 @@
 pub mod abbr_store;
+pub mod active_session_tracker;
 pub mod button_bar_config;
 pub mod connection;
 pub mod mappings;
@@ -33,6 +34,11 @@ pub use rule_engine::{ConnectionContext, MatchedAction, RuleEngine};
 pub use shortcut_bar_store::{
     get_action_label, GlobalShortcutBarStore, ScriptShortcut, ShortcutBarConfig,
     ShortcutBarStoreEntity, ShortcutBarStoreEvent, VisibleShortcut, ALL_SYSTEM_ACTIONS,
+};
+
+pub use active_session_tracker::{
+    ActiveSession, ActiveSessionTrackerEntity, ActiveSessionTrackerEvent,
+    GlobalActiveSessionTracker, SessionProtocolType,
 };
 
 pub use crate::connection::ssh::{SshAuthConfig, SshConfig};

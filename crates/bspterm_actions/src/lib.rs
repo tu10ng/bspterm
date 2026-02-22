@@ -344,6 +344,18 @@ pub mod rule_editor {
     );
 }
 
+pub mod user_info_panel {
+    use gpui::actions;
+
+    actions!(
+        user_info_panel,
+        [
+            /// Toggles focus on the user info panel.
+            ToggleFocus
+        ]
+    );
+}
+
 pub mod terminal_button_bar {
     use gpui::actions;
 

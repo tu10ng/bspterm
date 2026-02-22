@@ -2556,6 +2556,8 @@ dependencies = [
  "journal",
  "json_schema_store",
  "keymap_editor",
+ "lan_discovery",
+ "lan_messaging",
  "language",
  "language_extension",
  "language_model",
@@ -2565,6 +2567,7 @@ dependencies = [
  "language_tools",
  "languages",
  "line_ending_selector",
+ "local_user",
  "log",
  "markdown",
  "markdown_preview",
@@ -2637,6 +2640,7 @@ dependencies = [
  "ui_prompt",
  "url",
  "urlencoding",
+ "user_info_panel",
  "util",
  "uuid",
  "vim",
@@ -2834,6 +2838,12 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
+
+[[package]]
+name = "c_linked_list"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4964518bd3b4a8190e832886cdc0da9794f12e8e6c1613a9e90ff331c4c8724b"
 
 [[package]]
 name = "cached"
@@ -5487,7 +5497,7 @@ checksum = "1b1d1d91c932ef41c0f2663aa8b0ca0342d444d842c06914aa0a7e352d0bada6"
 dependencies = [
  "libc",
  "redox_users 0.4.6",
- "winapi",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -5657,7 +5667,7 @@ checksum = "9e1b35532432acc8b19ceed096e35dfa088d3ea037fe4f3c085f1f97f33b4d02"
 dependencies = [
  "lazy_static",
  "libc",
- "winapi",
+ "winapi 0.3.9",
  "wio",
 ]
 
@@ -6344,7 +6354,7 @@ checksum = "f639046355ee4f37944e44f60642c6f3a7efa3cf6b78c78a0d989a8ce6c396a1"
 dependencies = [
  "errno-dragonfly",
  "libc",
- "winapi",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -6849,7 +6859,7 @@ checksum = "e40758ed24c9b2eeb76c35fb0aebc66c626084edd827e07e1552279814c6682d"
 dependencies = [
  "libc",
  "thiserror 1.0.69",
- "winapi",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -7131,7 +7141,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
 dependencies = [
  "libc",
- "winapi",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -7335,6 +7345,12 @@ checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
 dependencies = [
  "byteorder",
 ]
+
+[[package]]
+name = "gcc"
+version = "0.3.55"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f5f3913fa0bfe7ee1fd8248b6b9f42a5af4b9d65ec2dd2c3c26132b950ecfc2"
 
 [[package]]
 name = "gemm"
@@ -7607,6 +7623,28 @@ dependencies = [
  "generic-array 0.14.7",
  "rustversion",
  "typenum",
+]
+
+[[package]]
+name = "get_if_addrs"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "abddb55a898d32925f3148bd281174a68eeb68bbfd9a5938a57b18f506ee4ef7"
+dependencies = [
+ "c_linked_list",
+ "get_if_addrs-sys",
+ "libc",
+ "winapi 0.2.8",
+]
+
+[[package]]
+name = "get_if_addrs-sys"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d04f9fb746cf36b191c00f3ede8bde9c8e64f9f4b05ae2694a9ccf5e3f5ab48"
+dependencies = [
+ "gcc",
+ "libc",
 ]
 
 [[package]]
@@ -9630,6 +9668,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "lan_discovery"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures 0.3.31",
+ "gpui",
+ "local_user",
+ "log",
+ "serde",
+ "serde_json",
+ "smol",
+ "uuid",
+]
+
+[[package]]
+name = "lan_messaging"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "editor",
+ "futures 0.3.31",
+ "gpui",
+ "lan_discovery",
+ "local_user",
+ "log",
+ "paths",
+ "serde",
+ "serde_json",
+ "smol",
+ "ui",
+ "uuid",
+ "workspace",
+]
+
+[[package]]
 name = "language"
 version = "0.1.0"
 dependencies = [
@@ -10379,6 +10452,23 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "local_user"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "editor",
+ "get_if_addrs",
+ "gpui",
+ "log",
+ "paths",
+ "serde",
+ "serde_json",
+ "ui",
+ "util",
+ "workspace",
 ]
 
 [[package]]
@@ -11413,7 +11503,7 @@ version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8a3895c6391c39d7fe7ebc444a87eb2991b2a0bc718fdabd071eec617fc68e4"
 dependencies = [
- "winapi",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -12213,7 +12303,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "30d5b2194ed13191c1999ae0704b7839fb18384fa22e49b57eeaa97d79ce40da"
 dependencies = [
  "libc",
- "winapi",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -13371,7 +13461,7 @@ dependencies = [
  "serial2",
  "shared_library",
  "shell-words",
- "winapi",
+ "winapi 0.3.9",
  "winreg 0.10.1",
 ]
 
@@ -14642,6 +14732,9 @@ dependencies = [
  "editor",
  "futures 0.3.31",
  "gpui",
+ "lan_discovery",
+ "lan_messaging",
+ "local_user",
  "log",
  "menu",
  "settings",
@@ -15279,7 +15372,7 @@ dependencies = [
  "log",
  "nix 0.29.0",
  "ssh-encoding",
- "winapi",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -16190,7 +16283,7 @@ checksum = "8cc76fa68e25e771492ca1e3c53d447ef0be3093e05cd3b47f4b712ba10c6f3c"
 dependencies = [
  "cfg-if",
  "libc",
- "winapi",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -19359,7 +19452,7 @@ checksum = "89daebc3e6fd160ac4aa9fc8b3bf71e1f74fbf92367ae71fb83a037e8bf164b9"
 dependencies = [
  "memoffset",
  "tempfile",
- "winapi",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -19583,6 +19676,21 @@ name = "urlencoding"
 version = "2.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
+
+[[package]]
+name = "user_info_panel"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bspterm_actions",
+ "gpui",
+ "lan_discovery",
+ "lan_messaging",
+ "local_user",
+ "log",
+ "ui",
+ "workspace",
+]
 
 [[package]]
 name = "usvg"
@@ -20812,6 +20920,12 @@ dependencies = [
 
 [[package]]
 name = "winapi"
+version = "0.2.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "167dc9d6949a9b857f3451275e911c3f44255842c1f7a76f33c55103a909087a"
+
+[[package]]
+name = "winapi"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c839a674fcd7a98952e593242ea400abe93992746761e38641405d28b00f419"
@@ -21564,7 +21678,7 @@ version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80d0f4e272c85def139476380b12f9ac60926689dd2e01d4923222f40580869d"
 dependencies = [
- "winapi",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -21619,7 +21733,7 @@ version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d129932f4644ac2396cb456385cbf9e63b5b30c6e8dc4820bdca4eb082037a5"
 dependencies = [
- "winapi",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -22310,7 +22424,7 @@ dependencies = [
  "pathfinder_geometry",
  "pathfinder_simd",
  "walkdir",
- "winapi",
+ "winapi 0.3.9",
  "yeslogic-fontconfig-sys",
 ]
 

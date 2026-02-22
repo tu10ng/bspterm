@@ -1,0 +1,26 @@
+[package]
+name = "local_user"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+license = "GPL-3.0-or-later"
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/local_user.rs"
+doctest = false
+
+[dependencies]
+anyhow.workspace = true
+gpui.workspace = true
+log.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+paths.workspace = true
+ui.workspace = true
+util.workspace = true
+workspace.workspace = true
+editor.workspace = true
+get_if_addrs = "0.5"
