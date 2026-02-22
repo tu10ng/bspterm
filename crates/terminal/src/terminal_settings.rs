@@ -52,6 +52,7 @@ pub struct TerminalSettings {
     pub path_hyperlink_timeout_ms: u64,
     pub send_keybindings_to_shell: bool,
     pub keybindings_to_skip_shell: Vec<String>,
+    pub connection_timeout_secs: u64,
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -133,7 +134,14 @@ impl settings::Settings for TerminalSettings {
             path_hyperlink_timeout_ms: project_content.path_hyperlink_timeout_ms.unwrap(),
             send_keybindings_to_shell: user_content.send_keybindings_to_shell.unwrap(),
             keybindings_to_skip_shell: user_content.keybindings_to_skip_shell.unwrap(),
+            connection_timeout_secs: user_content.connection_timeout_secs.unwrap_or(3),
         }
+    }
+}
+
+impl TerminalSettings {
+    pub fn connection_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.connection_timeout_secs)
     }
 }
 

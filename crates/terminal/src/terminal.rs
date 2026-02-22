@@ -470,6 +470,7 @@ impl TerminalBuilder {
             current_line_buffer: String::new(),
             login_completed: true,
             login_waiters: Vec::new(),
+            initial_connecting: false,
         };
 
         Ok(TerminalBuilder {
@@ -714,6 +715,7 @@ impl TerminalBuilder {
                 current_line_buffer: String::new(),
                 login_completed: true,
                 login_waiters: Vec::new(),
+                initial_connecting: false,
             };
 
             if !activation_script.is_empty() && no_task {
@@ -909,6 +911,7 @@ impl TerminalBuilder {
                 current_line_buffer: String::new(),
                 login_completed: false,
                 login_waiters: Vec::new(),
+                initial_connecting: false,
             };
 
             terminal.init_rule_engine();
@@ -1070,6 +1073,7 @@ impl TerminalBuilder {
                 current_line_buffer: String::new(),
                 login_completed: false,
                 login_waiters: Vec::new(),
+                initial_connecting: false,
             };
 
             terminal.init_rule_engine();
@@ -1244,6 +1248,7 @@ impl TerminalBuilder {
             current_line_buffer: String::new(),
             login_completed: false,
             login_waiters: Vec::new(),
+            initial_connecting: false,
         };
 
         terminal.init_rule_engine();
@@ -1411,6 +1416,7 @@ pub struct Terminal {
     current_line_buffer: String,
     login_completed: bool,
     login_waiters: Vec<futures::channel::oneshot::Sender<()>>,
+    initial_connecting: bool,
 }
 
 struct CopyTemplate {
@@ -3095,6 +3101,18 @@ impl Terminal {
         matches!(self.terminal_type, TerminalType::Disconnected)
     }
 
+    pub fn is_initial_connecting(&self) -> bool {
+        self.initial_connecting
+    }
+
+    pub fn clear_initial_connecting(&mut self) {
+        self.initial_connecting = false;
+    }
+
+    pub fn set_initial_connecting(&mut self) {
+        self.initial_connecting = true;
+    }
+
     pub fn disconnection_reason(&self) -> Option<&str> {
         self.disconnection_reason.as_deref()
     }
@@ -3128,6 +3146,9 @@ impl Terminal {
         &self,
         cx: &App,
     ) -> Task<Result<Box<dyn connection::TerminalConnection>>> {
+        use settings::Settings;
+        use terminal_settings::TerminalSettings;
+
         let Some(connection_info) = self.connection_info.clone() else {
             return Task::ready(Err(anyhow::anyhow!("No connection info available")));
         };
@@ -3135,6 +3156,7 @@ impl Terminal {
         let tokio_handle = gpui_tokio::Tokio::handle(cx);
         let events_tx = self.events_tx.clone();
         let terminal_size = self.last_content.terminal_bounds.into();
+        let connection_timeout = TerminalSettings::get_global(cx).connection_timeout();
 
         cx.spawn(async move |_| {
             match connection_info {
@@ -3158,7 +3180,9 @@ impl Terminal {
                         connection::ssh::SshAuthConfig::Auto
                     };
 
-                    let mut ssh_config = connection::ssh::SshConfig::new(host, port).with_auth(auth);
+                    let mut ssh_config = connection::ssh::SshConfig::new(host, port)
+                        .with_auth(auth)
+                        .with_connection_timeout(connection_timeout);
                     if let Some(user) = username {
                         ssh_config = ssh_config.with_username(user);
                     }
@@ -3196,7 +3220,8 @@ impl Terminal {
                     password,
                     ..
                 } => {
-                    let mut telnet_config = connection::telnet::TelnetConfig::new(host, port);
+                    let mut telnet_config = connection::telnet::TelnetConfig::new(host, port)
+                        .with_connection_timeout(connection_timeout);
                     if let Some(user) = username {
                         telnet_config = telnet_config.with_username(user);
                     }

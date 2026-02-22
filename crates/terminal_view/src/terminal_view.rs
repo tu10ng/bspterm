@@ -359,8 +359,12 @@ impl TerminalView {
 
         let has_connection_info = terminal.read(cx).connection_info().is_some();
 
-        // Print reconnection hint for restored disconnected terminals
-        if terminal.read(cx).is_disconnected() && has_connection_info {
+        // Print reconnection hint for restored disconnected terminals.
+        // Skip if this is an initial connection (the user just triggered a connect).
+        if terminal.read(cx).is_disconnected()
+            && has_connection_info
+            && !terminal.read(cx).is_initial_connecting()
+        {
             terminal.update(cx, |terminal, cx| {
                 terminal.print_restored_disconnection_message(cx);
             });

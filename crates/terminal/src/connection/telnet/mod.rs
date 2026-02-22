@@ -14,6 +14,7 @@ pub struct TelnetConfig {
     pub password: Option<String>,
     pub encoding: Option<String>,
     pub terminal_type: String,
+    pub connection_timeout: Option<std::time::Duration>,
 }
 
 impl TelnetConfig {
@@ -25,6 +26,7 @@ impl TelnetConfig {
             password: None,
             encoding: None,
             terminal_type: "xterm-256color".to_string(),
+            connection_timeout: None,
         }
     }
 
@@ -45,6 +47,11 @@ impl TelnetConfig {
 
     pub fn with_terminal_type(mut self, terminal_type: impl Into<String>) -> Self {
         self.terminal_type = terminal_type.into();
+        self
+    }
+
+    pub fn with_connection_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.connection_timeout = Some(timeout);
         self
     }
 }

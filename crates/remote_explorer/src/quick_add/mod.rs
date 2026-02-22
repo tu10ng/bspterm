@@ -425,12 +425,10 @@ pub fn connect_ssh<T: 'static>(
     cx: &mut gpui::Context<T>,
 ) {
     use settings::Settings;
-    use terminal::connection::ssh::SshConfig;
     use terminal::terminal_settings::TerminalSettings;
-    use terminal::TerminalBuilder;
+    use terminal::{ConnectionInfo, TerminalBuilder};
     use util::paths::PathStyle;
 
-    let config: SshConfig = (&ssh_config).into();
     let settings = TerminalSettings::get_global(cx);
     let cursor_shape = settings.cursor_shape;
     let alternate_scroll = settings.alternate_scroll;
@@ -438,46 +436,94 @@ pub fn connect_ssh<T: 'static>(
     let path_style = PathStyle::local();
     let window_id = window.window_handle().window_id().as_u64();
     let weak_workspace = workspace.downgrade();
+    let background_executor = cx.background_executor().clone();
 
-    let terminal_task = TerminalBuilder::new_with_ssh_and_session_id(
-        config,
+    let connection_info = ConnectionInfo::Ssh {
+        host: ssh_config.host.clone(),
+        port: ssh_config.port,
+        username: ssh_config.username.clone(),
+        password: match &ssh_config.auth {
+            terminal::AuthMethod::Password { password } => Some(password.clone()),
+            _ => None,
+        },
+        private_key_path: match &ssh_config.auth {
+            terminal::AuthMethod::PrivateKey { path, .. } => Some(path.clone()),
+            _ => None,
+        },
+        passphrase: match &ssh_config.auth {
+            terminal::AuthMethod::PrivateKey { passphrase, .. } => passphrase.clone(),
+            _ => None,
+        },
         session_id,
+    };
+
+    let terminal_builder = match TerminalBuilder::new_disconnected_ssh(
+        connection_info,
         cursor_shape,
         alternate_scroll,
         max_scroll_history_lines,
         window_id,
-        cx,
+        &background_executor,
         path_style,
-    );
+    ) {
+        Ok(builder) => builder,
+        Err(error) => {
+            log::error!("Failed to create disconnected SSH terminal: {}", error);
+            return;
+        }
+    };
+
+    let terminal_handle = cx.new(|cx| terminal_builder.subscribe(cx));
+
+    terminal_handle.update(cx, |terminal, _cx| {
+        terminal.set_initial_connecting();
+    });
+
+    terminal_handle.update(cx, |terminal, cx| {
+        terminal.write_output(b"\x1b[36mConnecting...\x1b[0m\r\n", cx);
+    });
+
+    let terminal_view = Box::new(cx.new(|cx| {
+        terminal_view::TerminalView::new(
+            terminal_handle.clone(),
+            weak_workspace.clone(),
+            workspace.read(cx).database_id(),
+            workspace.read(cx).project().downgrade(),
+            window,
+            cx,
+        )
+    }));
+
+    pane.update(cx, |pane, cx| {
+        pane.add_item(terminal_view, true, true, None, window, cx);
+    });
+
+    let reconnect_task = terminal_handle.read(cx).reconnect(cx);
 
     cx.spawn_in(window, async move |_, cx| {
-        let terminal_builder = match terminal_task.await {
-            Ok(builder) => builder,
-            Err(error) => {
-                log::error!("Failed to create SSH terminal: {}", error);
-                return;
+        match reconnect_task.await {
+            Ok(connection) => {
+                terminal_handle
+                    .update_in(cx, |terminal, _window, cx| {
+                        terminal.clear_initial_connecting();
+                        terminal.set_connection(connection, cx);
+                        terminal.write_output(b"\x1b[32mConnected\x1b[0m\r\n", cx);
+                    })
+                    .ok();
             }
-        };
-
-        workspace
-            .update_in(cx, |workspace, window, cx| {
-                let terminal_handle = cx.new(|cx| terminal_builder.subscribe(cx));
-                let terminal_view = Box::new(cx.new(|cx| {
-                    terminal_view::TerminalView::new(
-                        terminal_handle,
-                        weak_workspace.clone(),
-                        workspace.database_id(),
-                        workspace.project().downgrade(),
-                        window,
-                        cx,
-                    )
-                }));
-
-                pane.update(cx, |pane, cx| {
-                    pane.add_item(terminal_view, true, true, None, window, cx);
-                });
-            })
-            .ok();
+            Err(err) => {
+                terminal_handle
+                    .update_in(cx, |terminal, _window, cx| {
+                        terminal.clear_initial_connecting();
+                        let message = format!(
+                            "\x1b[31mConnection failed: {}\x1b[0m\r\n\x1b[33mPress Enter to reconnect\x1b[0m\r\n",
+                            err
+                        );
+                        terminal.write_output(message.as_bytes(), cx);
+                    })
+                    .ok();
+            }
+        }
     })
     .detach();
 }
@@ -491,12 +537,10 @@ pub fn connect_telnet<T: 'static>(
     cx: &mut gpui::Context<T>,
 ) {
     use settings::Settings;
-    use terminal::connection::telnet::TelnetConfig;
     use terminal::terminal_settings::TerminalSettings;
-    use terminal::TerminalBuilder;
+    use terminal::{ConnectionInfo, TerminalBuilder};
     use util::paths::PathStyle;
 
-    let config: TelnetConfig = (&telnet_config).into();
     let settings = TerminalSettings::get_global(cx);
     let cursor_shape = settings.cursor_shape;
     let alternate_scroll = settings.alternate_scroll;
@@ -504,46 +548,83 @@ pub fn connect_telnet<T: 'static>(
     let path_style = PathStyle::local();
     let window_id = window.window_handle().window_id().as_u64();
     let weak_workspace = workspace.downgrade();
+    let background_executor = cx.background_executor().clone();
 
-    let terminal_task = TerminalBuilder::new_with_telnet_and_session_id(
-        config,
+    let connection_info = ConnectionInfo::Telnet {
+        host: telnet_config.host,
+        port: telnet_config.port,
+        username: telnet_config.username,
+        password: telnet_config.password,
         session_id,
+    };
+
+    let terminal_builder = match TerminalBuilder::new_disconnected_telnet(
+        connection_info,
         cursor_shape,
         alternate_scroll,
         max_scroll_history_lines,
         window_id,
-        cx,
+        &background_executor,
         path_style,
-    );
+    ) {
+        Ok(builder) => builder,
+        Err(error) => {
+            log::error!("Failed to create disconnected Telnet terminal: {}", error);
+            return;
+        }
+    };
+
+    let terminal_handle = cx.new(|cx| terminal_builder.subscribe(cx));
+
+    terminal_handle.update(cx, |terminal, _cx| {
+        terminal.set_initial_connecting();
+    });
+
+    terminal_handle.update(cx, |terminal, cx| {
+        terminal.write_output(b"\x1b[36mConnecting...\x1b[0m\r\n", cx);
+    });
+
+    let terminal_view = Box::new(cx.new(|cx| {
+        terminal_view::TerminalView::new(
+            terminal_handle.clone(),
+            weak_workspace.clone(),
+            workspace.read(cx).database_id(),
+            workspace.read(cx).project().downgrade(),
+            window,
+            cx,
+        )
+    }));
+
+    pane.update(cx, |pane, cx| {
+        pane.add_item(terminal_view, true, true, None, window, cx);
+    });
+
+    let reconnect_task = terminal_handle.read(cx).reconnect(cx);
 
     cx.spawn_in(window, async move |_, cx| {
-        let terminal_builder = match terminal_task.await {
-            Ok(builder) => builder,
-            Err(error) => {
-                log::error!("Failed to create Telnet terminal: {}", error);
-                return;
+        match reconnect_task.await {
+            Ok(connection) => {
+                terminal_handle
+                    .update_in(cx, |terminal, _window, cx| {
+                        terminal.clear_initial_connecting();
+                        terminal.set_connection(connection, cx);
+                        terminal.write_output(b"\x1b[32mConnected\x1b[0m\r\n", cx);
+                    })
+                    .ok();
             }
-        };
-
-        workspace
-            .update_in(cx, |workspace, window, cx| {
-                let terminal_handle = cx.new(|cx| terminal_builder.subscribe(cx));
-                let terminal_view = Box::new(cx.new(|cx| {
-                    terminal_view::TerminalView::new(
-                        terminal_handle,
-                        weak_workspace.clone(),
-                        workspace.database_id(),
-                        workspace.project().downgrade(),
-                        window,
-                        cx,
-                    )
-                }));
-
-                pane.update(cx, |pane, cx| {
-                    pane.add_item(terminal_view, true, true, None, window, cx);
-                });
-            })
-            .ok();
+            Err(err) => {
+                terminal_handle
+                    .update_in(cx, |terminal, _window, cx| {
+                        terminal.clear_initial_connecting();
+                        let message = format!(
+                            "\x1b[31mConnection failed: {}\x1b[0m\r\n\x1b[33mPress Enter to reconnect\x1b[0m\r\n",
+                            err
+                        );
+                        terminal.write_output(message.as_bytes(), cx);
+                    })
+                    .ok();
+            }
+        }
     })
     .detach();
 }

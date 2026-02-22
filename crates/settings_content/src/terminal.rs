@@ -181,6 +181,10 @@ pub struct TerminalSettingsContent {
     ///
     /// Default: ["cmd-w", "cmd-q", "cmd-,", "ctrl-`"]
     pub keybindings_to_skip_shell: Option<Vec<String>>,
+    /// Connection timeout in seconds for SSH/Telnet connections.
+    ///
+    /// Default: 3
+    pub connection_timeout_secs: Option<u64>,
 }
 
 /// Shell configuration to open the terminal with.

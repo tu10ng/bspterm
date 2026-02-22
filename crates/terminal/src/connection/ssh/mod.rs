@@ -21,6 +21,7 @@ pub struct SshConfig {
     pub keepalive_interval: Option<std::time::Duration>,
     pub initial_command: Option<String>,
     pub terminal_type: String,
+    pub connection_timeout: Option<std::time::Duration>,
 }
 
 impl SshConfig {
@@ -34,6 +35,7 @@ impl SshConfig {
             keepalive_interval: Some(std::time::Duration::from_secs(30)),
             initial_command: None,
             terminal_type: "xterm-256color".to_string(),
+            connection_timeout: None,
         }
     }
 
@@ -64,6 +66,11 @@ impl SshConfig {
 
     pub fn with_terminal_type(mut self, terminal_type: impl Into<String>) -> Self {
         self.terminal_type = terminal_type.into();
+        self
+    }
+
+    pub fn with_connection_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.connection_timeout = Some(timeout);
         self
     }
 }

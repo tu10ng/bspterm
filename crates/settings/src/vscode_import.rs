@@ -872,6 +872,7 @@ impl VsCodeSettings {
             toolbar: None,
             send_keybindings_to_shell: None,
             keybindings_to_skip_shell: None,
+            connection_timeout_secs: None,
         })
     }
 

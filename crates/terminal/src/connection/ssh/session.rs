@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use alacritty_terminal::event::WindowSize;
 use anyhow::{Context as _, Result};
@@ -7,6 +8,7 @@ use parking_lot::RwLock;
 use russh::client::{Config, Handle};
 use russh::ChannelId;
 use tokio::sync::RwLock as TokioRwLock;
+use tokio::time::timeout;
 
 use super::auth::{authenticate, SshAuthMethod};
 use super::{SshConfig, SshHostKey};
@@ -50,6 +52,10 @@ pub struct SshSession {
 
 impl SshSession {
     pub async fn connect(config: &SshConfig) -> Result<Arc<Self>> {
+        let connection_timeout = config
+            .connection_timeout
+            .unwrap_or_else(|| Duration::from_secs(3));
+
         let ssh_config = Arc::new(Config {
             keepalive_interval: config.keepalive_interval,
             keepalive_max: 3,
@@ -59,9 +65,18 @@ impl SshSession {
         let addr = format!("{}:{}", config.host, config.port);
         let handler = SshClientHandler::new();
 
-        let mut handle = russh::client::connect(ssh_config, &addr, handler)
-            .await
-            .with_context(|| format!("failed to connect to {}", addr))?;
+        let mut handle = timeout(
+            connection_timeout,
+            russh::client::connect(ssh_config, &addr, handler),
+        )
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "SSH connection timed out after {} seconds",
+                connection_timeout.as_secs()
+            )
+        })?
+        .with_context(|| format!("failed to connect to {}", addr))?;
 
         let username = config
             .username
