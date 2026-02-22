@@ -15,7 +15,6 @@ doctest = false
 [dependencies]
 anyhow.workspace = true
 gpui.workspace = true
-libc.workspace = true
 log.workspace = true
 parking_lot.workspace = true
 serde.workspace = true
@@ -25,3 +24,9 @@ uuid = { workspace = true, features = ["v4"] }
 workspace.workspace = true
 bspterm_actions.workspace = true
 paths.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows.workspace = true

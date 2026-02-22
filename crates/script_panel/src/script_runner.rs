@@ -1,7 +1,12 @@
 use std::io::Read;
-use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+
+#[cfg(unix)]
+use std::os::unix::io::AsRawFd;
+
+#[cfg(windows)]
+use std::os::windows::io::AsRawHandle;
 
 pub enum ScriptStatus {
     NotStarted,
@@ -57,11 +62,14 @@ impl ScriptRunner {
 
         let child = command.spawn()?;
 
-        if let Some(ref stdout) = child.stdout {
-            set_nonblocking(stdout.as_raw_fd());
-        }
-        if let Some(ref stderr) = child.stderr {
-            set_nonblocking(stderr.as_raw_fd());
+        #[cfg(unix)]
+        {
+            if let Some(ref stdout) = child.stdout {
+                set_nonblocking(stdout.as_raw_fd());
+            }
+            if let Some(ref stderr) = child.stderr {
+                set_nonblocking(stderr.as_raw_fd());
+            }
         }
 
         self.process = Some(child);
@@ -97,29 +105,56 @@ impl ScriptRunner {
 
     pub fn read_output(&mut self) -> Option<String> {
         let child = self.process.as_mut()?;
-
         let mut output = String::new();
 
-        if let Some(stdout) = child.stdout.as_mut() {
-            let mut buf = [0u8; 1024];
-            loop {
-                match stdout.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => output.push_str(&String::from_utf8_lossy(&buf[..n])),
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
-                    Err(_) => break,
+        #[cfg(unix)]
+        {
+            if let Some(stdout) = child.stdout.as_mut() {
+                let mut buf = [0u8; 1024];
+                loop {
+                    match stdout.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => output.push_str(&String::from_utf8_lossy(&buf[..n])),
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                        Err(_) => break,
+                    }
+                }
+            }
+
+            if let Some(stderr) = child.stderr.as_mut() {
+                let mut buf = [0u8; 1024];
+                loop {
+                    match stderr.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => output.push_str(&String::from_utf8_lossy(&buf[..n])),
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                        Err(_) => break,
+                    }
                 }
             }
         }
 
-        if let Some(stderr) = child.stderr.as_mut() {
-            let mut buf = [0u8; 1024];
-            loop {
-                match stderr.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => output.push_str(&String::from_utf8_lossy(&buf[..n])),
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
-                    Err(_) => break,
+        #[cfg(windows)]
+        {
+            if let Some(stdout) = child.stdout.as_mut() {
+                let handle = stdout.as_raw_handle();
+                let available = peek_available(handle);
+                if available > 0 {
+                    let mut buf = vec![0u8; available.min(4096)];
+                    if let Ok(n) = stdout.read(&mut buf) {
+                        output.push_str(&String::from_utf8_lossy(&buf[..n]));
+                    }
+                }
+            }
+
+            if let Some(stderr) = child.stderr.as_mut() {
+                let handle = stderr.as_raw_handle();
+                let available = peek_available(handle);
+                if available > 0 {
+                    let mut buf = vec![0u8; available.min(4096)];
+                    if let Ok(n) = stderr.read(&mut buf) {
+                        output.push_str(&String::from_utf8_lossy(&buf[..n]));
+                    }
                 }
             }
         }
@@ -132,11 +167,31 @@ impl ScriptRunner {
     }
 }
 
+#[cfg(unix)]
 fn set_nonblocking(fd: i32) {
     unsafe {
         let flags = libc::fcntl(fd, libc::F_GETFL);
         libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
     }
+}
+
+#[cfg(windows)]
+fn peek_available(handle: std::os::windows::io::RawHandle) -> usize {
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::Pipes::PeekNamedPipe;
+
+    let mut available: u32 = 0;
+    unsafe {
+        let _ = PeekNamedPipe(
+            HANDLE(handle as isize),
+            None,
+            0,
+            None,
+            Some(&mut available),
+            None,
+        );
+    }
+    available as usize
 }
 
 impl Drop for ScriptRunner {

@@ -15764,6 +15764,7 @@ dependencies = [
  "terminal_scripting",
  "ui",
  "uuid",
+ "windows 0.61.3",
  "workspace",
 ]
 
