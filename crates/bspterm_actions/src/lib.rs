@@ -356,6 +356,20 @@ pub mod user_info_panel {
     );
 }
 
+pub mod local_user {
+    use gpui::actions;
+
+    actions!(
+        local_user,
+        [
+            /// Opens the local login dialog.
+            SignIn,
+            /// Signs out the current local user.
+            SignOut
+        ]
+    );
+}
+
 pub mod terminal_button_bar {
     use gpui::actions;
 

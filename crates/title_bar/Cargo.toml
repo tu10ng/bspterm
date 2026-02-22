@@ -30,6 +30,7 @@ test-support = [
 
 [dependencies]
 anyhow.workspace = true
+log.workspace = true
 auto_update.workspace = true
 platform_title_bar.workspace = true
 call.workspace = true
@@ -40,6 +41,7 @@ cloud_api_types.workspace = true
 db.workspace = true
 git_ui.workspace = true
 gpui = { workspace = true, features = ["screen-capture"] }
+local_user.workspace = true
 menu.workspace = true
 notifications.workspace = true
 project.workspace = true

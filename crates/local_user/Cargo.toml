@@ -14,6 +14,7 @@ doctest = false
 
 [dependencies]
 anyhow.workspace = true
+bspterm_actions.workspace = true
 gpui.workspace = true
 log.workspace = true
 serde = { workspace = true, features = ["derive"] }

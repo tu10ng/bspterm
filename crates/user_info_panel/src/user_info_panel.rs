@@ -11,7 +11,7 @@ use gpui::{
 use lan_discovery::{DiscoveredUser, LanDiscoveryEntity, LanDiscoveryEvent};
 use lan_messaging::{ChatModal, UserIdentity};
 use local_user::LocalUserStoreEntity;
-use ui::{prelude::*, Color, Icon, IconName, IconSize, Indicator, Label, LabelSize, h_flex, v_flex};
+use ui::{prelude::*, Color, CopyButton, Icon, IconName, IconSize, Indicator, Label, LabelSize, h_flex, v_flex};
 use workspace::{
     Workspace,
     dock::{DockPosition, Panel, PanelEvent},
@@ -200,6 +200,13 @@ impl UserInfoPanel {
                             )
                             .child(Label::new(iface.ip.to_string()).size(LabelSize::Small))
                             .child(
+                                CopyButton::new(
+                                    format!("copy-current-ip-{}", iface.name),
+                                    iface.ip.to_string(),
+                                )
+                                .icon_size(IconSize::XSmall),
+                            )
+                            .child(
                                 Label::new(format!("({})", iface.name))
                                     .size(LabelSize::XSmall)
                                     .color(Color::Muted),
@@ -320,11 +327,13 @@ impl UserInfoPanel {
                         })),
                     ),
             )
-            .child(
+            .child({
+                let user_id = user.instance_id.clone();
                 v_flex()
                     .pl_9()
                     .gap_1()
-                    .children(user.ip_addresses.iter().map(|ip| {
+                    .children(user.ip_addresses.iter().map(move |ip| {
+                        let ip_str = ip.to_string();
                         h_flex()
                             .gap_2()
                             .child(
@@ -332,9 +341,16 @@ impl UserInfoPanel {
                                     .size(IconSize::Small)
                                     .color(Color::Muted),
                             )
-                            .child(Label::new(ip.to_string()).size(LabelSize::Small))
-                    })),
-            )
+                            .child(Label::new(ip_str.clone()).size(LabelSize::Small))
+                            .child(
+                                CopyButton::new(
+                                    format!("copy-lan-ip-{}-{}", user_id, ip_str),
+                                    ip_str,
+                                )
+                                .icon_size(IconSize::XSmall),
+                            )
+                    }))
+            })
             .when(!user.active_sessions.is_empty(), |this| {
                 this.child(
                     v_flex()

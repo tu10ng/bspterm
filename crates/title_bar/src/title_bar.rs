@@ -21,13 +21,13 @@ use crate::application_menu::{
 
 use auto_update::AutoUpdateStatus;
 use call::ActiveCall;
-use client::{Client, UserStore, zed_urls};
-use cloud_api_types::Plan;
+use client::{Client, UserStore};
 use gpui::{
     Action, AnyElement, App, Context, Corner, Element, Entity, FocusHandle, Focusable,
     InteractiveElement, IntoElement, MouseButton, ParentElement, Render,
     StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window, actions, div,
 };
+use local_user::{LocalUserStoreEntity, LocalUserStoreEvent};
 use onboarding_banner::OnboardingBanner;
 use project::{Project, git_store::GitStoreEvent, trusted_worktrees::TrustedWorktrees};
 use project_dropdown::ProjectDropdown;
@@ -38,12 +38,12 @@ use std::sync::Arc;
 use theme::ActiveTheme;
 use title_bar_settings::TitleBarSettings;
 use ui::{
-    Avatar, ButtonLike, Chip, ContextMenu, IconWithIndicator, Indicator, PopoverMenu,
+    ButtonLike, ContextMenu, IconWithIndicator, Indicator, PopoverMenu,
     PopoverMenuHandle, TintColor, Tooltip, prelude::*,
 };
 use update_version::UpdateVersion;
 use util::ResultExt;
-use workspace::{SwitchProject, ToggleWorktreeSecurity, Workspace, notifications::NotifyResultExt};
+use workspace::{SwitchProject, ToggleWorktreeSecurity, Workspace};
 use bspterm_actions::OpenRemote;
 
 pub use onboarding_banner::restore_banner;
@@ -70,14 +70,25 @@ actions!(
 );
 
 pub fn init(cx: &mut App) {
+    log::info!("[TitleBar] init() called");
     platform_title_bar::PlatformTitleBar::init(cx);
 
     cx.observe_new(|workspace: &mut Workspace, window, cx| {
+        log::info!("[TitleBar] observe_new callback triggered, window={:?}", window.is_some());
         let Some(window) = window else {
+            log::warn!("[TitleBar] window is None, skipping titlebar creation");
             return;
         };
-        let item = cx.new(|cx| TitleBar::new("title-bar", workspace, window, cx));
+        log::info!("[TitleBar] Creating TitleBar...");
+        let item = cx.new(|cx| {
+            log::info!("[TitleBar] Inside cx.new closure, about to call TitleBar::new");
+            let titlebar = TitleBar::new("title-bar", workspace, window, cx);
+            log::info!("[TitleBar] TitleBar::new completed successfully");
+            titlebar
+        });
+        log::info!("[TitleBar] Setting titlebar item on workspace");
         workspace.set_titlebar_item(item.into(), window, cx);
+        log::info!("[TitleBar] Titlebar item set successfully");
 
         workspace.register_action(|workspace, _: &SimulateUpdateAvailable, _window, cx| {
             if let Some(titlebar) = workspace
@@ -154,6 +165,7 @@ pub struct TitleBar {
     platform_titlebar: Entity<PlatformTitleBar>,
     project: Entity<Project>,
     user_store: Entity<UserStore>,
+    local_user_store: Entity<LocalUserStoreEntity>,
     client: Arc<Client>,
     workspace: WeakEntity<Workspace>,
     application_menu: Option<Entity<ApplicationMenu>>,
@@ -166,6 +178,7 @@ pub struct TitleBar {
 
 impl Render for TitleBar {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        log::debug!("[TitleBar::render] called");
         let title_bar_settings = *TitleBarSettings::get_global(cx);
 
         let show_menus = show_menus(cx);
@@ -212,14 +225,12 @@ impl Render for TitleBar {
 
         let status = self.client.status();
         let status = &*status.borrow();
-        let user = self.user_store.read(cx).current_user();
-
-        let signed_in = user.is_some();
+        let local_signed_in = self.local_user_store.read(cx).is_logged_in();
 
         children.push(
             h_flex()
                 .map(|this| {
-                    if signed_in {
+                    if local_signed_in {
                         this.pr_1p5()
                     } else {
                         this.pr_1()
@@ -231,12 +242,13 @@ impl Render for TitleBar {
                 .children(self.render_connection_status(status, cx))
                 .child(self.update_version.clone())
                 .when(
-                    user.is_none() && TitleBarSettings::get_global(cx).show_sign_in,
+                    !local_signed_in && TitleBarSettings::get_global(cx).show_sign_in,
                     |this| this.child(self.render_sign_in_button(cx)),
                 )
-                .when(TitleBarSettings::get_global(cx).show_user_menu, |this| {
-                    this.child(self.render_user_menu_button(cx))
-                })
+                .when(
+                    local_signed_in && TitleBarSettings::get_global(cx).show_user_menu,
+                    |this| this.child(self.render_user_menu_button(cx)),
+                )
                 .into_any_element(),
         );
 
@@ -283,11 +295,19 @@ impl TitleBar {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        log::info!("[TitleBar::new] Starting...");
         let project = workspace.project().clone();
+        log::info!("[TitleBar::new] Got project");
         let git_store = project.read(cx).git_store().clone();
+        log::info!("[TitleBar::new] Got git_store");
         let user_store = workspace.app_state().user_store.clone();
+        log::info!("[TitleBar::new] Got user_store");
+        let local_user_store = LocalUserStoreEntity::global(cx);
+        log::info!("[TitleBar::new] Got local_user_store");
         let client = workspace.app_state().client.clone();
+        log::info!("[TitleBar::new] Got client");
         let active_call = ActiveCall::global(cx);
+        log::info!("[TitleBar::new] Got active_call");
 
         let platform_style = PlatformStyle::platform();
         let application_menu = match platform_style {
@@ -336,6 +356,9 @@ impl TitleBar {
             }),
         );
         subscriptions.push(cx.observe(&user_store, |_a, _, cx| cx.notify()));
+        subscriptions.push(cx.subscribe(&local_user_store, |_, _, _: &LocalUserStoreEvent, cx| {
+            cx.notify();
+        }));
         if let Some(trusted_worktrees) = TrustedWorktrees::try_get_global(cx) {
             subscriptions.push(cx.subscribe(&trusted_worktrees, |_, _, _, cx| {
                 cx.notify();
@@ -355,15 +378,19 @@ impl TitleBar {
             .visible_when(|cx| !project::DisableAiSettings::get_global(cx).disable_ai)
         });
 
+        log::info!("[TitleBar::new] Creating update_version...");
         let update_version = cx.new(|cx| UpdateVersion::new(cx));
+        log::info!("[TitleBar::new] Creating platform_titlebar...");
         let platform_titlebar = cx.new(|cx| PlatformTitleBar::new(id, cx));
 
+        log::info!("[TitleBar::new] Returning Self...");
         Self {
             platform_titlebar,
             application_menu,
             workspace: workspace.weak_handle(),
             project,
             user_store,
+            local_user_store,
             client,
             _subscriptions: subscriptions,
             banner,
@@ -935,88 +962,54 @@ impl TitleBar {
     }
 
     pub fn render_sign_in_button(&mut self, _: &mut Context<Self>) -> Button {
-        let client = self.client.clone();
-        Button::new("sign_in", "Sign In")
+        Button::new("sign_in", "登录")
             .label_size(LabelSize::Small)
-            .on_click(move |_, window, cx| {
-                let client = client.clone();
-                window
-                    .spawn(cx, async move |cx| {
-                        client
-                            .sign_in_with_optional_connect(true, cx)
-                            .await
-                            .notify_async_err(cx);
-                    })
-                    .detach();
+            .on_click(|_, window, cx| {
+                window.dispatch_action(bspterm_actions::local_user::SignIn.boxed_clone(), cx);
             })
+    }
+
+    fn render_initials_avatar(&self, initials: &str, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .size_6()
+            .rounded_full()
+            .bg(cx.theme().colors().element_background)
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(Label::new(initials.to_string()).size(LabelSize::Small))
     }
 
     pub fn render_user_menu_button(&mut self, cx: &mut Context<Self>) -> impl Element {
         let show_update_badge = self.update_version.read(cx).show_update_in_menu_bar();
+        let profile = self.local_user_store.read(cx).profile().cloned();
+        let show_user_picture = TitleBarSettings::get_global(cx).show_user_picture;
 
-        let user_store = self.user_store.read(cx);
-        let user = user_store.current_user();
+        if let Some(profile) = profile {
+            let initials = profile.initials();
+            let profile_name = profile.name.clone();
+            let profile_employee_id = profile.employee_id;
 
-        let user_avatar = user.as_ref().map(|u| u.avatar_uri.clone());
-        let user_login = user.as_ref().map(|u| u.github_login.clone());
-
-        let is_signed_in = user.is_some();
-
-        let has_subscription_period = user_store.subscription_period().is_some();
-        let plan = user_store.plan().filter(|_| {
-            // Since the user might be on the legacy free plan we filter based on whether we have a subscription period.
-            has_subscription_period
-        });
-
-        let free_chip_bg = cx
-            .theme()
-            .colors()
-            .editor_background
-            .opacity(0.5)
-            .blend(cx.theme().colors().text_accent.opacity(0.05));
-
-        let pro_chip_bg = cx
-            .theme()
-            .colors()
-            .editor_background
-            .opacity(0.5)
-            .blend(cx.theme().colors().text_accent.opacity(0.2));
-
-        PopoverMenu::new("user-menu")
-            .anchor(Corner::TopRight)
-            .menu(move |window, cx| {
+            let menu = move |window: &mut Window, cx: &mut App| {
+                let profile_name = profile_name.clone();
+                let profile_employee_id = profile_employee_id.clone();
                 ContextMenu::build(window, cx, |menu, _, _cx| {
-                    let user_login = user_login.clone();
-
-                    let (plan_name, label_color, bg_color) = match plan {
-                        None | Some(Plan::ZedFree) => ("Free", Color::Default, free_chip_bg),
-                        Some(Plan::ZedProTrial) => ("Pro Trial", Color::Accent, pro_chip_bg),
-                        Some(Plan::ZedPro) => ("Pro", Color::Accent, pro_chip_bg),
-                        Some(Plan::ZedStudent) => ("Student", Color::Accent, pro_chip_bg),
-                    };
-
-                    menu.when(is_signed_in, |this| {
-                        this.custom_entry(
-                            move |_window, _cx| {
-                                let user_login = user_login.clone().unwrap_or_default();
-
-                                h_flex()
-                                    .w_full()
-                                    .justify_between()
-                                    .child(Label::new(user_login))
-                                    .child(
-                                        Chip::new(plan_name.to_string())
-                                            .bg_color(bg_color)
-                                            .label_color(label_color),
-                                    )
-                                    .into_any_element()
-                            },
-                            move |_, cx| {
-                                cx.open_url(&zed_urls::account_url(cx));
-                            },
-                        )
-                        .separator()
-                    })
+                    menu.custom_entry(
+                        move |_window, _cx| {
+                            h_flex()
+                                .w_full()
+                                .justify_between()
+                                .child(Label::new(profile_name.clone()))
+                                .child(
+                                    Label::new(format!("({})", profile_employee_id))
+                                        .size(LabelSize::Small)
+                                        .color(Color::Muted),
+                                )
+                                .into_any_element()
+                        },
+                        |_, _| {},
+                    )
+                    .separator()
                     .when(show_update_badge, |this| {
                         this.custom_entry(
                             move |_window, _cx| {
@@ -1024,7 +1017,7 @@ impl TitleBar {
                                     .w_full()
                                     .gap_1()
                                     .justify_between()
-                                    .child(Label::new("Restart to update Zed").color(Color::Accent))
+                                    .child(Label::new("Restart to update").color(Color::Accent))
                                     .child(
                                         Icon::new(IconName::Download)
                                             .size(IconSize::Small)
@@ -1052,44 +1045,37 @@ impl TitleBar {
                         "Extensions",
                         bspterm_actions::Extensions::default().boxed_clone(),
                     )
-                    .when(is_signed_in, |this| {
-                        this.separator()
-                            .action("Sign Out", client::SignOut.boxed_clone())
-                    })
+                    .separator()
+                    .action("登出", bspterm_actions::local_user::SignOut.boxed_clone())
                 })
                 .into()
-            })
-            .map(|this| {
-                if is_signed_in && TitleBarSettings::get_global(cx).show_user_picture {
-                    let avatar =
-                        user_avatar
-                            .clone()
-                            .map(|avatar| Avatar::new(avatar))
-                            .map(|avatar| {
-                                if show_update_badge {
-                                    avatar.indicator(
-                                        div()
-                                            .absolute()
-                                            .bottom_0()
-                                            .right_0()
-                                            .child(Indicator::dot().color(Color::Accent)),
-                                    )
-                                } else {
-                                    avatar
-                                }
-                            });
-                    this.trigger_with_tooltip(
-                        ButtonLike::new("user-menu").children(avatar),
-                        Tooltip::text("Toggle User Menu"),
+            };
+
+            if show_user_picture {
+                PopoverMenu::new("user-menu")
+                    .anchor(Corner::TopRight)
+                    .menu(menu)
+                    .trigger_with_tooltip(
+                        ButtonLike::new("user-menu")
+                            .child(self.render_initials_avatar(&initials, cx)),
+                        Tooltip::text("用户菜单"),
                     )
-                } else {
-                    this.trigger_with_tooltip(
+                    .anchor(Corner::TopRight)
+                    .into_any_element()
+            } else {
+                PopoverMenu::new("user-menu")
+                    .anchor(Corner::TopRight)
+                    .menu(menu)
+                    .trigger_with_tooltip(
                         IconButton::new("user-menu", IconName::ChevronDown)
                             .icon_size(IconSize::Small),
-                        Tooltip::text("Toggle User Menu"),
+                        Tooltip::text("用户菜单"),
                     )
-                }
-            })
-            .anchor(gpui::Corner::TopRight)
+                    .anchor(Corner::TopRight)
+                    .into_any_element()
+            }
+        } else {
+            self.render_sign_in_button(cx).into_any_element()
+        }
     }
 }
