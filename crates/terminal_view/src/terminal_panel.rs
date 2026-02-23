@@ -104,7 +104,7 @@ impl TerminalPanel {
             height: None,
             pending_terminals_to_add: 0,
             deferred_tasks: HashMap::default(),
-            assistant_enabled: false,
+            assistant_enabled: true,
             assistant_tab_bar_button: None,
             active: false,
         };

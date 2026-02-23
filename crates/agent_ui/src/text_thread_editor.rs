@@ -407,7 +407,7 @@ impl TextThreadEditor {
         if self.sending_disabled(cx) {
             return;
         }
-        telemetry::event!("Agent Message Sent", agent = "zed-text");
+        telemetry::event!("Agent Message Sent", agent = "bspterm-text");
         self.send_to_model(window, cx);
     }
 
@@ -3172,10 +3172,10 @@ mod tests {
     #[gpui::test]
     async fn test_copy_paste_whole_message(cx: &mut TestAppContext) {
         let (context, text_thread_editor, mut cx) = setup_text_thread_editor_text(vec![
-            (Role::User, "What is the Zed editor?"),
+            (Role::User, "What is the Bspterm editor?"),
             (
                 Role::Assistant,
-                "Zed is a modern, high-performance code editor designed from the ground up for speed and collaboration.",
+                "Bspterm is a modern, high-performance terminal emulator designed from the ground up for speed and collaboration.",
             ),
             (Role::User, ""),
         ],cx).await;

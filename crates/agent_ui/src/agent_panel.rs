@@ -281,7 +281,7 @@ pub enum AgentType {
 impl AgentType {
     fn label(&self) -> SharedString {
         match self {
-            Self::NativeAgent | Self::TextThread => "Zed Agent".into(),
+            Self::NativeAgent | Self::TextThread => "Bspterm Agent".into(),
             Self::Gemini => "Gemini CLI".into(),
             Self::ClaudeCode => "Claude Code".into(),
             Self::Codex => "Codex".into(),
@@ -771,7 +771,7 @@ impl AgentPanel {
     }
 
     fn new_text_thread(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        telemetry::event!("Agent Thread Started", agent = "zed-text");
+        telemetry::event!("Agent Thread Started", agent = "bspterm-text");
 
         let context = self
             .text_thread_store
@@ -2258,7 +2258,7 @@ impl AgentPanel {
                                 }
                             })
                             .item(
-                                ContextMenuEntry::new("Zed Agent")
+                                ContextMenuEntry::new("Bspterm Agent")
                                     .when(
                                         is_agent_selected(AgentType::NativeAgent)
                                             | is_agent_selected(AgentType::TextThread),
@@ -2607,46 +2607,8 @@ impl AgentPanel {
         plan.is_some_and(|plan| plan == Plan::ZedFree) && has_previous_trial
     }
 
-    fn should_render_onboarding(&self, cx: &mut Context<Self>) -> bool {
-        if OnboardingUpsell::dismissed() {
-            return false;
-        }
-
-        let user_store = self.user_store.read(cx);
-
-        if user_store.plan().is_some_and(|plan| plan == Plan::ZedPro)
-            && user_store
-                .subscription_period()
-                .and_then(|period| period.0.checked_add_days(chrono::Days::new(1)))
-                .is_some_and(|date| date < chrono::Utc::now())
-        {
-            OnboardingUpsell::set_dismissed(true, cx);
-            return false;
-        }
-
-        match &self.active_view {
-            ActiveView::Uninitialized | ActiveView::History { .. } | ActiveView::Configuration => {
-                false
-            }
-            ActiveView::AgentThread { thread_view, .. }
-                if thread_view.read(cx).as_native_thread(cx).is_none() =>
-            {
-                false
-            }
-            _ => {
-                let history_is_empty = self.acp_history.read(cx).is_empty();
-
-                let has_configured_non_zed_providers = LanguageModelRegistry::read_global(cx)
-                    .visible_providers()
-                    .iter()
-                    .any(|provider| {
-                        provider.is_authenticated(cx)
-                            && provider.id() != language_model::ZED_CLOUD_PROVIDER_ID
-                    });
-
-                history_is_empty || !has_configured_non_zed_providers
-            }
-        }
+    fn should_render_onboarding(&self, _cx: &mut Context<Self>) -> bool {
+        false
     }
 
     fn render_onboarding(
@@ -2744,7 +2706,7 @@ impl AgentPanel {
                 .when(border_bottom, |this| {
                     this.border_position(ui::BorderPosition::Bottom)
                 })
-                .title("Sign in to continue using Zed as your LLM provider.")
+                .title("Sign in to continue using the cloud LLM provider.")
                 .actions_slot(
                     Button::new("sign_in", "Sign In")
                         .style(ButtonStyle::Tinted(ui::TintColor::Warning))
