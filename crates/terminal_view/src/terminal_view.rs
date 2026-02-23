@@ -163,6 +163,8 @@ actions!(
         HideButtonBarButton,
         /// Deletes a button from the button bar permanently.
         DeleteButtonBarButton,
+        /// Exports all terminal output to a new buffer.
+        ExportOutputToBuffer,
     ]
 );
 
@@ -658,6 +660,7 @@ impl TerminalView {
                 .action("Paste", Box::new(Paste))
                 .action("Select All", Box::new(SelectAll))
                 .action("Clear", Box::new(Clear))
+                .action("导出全部回显", Box::new(ExportOutputToBuffer))
                 .when(assistant_enabled, |menu| {
                     menu.separator()
                         .action("Inline Assist", Box::new(InlineAssist::default()))
@@ -1903,6 +1906,44 @@ print(output)
         cx.notify();
     }
 
+    fn export_output_to_buffer(
+        &mut self,
+        _: &ExportOutputToBuffer,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let content = self.terminal.read(cx).get_content();
+        let terminal_title = self.terminal.read(cx).title(false);
+        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+        let buffer_title = format!("Terminal Export - {} - {}", terminal_title, timestamp);
+
+        let workspace = self.workspace.clone();
+
+        window.defer(cx, move |window, cx| {
+            let Some(workspace) = workspace.upgrade() else {
+                return;
+            };
+
+            let project = workspace.read(cx).project().clone();
+
+            let buffer = project.update(cx, |project, cx| {
+                project.create_local_buffer(&content, None, false, cx)
+            });
+
+            let editor = cx.new(|cx| {
+                let editor = Editor::for_buffer(buffer, Some(project), window, cx);
+                editor.buffer().update(cx, |buffer, cx| {
+                    buffer.set_title(buffer_title, cx);
+                });
+                editor
+            });
+
+            workspace.update(cx, |workspace, cx| {
+                workspace.add_item_to_active_pane(Box::new(editor), None, true, window, cx);
+            });
+        });
+    }
+
     fn max_scroll_top(&self, cx: &App) -> Pixels {
         let terminal = self.terminal.read(cx);
 
@@ -2715,6 +2756,7 @@ impl Render for TerminalView {
             .on_action(cx.listener(TerminalView::paste))
             .on_action(cx.listener(TerminalView::clear))
             .on_action(cx.listener(TerminalView::clear_scrollback))
+            .on_action(cx.listener(TerminalView::export_output_to_buffer))
             .on_action(cx.listener(TerminalView::scroll_line_up))
             .on_action(cx.listener(TerminalView::scroll_line_down))
             .on_action(cx.listener(TerminalView::scroll_page_up))
