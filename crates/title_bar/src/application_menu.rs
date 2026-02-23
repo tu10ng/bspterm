@@ -1,13 +1,10 @@
 use gpui::{Action, Entity, OwnedMenu, OwnedMenuItem, actions};
-use settings::Settings;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use smallvec::SmallVec;
 use ui::{ContextMenu, PopoverMenu, PopoverMenuHandle, Tooltip, prelude::*};
-
-use crate::title_bar_settings::TitleBarSettings;
 
 actions!(
     app_menu,
@@ -172,44 +169,24 @@ impl ApplicationMenu {
     }
 
     fn render_standard_menu(&self, entry: &MenuEntry) -> impl IntoElement {
-        let current_handle = entry.handle.clone();
+        let handle = entry.handle.clone();
 
         let menu_name = entry.menu.name.clone();
         let entry = entry.clone();
 
-        let all_handles: Vec<_> = self
-            .entries
-            .iter()
-            .map(|entry| entry.handle.clone())
-            .collect();
-
-        div()
-            .id(format!("{}-menu-item", menu_name))
-            .occlude()
-            .child(
-                PopoverMenu::new(format!("{}-menu-popover", menu_name))
-                    .menu(move |window, cx| {
-                        Self::build_menu_from_items(entry.clone(), window, cx).into()
-                    })
-                    .trigger(
-                        Button::new(
-                            SharedString::from(format!("{}-menu-trigger", menu_name)),
-                            menu_name,
-                        )
-                        .style(ButtonStyle::Subtle)
-                        .label_size(LabelSize::Small),
-                    )
-                    .with_handle(current_handle.clone()),
-            )
-            .on_hover(move |hover_enter, window, cx| {
-                if *hover_enter && !current_handle.is_deployed() {
-                    all_handles.iter().for_each(|h| h.hide(cx));
-
-                    // We need to defer this so that this menu handle can take focus from the previous menu
-                    let handle = current_handle.clone();
-                    window.defer(cx, move |window, cx| handle.show(window, cx));
-                }
+        PopoverMenu::new(format!("{}-menu-popover", menu_name))
+            .menu(move |window, cx| {
+                Self::build_menu_from_items(entry.clone(), window, cx).into()
             })
+            .trigger(
+                Button::new(
+                    SharedString::from(format!("{}-menu-trigger", menu_name)),
+                    menu_name,
+                )
+                .style(ButtonStyle::Subtle)
+                .label_size(LabelSize::Small),
+            )
+            .with_handle(handle)
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -268,9 +245,8 @@ impl ApplicationMenu {
     }
 }
 
-pub(crate) fn show_menus(cx: &mut App) -> bool {
-    TitleBarSettings::get_global(cx).show_menus
-        && (cfg!(not(target_os = "macos")) || option_env!("ZED_USE_CROSS_PLATFORM_MENU").is_some())
+pub(crate) fn show_menus(_cx: &mut App) -> bool {
+    cfg!(not(target_os = "macos")) || option_env!("ZED_USE_CROSS_PLATFORM_MENU").is_some()
 }
 
 impl Render for ApplicationMenu {

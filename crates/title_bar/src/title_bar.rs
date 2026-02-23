@@ -8,7 +8,7 @@ mod update_version;
 #[cfg(feature = "stories")]
 mod stories;
 
-use crate::application_menu::{ApplicationMenu, show_menus};
+use crate::application_menu::ApplicationMenu;
 pub use platform_title_bar::{
     self, DraggedWindowTab, MergeAllWindows, MoveTabToNewWindow, PlatformTitleBar,
     ShowNextWindowTab, ShowPreviousWindowTab,
@@ -181,8 +181,6 @@ impl Render for TitleBar {
         log::debug!("[TitleBar::render] called");
         let title_bar_settings = *TitleBarSettings::get_global(cx);
 
-        let show_menus = show_menus(cx);
-
         let mut children = Vec::new();
 
         children.push(
@@ -191,15 +189,11 @@ impl Render for TitleBar {
                 .map(|title_bar| {
                     let mut render_project_items = title_bar_settings.show_branch_name
                         || title_bar_settings.show_project_items;
-                    title_bar
-                        .when_some(
-                            self.application_menu.clone().filter(|_| !show_menus),
-                            |title_bar, menu| {
-                                render_project_items &=
-                                    !menu.update(cx, |menu, cx| menu.all_menus_shown(cx));
-                                title_bar.child(menu)
-                            },
-                        )
+                    title_bar.when_some(self.application_menu.clone(), |title_bar, menu| {
+                        render_project_items &=
+                            !menu.update(cx, |menu, cx| menu.all_menus_shown(cx));
+                        title_bar.child(menu)
+                    })
                         .children(self.render_restricted_mode(cx))
                         .when(render_project_items, |title_bar| {
                             title_bar
@@ -252,39 +246,10 @@ impl Render for TitleBar {
                 .into_any_element(),
         );
 
-        if show_menus {
-            self.platform_titlebar.update(cx, |this, _| {
-                this.set_children(
-                    self.application_menu
-                        .clone()
-                        .map(|menu| menu.into_any_element()),
-                );
-            });
-
-            let height = PlatformTitleBar::height(window);
-            let title_bar_color = self.platform_titlebar.update(cx, |platform_titlebar, cx| {
-                platform_titlebar.title_bar_color(window, cx)
-            });
-
-            v_flex()
-                .w_full()
-                .child(self.platform_titlebar.clone().into_any_element())
-                .child(
-                    h_flex()
-                        .bg(title_bar_color)
-                        .h(height)
-                        .pl_2()
-                        .justify_between()
-                        .w_full()
-                        .children(children),
-                )
-                .into_any_element()
-        } else {
-            self.platform_titlebar.update(cx, |this, _| {
-                this.set_children(children);
-            });
-            self.platform_titlebar.clone().into_any_element()
-        }
+        self.platform_titlebar.update(cx, |this, _| {
+            this.set_children(children);
+        });
+        self.platform_titlebar.clone().into_any_element()
     }
 }
 
