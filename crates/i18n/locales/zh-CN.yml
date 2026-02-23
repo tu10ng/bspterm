@@ -276,6 +276,25 @@ multi_connection:
   apply: "应用"
   connect_all: "全部连接"
 
+# Terminal
+terminal:
+  reconnect: "重连"
+  disconnect: "断开连接"
+  rename: "重命名"
+  clear: "清屏"
+  clear_scrollback: "清除回滚缓冲区"
+  export_all_output: "导出全部回显"
+  inline_assist: "内联助手"
+  add_to_thread: "添加到 Agent 会话"
+  close_tab: "关闭终端标签页"
+
+# Script errors
+script:
+  service_unavailable: "脚本服务不可用"
+  error_prefix: "脚本错误"
+  invalid_id: "无效的脚本 ID"
+  shortcut_not_found: "未找到脚本快捷方式"
+
 # Abbreviation Bar
 abbr:
   config_title: "缩写配置"
@@ -288,6 +307,7 @@ abbr:
   applicable_protocol: "适用协议"
   trigger_placeholder: "触发词 (如: g)"
   expansion_placeholder: "展开内容 (如: git)"
+  label: "缩写"
 
 # Button Bar
 button_bar:
@@ -298,6 +318,10 @@ button_bar:
   add_title: "添加按钮"
   edit_name_title: "修改按钮名称"
   name_placeholder: "按钮名称"
+  label: "快捷按钮"
+  edit_script: "修改按钮脚本"
+  hide_button: "隐藏按钮"
+  delete_button: "删除按钮"
 
 # Shortcut Bar
 shortcut:
@@ -306,8 +330,9 @@ shortcut:
   system_shortcuts: "系统快捷键"
   script_shortcuts: "脚本快捷键"
   show: "显示"
+  hide: "隐藏"
   delete: "删除"
-  label: "标签"
+  label: "快捷键"
   shortcut_key: "快捷键"
   shortcut_placeholder: "快捷键 (如 ctrl-shift-1)"
   scope: "适用范围"

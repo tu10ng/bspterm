@@ -55,6 +55,7 @@ use ui::{
     prelude::*,
     scrollbars::{self, GlobalSetting, ScrollbarVisibility},
 };
+use i18n::t;
 use util::ResultExt;
 use workspace::{
     CloseActiveItem, NewCenterTerminal, NewTerminal, Toast, ToolbarItemLocation, Workspace,
@@ -651,26 +652,26 @@ impl TerminalView {
 
         let context_menu = ContextMenu::build(window, cx, |menu, _, _| {
             menu.context(self.focus_handle.clone())
-                .action("New Terminal", Box::new(NewTerminal::default()))
+                .action(t("terminal_panel.new_terminal"), Box::new(NewTerminal::default()))
                 .when(is_disconnected && has_connection_info, |menu| {
-                    menu.action("Reconnect", Box::new(ReconnectTerminal))
+                    menu.action(t("terminal.reconnect"), Box::new(ReconnectTerminal))
                 })
                 .separator()
-                .action("Copy", Box::new(Copy))
-                .action("Paste", Box::new(Paste))
-                .action("Select All", Box::new(SelectAll))
-                .action("Clear", Box::new(Clear))
-                .action("导出全部回显", Box::new(ExportOutputToBuffer))
+                .action(t("menu.copy"), Box::new(Copy))
+                .action(t("menu.paste"), Box::new(Paste))
+                .action(t("menu.select_all"), Box::new(SelectAll))
+                .action(t("terminal.clear"), Box::new(Clear))
+                .action(t("terminal.export_all_output"), Box::new(ExportOutputToBuffer))
                 .when(assistant_enabled, |menu| {
                     menu.separator()
-                        .action("Inline Assist", Box::new(InlineAssist::default()))
+                        .action(t("terminal.inline_assist"), Box::new(InlineAssist::default()))
                         .when(has_selection, |menu| {
-                            menu.action("Add to Agent Thread", Box::new(AddSelectionToThread))
+                            menu.action(t("terminal.add_to_thread"), Box::new(AddSelectionToThread))
                         })
                 })
                 .separator()
                 .action(
-                    "Close Terminal Tab",
+                    t("terminal.close_tab"),
                     Box::new(CloseActiveItem {
                         save_intent: None,
                         close_pinned: true,
@@ -772,7 +773,7 @@ impl TerminalView {
     ) {
         let context_menu = ContextMenu::build(window, cx, |menu, _, _| {
             menu.context(self.focus_handle.clone())
-                .action("添加按钮", Box::new(AddButtonBarButton))
+                .action(t("button_bar.add_button"), Box::new(AddButtonBarButton))
         });
 
         window.focus(&context_menu.focus_handle(cx), cx);
@@ -845,11 +846,11 @@ print(output)
 
         let context_menu = ContextMenu::build(window, cx, |menu, _, _| {
             menu.context(self.focus_handle.clone())
-                .action("修改按钮脚本", Box::new(EditButtonBarButtonScript))
-                .action("修改按钮名称", Box::new(RenameButtonBarButton))
+                .action(t("button_bar.edit_script"), Box::new(EditButtonBarButtonScript))
+                .action(t("button_bar.edit_name_title"), Box::new(RenameButtonBarButton))
                 .separator()
-                .action("隐藏按钮", Box::new(HideButtonBarButton))
-                .action("删除按钮", Box::new(DeleteButtonBarButton))
+                .action(t("button_bar.hide_button"), Box::new(HideButtonBarButton))
+                .action(t("button_bar.delete_button"), Box::new(DeleteButtonBarButton))
         });
 
         window.focus(&context_menu.focus_handle(cx), cx);
@@ -1003,7 +1004,7 @@ print(output)
                 div()
                     .text_xs()
                     .text_color(cx.theme().colors().text_muted)
-                    .child("快捷按钮"),
+                    .child(t("button_bar.label")),
             )
             .children(buttons.iter().map(|button| {
                 let button_id = button.id;
@@ -1123,7 +1124,7 @@ print(output)
             .child(
                 ui::IconButton::new("button-bar-settings", ui::IconName::Settings)
                     .icon_size(ui::IconSize::Small)
-                    .tooltip(Tooltip::text("Configure Button Bar"))
+                    .tooltip(Tooltip::text(t("button_bar.config_title")))
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.configure_button_bar(&ConfigureButtonBar, window, cx);
                     })),
@@ -1171,9 +1172,9 @@ print(output)
         };
 
         let Some(socket_path) = ScriptingServer::get(cx) else {
-            let err_msg = "脚本服务不可用";
+            let err_msg = t("script.service_unavailable");
             log::error!("Scripting server not available for button bar script");
-            self.show_script_error(err_msg, cx);
+            self.show_script_error(&err_msg, cx);
             return;
         };
 
@@ -1207,7 +1208,7 @@ print(output)
                 workspace.show_toast(
                     Toast::new(
                         NotificationId::unique::<ScriptErrorToast>(),
-                        format!("脚本错误: {}", message),
+                        format!("{}: {}", t("script.error_prefix"), message),
                     )
                     .autohide(),
                     cx,
@@ -1360,8 +1361,8 @@ print(output)
 
         let context_menu = ContextMenu::build(window, cx, |menu, _, _| {
             menu.context(self.focus_handle.clone())
-                .action("编辑", Box::new(EditAbbreviation))
-                .action("删除", Box::new(DeleteAbbreviation))
+                .action(t("common.edit"), Box::new(EditAbbreviation))
+                .action(t("common.delete"), Box::new(DeleteAbbreviation))
         });
 
         window.focus(&context_menu.focus_handle(cx), cx);
@@ -1390,7 +1391,7 @@ print(output)
     ) {
         let context_menu = ContextMenu::build(window, cx, |menu, _, _| {
             menu.context(self.focus_handle.clone())
-                .action("添加缩写", Box::new(AddAbbreviation))
+                .action(t("abbr.add_title"), Box::new(AddAbbreviation))
         });
 
         window.focus(&context_menu.focus_handle(cx), cx);
@@ -1446,7 +1447,7 @@ print(output)
                 div()
                     .text_xs()
                     .text_color(cx.theme().colors().text_muted)
-                    .child("缩写"),
+                    .child(t("abbr.label")),
             )
             .children(abbreviations.iter().map(|abbr| {
                 let abbr_id = abbr.id;
@@ -1489,7 +1490,7 @@ print(output)
                     .child(
                         ui::IconButton::new("abbr-bar-add", ui::IconName::Plus)
                             .icon_size(ui::IconSize::Small)
-                            .tooltip(Tooltip::text("添加缩写"))
+                            .tooltip(Tooltip::text(t("abbr.add_title")))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.add_abbreviation(&AddAbbreviation, window, cx);
                             })),
@@ -1497,7 +1498,7 @@ print(output)
                     .child(
                         ui::IconButton::new("abbr-bar-settings", ui::IconName::Settings)
                             .icon_size(ui::IconSize::Small)
-                            .tooltip(Tooltip::text("配置缩写"))
+                            .tooltip(Tooltip::text(t("abbr.config_title")))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.configure_abbr_bar(&ConfigureAbbrBar, window, cx);
                             })),
@@ -1568,7 +1569,7 @@ print(output)
         let script_id = match uuid::Uuid::parse_str(&action.script_id) {
             Ok(id) => id,
             Err(_) => {
-                let err_msg = format!("无效的脚本 ID: {}", action.script_id);
+                let err_msg = format!("{}: {}", t("script.invalid_id"), action.script_id);
                 log::error!("Invalid script shortcut ID: {}", action.script_id);
                 self.show_script_error(&err_msg, cx);
                 return;
@@ -1580,16 +1581,16 @@ print(output)
         };
 
         let Some(shortcut) = store.read(cx).find_script_shortcut(script_id).cloned() else {
-            let err_msg = format!("未找到脚本快捷方式: {}", script_id);
+            let err_msg = format!("{}: {}", t("script.shortcut_not_found"), script_id);
             log::error!("Script shortcut not found: {}", script_id);
             self.show_script_error(&err_msg, cx);
             return;
         };
 
         let Some(socket_path) = ScriptingServer::get(cx) else {
-            let err_msg = "脚本服务不可用";
+            let err_msg = t("script.service_unavailable");
             log::error!("Scripting server not available for script shortcut");
-            self.show_script_error(err_msg, cx);
+            self.show_script_error(&err_msg, cx);
             return;
         };
 
@@ -1633,7 +1634,7 @@ print(output)
                 ShortcutContextInfo::System { keybinding, action_type } => {
                     menu.context(self.focus_handle.clone())
                         .entry(
-                            "隐藏",
+                            t("shortcut.hide"),
                             None,
                             move |_window, cx| {
                                 if let Some(store) = ShortcutBarStoreEntity::try_global(cx) {
@@ -1647,7 +1648,7 @@ print(output)
                 ShortcutContextInfo::Script { id } => {
                     menu.context(self.focus_handle.clone())
                         .entry(
-                            "隐藏",
+                            t("shortcut.hide"),
                             None,
                             move |_window, cx| {
                                 if let Some(store) = ShortcutBarStoreEntity::try_global(cx) {
@@ -1658,7 +1659,7 @@ print(output)
                             },
                         )
                         .entry(
-                            "删除",
+                            t("common.delete"),
                             None,
                             move |_window, cx| {
                                 if let Some(store) = ShortcutBarStoreEntity::try_global(cx) {
@@ -1699,7 +1700,7 @@ print(output)
         let context_menu = ContextMenu::build(window, cx, |menu, _, _| {
             menu.context(self.focus_handle.clone())
                 .entry(
-                    "添加脚本快捷键",
+                    t("shortcut.add_script_shortcut"),
                     None,
                     |window, cx| {
                         window.dispatch_action(Box::new(ConfigureShortcutBar), cx);
@@ -1792,7 +1793,7 @@ print(output)
                 div()
                     .text_xs()
                     .text_color(cx.theme().colors().text_muted)
-                    .child("快捷键"),
+                    .child(t("shortcut.label")),
             )
             .children(display_items.iter().enumerate().map(|(idx, item)| {
                 let (keybinding, label, context_info) = match item {
@@ -1836,7 +1837,7 @@ print(output)
                     .child(
                         ui::IconButton::new("shortcut-bar-add", ui::IconName::Plus)
                             .icon_size(ui::IconSize::Small)
-                            .tooltip(Tooltip::text("添加脚本快捷键"))
+                            .tooltip(Tooltip::text(t("shortcut.add_script_shortcut")))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.open_add_shortcut_modal(window, cx);
                             })),
@@ -1844,7 +1845,7 @@ print(output)
                     .child(
                         ui::IconButton::new("shortcut-bar-settings", ui::IconName::Settings)
                             .icon_size(ui::IconSize::Small)
-                            .tooltip(Tooltip::text("配置快捷键"))
+                            .tooltip(Tooltip::text(t("shortcut.config_title")))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.configure_shortcut_bar(&ConfigureShortcutBar, window, cx);
                             })),
@@ -3062,17 +3063,17 @@ impl Item for TerminalView {
 
         if terminal.connection_info().is_some() {
             if terminal.is_disconnected() {
-                actions.push(("Reconnect".into(), Box::new(ReconnectTerminal) as Box<dyn gpui::Action>));
+                actions.push((t("terminal.reconnect"), Box::new(ReconnectTerminal) as Box<dyn gpui::Action>));
             } else {
-                actions.push(("Disconnect".into(), Box::new(DisconnectTerminal) as Box<dyn gpui::Action>));
+                actions.push((t("terminal.disconnect"), Box::new(DisconnectTerminal) as Box<dyn gpui::Action>));
             }
         }
 
         if terminal.task().is_none() {
-            actions.push(("Rename".into(), Box::new(RenameTerminal) as Box<dyn gpui::Action>));
+            actions.push((t("terminal.rename"), Box::new(RenameTerminal) as Box<dyn gpui::Action>));
         }
 
-        actions.push(("Clear Scrollback".into(), Box::new(ClearScrollback) as Box<dyn gpui::Action>));
+        actions.push((t("terminal.clear_scrollback"), Box::new(ClearScrollback) as Box<dyn gpui::Action>));
 
         actions
     }

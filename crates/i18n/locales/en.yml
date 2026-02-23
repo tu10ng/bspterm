@@ -276,6 +276,25 @@ multi_connection:
   apply: "Apply"
   connect_all: "Connect All"
 
+# Terminal
+terminal:
+  reconnect: "Reconnect"
+  disconnect: "Disconnect"
+  rename: "Rename"
+  clear: "Clear"
+  clear_scrollback: "Clear Scrollback"
+  export_all_output: "Export All Output"
+  inline_assist: "Inline Assist"
+  add_to_thread: "Add to Agent Thread"
+  close_tab: "Close Terminal Tab"
+
+# Script errors
+script:
+  service_unavailable: "Scripting service unavailable"
+  error_prefix: "Script error"
+  invalid_id: "Invalid script ID"
+  shortcut_not_found: "Script shortcut not found"
+
 # Abbreviation Bar
 abbr:
   config_title: "Abbreviation Configuration"
@@ -288,6 +307,7 @@ abbr:
   applicable_protocol: "Applicable Protocol"
   trigger_placeholder: "Trigger word (e.g., g)"
   expansion_placeholder: "Expansion text (e.g., git)"
+  label: "Abbreviations"
 
 # Button Bar
 button_bar:
@@ -298,6 +318,10 @@ button_bar:
   add_title: "Add Button"
   edit_name_title: "Modify Button Name"
   name_placeholder: "Button Name"
+  label: "Quick Buttons"
+  edit_script: "Edit Button Script"
+  hide_button: "Hide Button"
+  delete_button: "Delete Button"
 
 # Shortcut Bar
 shortcut:
@@ -306,8 +330,9 @@ shortcut:
   system_shortcuts: "System Shortcuts"
   script_shortcuts: "Script Shortcuts"
   show: "Show"
+  hide: "Hide"
   delete: "Delete"
-  label: "Label"
+  label: "Shortcuts"
   shortcut_key: "Shortcut Key"
   shortcut_placeholder: "Shortcut key (e.g., ctrl-shift-1)"
   scope: "Scope"
