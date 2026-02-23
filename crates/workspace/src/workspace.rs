@@ -1,3 +1,4 @@
+mod activity_bar;
 pub mod dock;
 pub mod history_manager;
 pub mod invalid_item_view;
@@ -1186,6 +1187,7 @@ pub struct Workspace {
     previous_dock_drag_coordinates: Option<Point<Pixels>>,
     zoomed_position: Option<DockPosition>,
     center: PaneGroup,
+    activity_bar: Entity<activity_bar::ActivityBar>,
     left_dock: Entity<Dock>,
     bottom_dock: Entity<Dock>,
     right_dock: Entity<Dock>,
@@ -1505,12 +1507,11 @@ impl Workspace {
         let left_dock = Dock::new(DockPosition::Left, modal_layer.clone(), window, cx);
         let bottom_dock = Dock::new(DockPosition::Bottom, modal_layer.clone(), window, cx);
         let right_dock = Dock::new(DockPosition::Right, modal_layer.clone(), window, cx);
-        let left_dock_buttons = cx.new(|cx| PanelButtons::new(left_dock.clone(), cx));
+        let activity_bar = cx.new(|cx| activity_bar::ActivityBar::new(left_dock.clone(), cx));
         let bottom_dock_buttons = cx.new(|cx| PanelButtons::new(bottom_dock.clone(), cx));
         let right_dock_buttons = cx.new(|cx| PanelButtons::new(right_dock.clone(), cx));
         let status_bar = cx.new(|cx| {
             let mut status_bar = StatusBar::new(&center_pane.clone(), window, cx);
-            status_bar.add_left_item(left_dock_buttons, window, cx);
             status_bar.add_right_item(right_dock_buttons, window, cx);
             status_bar.add_right_item(bottom_dock_buttons, window, cx);
             status_bar
@@ -1619,6 +1620,7 @@ impl Workspace {
             active_worktree_override: None,
             notifications: Notifications::default(),
             suppressed_notifications: HashSet::default(),
+            activity_bar,
             left_dock,
             bottom_dock,
             right_dock,
@@ -7249,19 +7251,19 @@ impl Render for Workspace {
                     }
                 })
                 .child(
-                    div()
+                    h_flex()
                         .size_full()
                         .relative()
                         .flex_1()
-                        .flex()
-                        .flex_col()
+                        .overflow_hidden()
+                        .child(self.activity_bar.clone())
                         .child(
                             div()
                                 .id("workspace")
                                 .bg(colors.background)
                                 .relative()
                                 .flex_1()
-                                .w_full()
+                                .h_full()
                                 .flex()
                                 .flex_col()
                                 .overflow_hidden()
@@ -7714,13 +7716,13 @@ impl Render for Workspace {
                                     })
                                 }))
                                 .children(self.render_notifications(window, cx)),
-                        )
-                        .when(self.status_bar_visible(cx), |parent| {
-                            parent.child(self.status_bar.clone())
-                        })
-                        .child(self.modal_layer.clone())
-                        .child(self.toast_layer.clone()),
-                ),
+                        ),
+                )
+                .when(self.status_bar_visible(cx), |parent| {
+                    parent.child(self.status_bar.clone())
+                })
+                .child(self.modal_layer.clone())
+                .child(self.toast_layer.clone()),
             window,
             cx,
         )

@@ -310,7 +310,7 @@ impl Into<settings::DockPosition> for DockPosition {
 }
 
 impl DockPosition {
-    fn label(&self) -> &'static str {
+    pub fn label(&self) -> &'static str {
         match self {
             Self::Left => "Left",
             Self::Bottom => "Bottom",
@@ -478,6 +478,10 @@ impl Dock {
 
     pub fn active_panel_index(&self) -> Option<usize> {
         self.active_panel_index
+    }
+
+    pub fn panels(&self) -> impl Iterator<Item = &Arc<dyn PanelHandle>> {
+        self.panel_entries.iter().map(|entry| &entry.panel)
     }
 
     pub fn set_open(&mut self, open: bool, window: &mut Window, cx: &mut Context<Self>) {
@@ -992,18 +996,12 @@ impl Render for PanelButtons {
                 let panel = entry.panel.clone();
 
                 let is_active_button = Some(i) == active_index && is_open;
-                let (action, tooltip) = if is_active_button {
-                    let action = dock.toggle_action();
-
-                    let tooltip: SharedString =
-                        format!("Close {} Dock", dock.position.label()).into();
-
-                    (action, tooltip)
+                let action = if is_active_button {
+                    dock.toggle_action()
                 } else {
-                    let action = entry.panel.toggle_action(window, cx);
-
-                    (action, icon_tooltip.into())
+                    entry.panel.toggle_action(window, cx)
                 };
+                let tooltip: SharedString = icon_tooltip.into();
 
                 let focus_handle = dock.focus_handle(cx);
 
