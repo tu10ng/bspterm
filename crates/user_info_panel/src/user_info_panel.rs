@@ -328,7 +328,7 @@ impl UserInfoPanel {
                     ),
             )
             .child({
-                let user_id = user.instance_id.clone();
+                let user_id = user.instance_id;
                 v_flex()
                     .pl_9()
                     .gap_1()

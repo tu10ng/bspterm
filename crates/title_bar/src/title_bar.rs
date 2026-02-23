@@ -689,6 +689,10 @@ impl TitleBar {
 
         let is_project_selected = name.is_some();
 
+        if !is_project_selected {
+            return div().into_any_element();
+        }
+
         let display_name = if let Some(ref name) = name {
             util::truncate_and_trailoff(name, MAX_PROJECT_NAME_LENGTH)
         } else {

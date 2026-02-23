@@ -311,11 +311,11 @@ impl Render for Onboarding {
                                             .child(
                                                 v_flex()
                                                     .child(
-                                                        Headline::new("Welcome to Zed")
+                                                        Headline::new("Welcome to BspTerm")
                                                             .size(HeadlineSize::Small),
                                                     )
                                                     .child(
-                                                        Label::new("The editor for what's next")
+                                                        Label::new("Terminal Session Manager")
                                                             .color(Color::Muted)
                                                             .size(LabelSize::Small)
                                                             .italic(),

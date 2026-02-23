@@ -530,7 +530,7 @@ fn main() {
 
         bspterm::init(cx);
         project::Project::init(&client, cx);
-        debugger_ui::init(cx);
+        // debugger_ui::init(cx);
         debugger_tools::init(cx);
         client::init(&client, cx);
 
@@ -616,22 +616,22 @@ fn main() {
         acp_tools::init(cx);
         bspterm::telemetry_log::init(cx);
         bspterm::remote_debug::init(cx);
-        edit_prediction_ui::init(cx);
+        // edit_prediction_ui::init(cx);
         web_search::init(cx);
         web_search_providers::init(app_state.client.clone(), cx);
         snippet_provider::init(cx);
         edit_prediction_registry::init(app_state.client.clone(), app_state.user_store.clone(), cx);
         let prompt_builder = PromptBuilder::load(app_state.fs.clone(), stdout_is_a_pty(), cx);
         project::AgentRegistryStore::init_global(cx);
-        agent_ui::init(
-            app_state.fs.clone(),
-            app_state.client.clone(),
-            prompt_builder.clone(),
-            app_state.languages.clone(),
-            false,
-            cx,
-        );
-        agent_ui_v2::agents_panel::init(cx);
+        // agent_ui::init(
+        //     app_state.fs.clone(),
+        //     app_state.client.clone(),
+        //     prompt_builder.clone(),
+        //     app_state.languages.clone(),
+        //     false,
+        //     cx,
+        // );
+        // agent_ui_v2::agents_panel::init(cx);
         repl::init(app_state.fs.clone(), cx);
         recent_projects::init(cx);
         dev_container::init(cx);
@@ -641,7 +641,7 @@ fn main() {
         editor::init(cx);
         image_viewer::init(cx);
         repl::notebook::init(cx);
-        diagnostics::init(cx);
+        // diagnostics::init(cx);
 
         audio::init(cx);
         local_user::init(cx);
@@ -661,7 +661,7 @@ fn main() {
         tasks_ui::init(cx);
         snippets_ui::init(cx);
         channel::init(&app_state.client.clone(), app_state.user_store.clone(), cx);
-        search::init(cx);
+        // search::init(cx);
         cx.set_global(workspace::PaneSearchBarCallbacks {
             setup_search_bar: |languages, toolbar, window, cx| {
                 let search_bar = cx.new(|cx| search::BufferSearchBar::new(languages, window, cx));
@@ -690,8 +690,8 @@ fn main() {
         language_tools::init(cx);
         call::init(app_state.client.clone(), app_state.user_store.clone(), cx);
         notifications::init(app_state.client.clone(), app_state.user_store.clone(), cx);
-        git_ui::init(cx);
-        git_graph::init(cx);
+        // git_ui::init(cx);
+        // git_graph::init(cx);
         feedback::init(cx);
         markdown_preview::init(cx);
         svg_preview::init(cx);
@@ -699,7 +699,7 @@ fn main() {
         settings_ui::init(cx);
         keymap_editor::init(cx);
         extensions_ui::init(cx);
-        edit_prediction::init(cx);
+        // edit_prediction::init(cx);
         inspector_ui::init(app_state.clone(), cx);
         json_schema_store::init(cx);
         miniprofiler_ui::init(*STARTUP_TIME.get().unwrap(), cx);

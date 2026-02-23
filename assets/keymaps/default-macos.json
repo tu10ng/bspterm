@@ -3,13 +3,6 @@
   {
     "use_key_equivalents": true,
     "bindings": {
-      "f4": "debugger::Start",
-      "shift-f5": "debugger::Stop",
-      "shift-cmd-f5": "debugger::RerunSession",
-      "f6": "debugger::Pause",
-      "f7": "debugger::StepOver",
-      "ctrl-f11": "debugger::StepInto",
-      "shift-f11": "debugger::StepOut",
       "home": "menu::SelectFirst",
       "shift-pageup": "menu::SelectFirst",
       "pageup": "menu::SelectFirst",
@@ -446,47 +439,6 @@
     },
   },
   {
-    "context": "ProjectSearchBar",
-    "use_key_equivalents": true,
-    "bindings": {
-      "escape": "project_search::ToggleFocus",
-      "cmd-shift-j": "project_search::ToggleFilters",
-      "cmd-shift-enter": "project_search::ToggleAllSearchResults",
-      "cmd-shift-f": "search::FocusSearch",
-      "cmd-shift-h": "search::ToggleReplace",
-      "alt-cmd-g": "search::ToggleRegex",
-      "alt-cmd-x": "search::ToggleRegex",
-    },
-  },
-  {
-    "context": "ProjectSearchBar > Editor",
-    "use_key_equivalents": true,
-    "bindings": {
-      "up": "search::PreviousHistoryQuery",
-      "down": "search::NextHistoryQuery",
-    },
-  },
-  {
-    "context": "ProjectSearchBar && in_replace > Editor",
-    "use_key_equivalents": true,
-    "bindings": {
-      "enter": "search::ReplaceNext",
-      "cmd-enter": "search::ReplaceAll",
-    },
-  },
-  {
-    "context": "ProjectSearchView",
-    "use_key_equivalents": true,
-    "bindings": {
-      "escape": "project_search::ToggleFocus",
-      "cmd-shift-j": "project_search::ToggleFilters",
-      "cmd-shift-enter": "project_search::ToggleAllSearchResults",
-      "cmd-shift-h": "search::ToggleReplace",
-      "alt-cmd-g": "search::ToggleRegex",
-      "alt-cmd-x": "search::ToggleRegex",
-    },
-  },
-  {
     "context": "Pane",
     "use_key_equivalents": true,
     "bindings": {
@@ -504,7 +456,6 @@
       "cmd-k u": ["pane::CloseCleanItems", { "close_pinned": false }],
       "cmd-k w": ["pane::CloseAllItems", { "close_pinned": false }],
       "cmd-k cmd-w": "workspace::CloseAllItemsAndPanes",
-      "cmd-f": "project_search::ToggleFocus",
       "cmd-g": "search::SelectNextMatch",
       "cmd-shift-g": "search::SelectPreviousMatch",
       "cmd-shift-h": "search::ToggleReplace",
@@ -512,7 +463,6 @@
       "alt-enter": "search::SelectAllMatches",
       "alt-cmd-c": "search::ToggleCaseSensitive",
       "alt-cmd-w": "search::ToggleWholeWord",
-      "alt-cmd-f": "project_search::ToggleFilters",
       "alt-cmd-x": "search::ToggleRegex",
       "cmd-k shift-enter": "pane::TogglePinTab",
     },
@@ -683,7 +633,6 @@
       "ctrl-shift-tab": ["tab_switcher::Toggle", { "select_last": true }],
       "ctrl-tab": "tab_switcher::Toggle",
       "cmd-shift-p": "command_palette::Toggle",
-      "cmd-shift-m": "diagnostics::Deploy",
       "cmd-shift-e": "project_panel::ToggleFocus",
       "cmd-shift-b": "outline_panel::ToggleFocus",
       "ctrl-shift-g": "git_panel::ToggleFocus",
@@ -703,7 +652,6 @@
       "cmd-k shift-up": "workspace::SwapPaneUp",
       "cmd-k shift-down": "workspace::SwapPaneDown",
       "cmd-shift-x": "zed::Extensions",
-      "f5": "debugger::Rerun",
       "cmd-w": "workspace::CloseActiveDock",
     },
   },
@@ -721,21 +669,6 @@
       // "foo-bar": ["task::Spawn", { "task_name": "MyTask", "reveal_target": "dock" }]
       // or by tag:
       // "foo-bar": ["task::Spawn", { "task_tag": "MyTag" }],
-    },
-  },
-  {
-    "context": "Workspace && debugger_running",
-    "use_key_equivalents": true,
-    "bindings": {
-      "f5": "zed::NoAction",
-      "f11": "debugger::StepInto",
-    },
-  },
-  {
-    "context": "Workspace && debugger_stopped",
-    "use_key_equivalents": true,
-    "bindings": {
-      "f5": "debugger::Continue",
     },
   },
   // Bindings from Sublime Text
@@ -892,13 +825,6 @@
     },
   },
   {
-    "context": "ProjectSearchBar && !in_replace",
-    "use_key_equivalents": true,
-    "bindings": {
-      "cmd-enter": "project_search::SearchInNew",
-    },
-  },
-  {
     "context": "OutlinePanel && not_editing",
     "use_key_equivalents": true,
     "bindings": {
@@ -951,20 +877,6 @@
     "use_key_equivalents": true,
     "bindings": {
       "space": "project_panel::Open",
-    },
-  },
-  {
-    "context": "VariableList",
-    "use_key_equivalents": true,
-    "bindings": {
-      "left": "variable_list::CollapseSelectedEntry",
-      "right": "variable_list::ExpandSelectedEntry",
-      "enter": "variable_list::EditVariable",
-      "cmd-c": "variable_list::CopyVariableValue",
-      "cmd-alt-c": "variable_list::CopyVariableName",
-      "delete": "variable_list::RemoveWatch",
-      "backspace": "variable_list::RemoveWatch",
-      "alt-enter": "variable_list::AddWatch",
     },
   },
   {
@@ -1051,23 +963,6 @@
       "cmd-enter": "git::Commit",
       "cmd-shift-enter": "git::Amend",
       "alt-tab": "git::GenerateCommitMessage",
-    },
-  },
-  {
-    "context": "DebugPanel",
-    "bindings": {
-      "cmd-t": "debugger::ToggleThreadPicker",
-      "cmd-i": "debugger::ToggleSessionPicker",
-      "shift-alt-escape": "debugger::ToggleExpandItem",
-    },
-  },
-  {
-    "context": "BreakpointList",
-    "bindings": {
-      "space": "debugger::ToggleEnableBreakpoint",
-      "backspace": "debugger::UnsetBreakpoint",
-      "left": "debugger::PreviousBreakpointProperty",
-      "right": "debugger::NextBreakpointProperty",
     },
   },
   {
@@ -1231,21 +1126,6 @@
     "use_key_equivalents": true,
     "bindings": {
       "escape": "menu::Cancel",
-    },
-  },
-  {
-    "context": "Diagnostics",
-    "use_key_equivalents": true,
-    "bindings": {
-      "ctrl-r": "diagnostics::ToggleDiagnosticsRefresh",
-    },
-  },
-  {
-    "context": "DebugConsole > Editor",
-    "use_key_equivalents": true,
-    "bindings": {
-      "enter": "menu::Confirm",
-      "alt-enter": "console::WatchExpression",
     },
   },
   {
@@ -1427,15 +1307,6 @@
       "cmd-0": "image_viewer::ResetZoom",
       "cmd-1": "image_viewer::ZoomToActualSize",
       "cmd-shift-0": "image_viewer::FitToView",
-    },
-  },
-  {
-    "context": "RunModal",
-    "bindings": {
-      "cmd-1": "new_process_modal::ActivateTaskTab",
-      "cmd-2": "new_process_modal::ActivateDebugTab",
-      "cmd-3": "new_process_modal::ActivateAttachTab",
-      "cmd-4": "new_process_modal::ActivateLaunchTab",
     },
   },
   {

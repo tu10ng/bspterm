@@ -1,8 +1,7 @@
 use crate::{
-    NewFile, Open, PathList, SerializedWorkspaceLocation, WORKSPACE_DB, Workspace, WorkspaceId,
+    NewFile, PathList, SerializedWorkspaceLocation, WORKSPACE_DB, Workspace, WorkspaceId,
     item::{Item, ItemEvent},
 };
-use git::Clone as GitClone;
 use gpui::WeakEntity;
 use gpui::{
     Action, App, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
@@ -13,7 +12,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ui::{ButtonLike, Divider, DividerColor, KeyBinding, Vector, VectorName, prelude::*};
 use util::ResultExt;
-use bspterm_actions::{Extensions, OpenOnboarding, OpenSettings, agent, command_palette};
+use bspterm_actions::{Extensions, OpenKeymap, OpenOnboarding, OpenSettings, command_palette};
 
 #[derive(PartialEq, Clone, Debug, Deserialize, Serialize, JsonSchema, Action)]
 #[action(namespace = welcome)]
@@ -136,29 +135,24 @@ impl SectionEntry {
     }
 }
 
-const CONTENT: (Section<4>, Section<3>) = (
+const CONTENT: (Section<3>, Section<3>) = (
     Section {
-        title: "Get Started",
+        title: "Connect",
         entries: [
             SectionEntry {
-                icon: IconName::Plus,
-                title: "New File",
-                action: &NewFile,
-            },
-            SectionEntry {
-                icon: IconName::FolderOpen,
-                title: "Open Project",
-                action: &Open,
-            },
-            SectionEntry {
-                icon: IconName::CloudDownload,
-                title: "Clone Repository",
-                action: &GitClone,
+                icon: IconName::Server,
+                title: "Remote Explorer",
+                action: &bspterm_actions::remote_explorer::ToggleFocus,
             },
             SectionEntry {
                 icon: IconName::ListCollapse,
                 title: "Open Command Palette",
                 action: &command_palette::Toggle,
+            },
+            SectionEntry {
+                icon: IconName::Plus,
+                title: "New File",
+                action: &NewFile,
             },
         ],
     },
@@ -171,9 +165,9 @@ const CONTENT: (Section<4>, Section<3>) = (
                 action: &OpenSettings,
             },
             SectionEntry {
-                icon: IconName::ZedAssistant,
-                title: "View AI Settings",
-                action: &agent::OpenSettings,
+                icon: IconName::Keyboard,
+                title: "Open Keymap",
+                action: &OpenKeymap,
             },
             SectionEntry {
                 icon: IconName::Blocks,
@@ -356,9 +350,9 @@ impl Render for WelcomePage {
         };
 
         let welcome_label = if self.fallback_to_recent_projects {
-            "Welcome back to Zed"
+            "Welcome back to BspTerm"
         } else {
-            "Welcome to Zed"
+            "Welcome to BspTerm"
         };
 
         h_flex()
@@ -394,7 +388,7 @@ impl Render for WelcomePage {
                                     .child(Vector::square(VectorName::ZedLogo, rems_from_px(45.)))
                                     .child(
                                         v_flex().child(Headline::new(welcome_label)).child(
-                                            Label::new("The editor for what's next")
+                                            Label::new("Terminal Session Manager")
                                                 .size(LabelSize::Small)
                                                 .color(Color::Muted)
                                                 .italic(),

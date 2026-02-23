@@ -13,7 +13,7 @@ pub mod visual_tests;
 #[cfg(target_os = "windows")]
 pub(crate) mod windows_only_instance;
 
-use agent_ui::{AgentDiffToolbar, AgentPanelDelegate};
+use agent_ui::AgentDiffToolbar;
 use agent_ui_v2::agents_panel::AgentsPanel;
 use anyhow::Context as _;
 pub use app_menus::*;
@@ -22,19 +22,18 @@ use audio::{AudioSettings, REPLAY_DURATION};
 use breadcrumbs::Breadcrumbs;
 use client::zed_urls;
 use collections::VecDeque;
-use debugger_ui::debugger_panel::DebugPanel;
+// use debugger_ui::debugger_panel::DebugPanel;
 use editor::{Editor, MultiBuffer};
 use extension_host::ExtensionStore;
 use feature_flags::{FeatureFlagAppExt as _, PanicFeatureFlag};
 use fs::Fs;
-use futures::FutureExt as _;
 use futures::future::Either;
 use futures::{StreamExt, channel::mpsc, select_biased};
 use git_ui::commit_view::CommitViewToolbar;
-use git_ui::git_panel::GitPanel;
+// use git_ui::git_panel::GitPanel;
 use git_ui::project_diff::{BranchDiffToolbar, ProjectDiffToolbar};
 use gpui::{
-    Action, App, AppContext as _, AsyncWindowContext, Context, DismissEvent, Element, Entity,
+    Action, App, AppContext as _, Context, DismissEvent, Element, Entity,
     Focusable, KeyBinding, ParentElement, PathPromptOptions, PromptLevel, ReadGlobal, SharedString,
     Task, TitlebarOptions, UpdateGlobal, WeakEntity, Window, WindowHandle, WindowKind,
     WindowOptions, actions, image_cache, point, px, retain_all,
@@ -54,7 +53,7 @@ use paths::{
     local_debug_file_relative_path, local_settings_file_relative_path,
     local_tasks_file_relative_path,
 };
-use project::{DirectoryLister, DisableAiSettings, ProjectItem};
+use project::{DirectoryLister, ProjectItem};
 use project_panel::ProjectPanel;
 use prompt_store::PromptBuilder;
 use remote_explorer::RemoteExplorer;
@@ -442,9 +441,6 @@ pub fn initialize_workspace(
             }
         });
 
-        let search_button = cx.new(|_| search::search_status_button::SearchButton::new());
-        let diagnostic_summary =
-            cx.new(|cx| diagnostics::items::DiagnosticIndicator::new(workspace, cx));
         let activity_indicator = activity_indicator::ActivityIndicator::new(
             workspace,
             workspace.project().read(cx).languages().clone(),
@@ -474,9 +470,7 @@ pub fn initialize_workspace(
         let line_ending_indicator =
             cx.new(|_| line_ending_selector::LineEndingIndicator::default());
         workspace.status_bar().update(cx, |status_bar, cx| {
-            status_bar.add_left_item(search_button, window, cx);
             status_bar.add_left_item(lsp_button, window, cx);
-            status_bar.add_left_item(diagnostic_summary, window, cx);
             status_bar.add_left_item(activity_indicator, window, cx);
             status_bar.add_right_item(edit_prediction_ui, window, cx);
             status_bar.add_right_item(active_buffer_encoding, window, cx);
@@ -667,7 +661,7 @@ fn show_software_emulation_warning_if_needed(
 }
 
 fn initialize_panels(
-    prompt_builder: Arc<PromptBuilder>,
+    _prompt_builder: Arc<PromptBuilder>,
     window: &mut Window,
     cx: &mut Context<Workspace>,
 ) {
@@ -679,8 +673,8 @@ fn initialize_panels(
         let terminal_panel = TerminalPanel::load(workspace_handle.clone(), cx.clone());
         let editor_panel = EditorPanel::load(workspace_handle.clone(), cx.clone());
         let script_panel = script_panel::ScriptPanel::load(workspace_handle.clone(), cx.clone());
-        let git_panel = GitPanel::load(workspace_handle.clone(), cx.clone());
-        let debug_panel = DebugPanel::load(workspace_handle.clone(), cx);
+        // let git_panel = GitPanel::load(workspace_handle.clone(), cx.clone());
+        // let debug_panel = DebugPanel::load(workspace_handle.clone(), cx);
         let user_info_panel = user_info_panel::UserInfoPanel::load(workspace_handle.clone(), cx.clone());
 
         async fn add_panel_when_ready(
@@ -706,11 +700,11 @@ fn initialize_panels(
             add_panel_when_ready(terminal_panel, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(editor_panel, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(script_panel, workspace_handle.clone(), cx.clone()),
-            add_panel_when_ready(git_panel, workspace_handle.clone(), cx.clone()),
-            add_panel_when_ready(debug_panel, workspace_handle.clone(), cx.clone()),
+            // add_panel_when_ready(git_panel, workspace_handle.clone(), cx.clone()),
+            // add_panel_when_ready(debug_panel, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(user_info_panel, workspace_handle.clone(), cx.clone()),
-            initialize_agent_panel(workspace_handle.clone(), prompt_builder, cx.clone()).map(|r| r.log_err()),
-            initialize_agents_panel(workspace_handle, cx.clone()).map(|r| r.log_err())
+            // initialize_agent_panel(workspace_handle.clone(), prompt_builder, cx.clone()).map(|r| r.log_err()),
+            // initialize_agents_panel(workspace_handle, cx.clone()).map(|r| r.log_err())
         );
 
         anyhow::Ok(())
@@ -718,112 +712,112 @@ fn initialize_panels(
     .detach();
 }
 
-fn setup_or_teardown_ai_panel<P: Panel>(
-    workspace: &mut Workspace,
-    window: &mut Window,
-    cx: &mut Context<Workspace>,
-    load_panel: impl FnOnce(
-        WeakEntity<Workspace>,
-        AsyncWindowContext,
-    ) -> Task<anyhow::Result<Entity<P>>>
-    + 'static,
-) -> Task<anyhow::Result<()>> {
-    let disable_ai = SettingsStore::global(cx)
-        .get::<DisableAiSettings>(None)
-        .disable_ai
-        || cfg!(test);
-    let existing_panel = workspace.panel::<P>(cx);
-    match (disable_ai, existing_panel) {
-        (false, None) => cx.spawn_in(window, async move |workspace, cx| {
-            let panel = load_panel(workspace.clone(), cx.clone()).await?;
-            workspace.update_in(cx, |workspace, window, cx| {
-                let disable_ai = SettingsStore::global(cx)
-                    .get::<DisableAiSettings>(None)
-                    .disable_ai;
-                let have_panel = workspace.panel::<P>(cx).is_some();
-                if !disable_ai && !have_panel {
-                    workspace.add_panel(panel, window, cx);
-                }
-            })
-        }),
-        (true, Some(existing_panel)) => {
-            workspace.remove_panel::<P>(&existing_panel, window, cx);
-            Task::ready(Ok(()))
-        }
-        _ => Task::ready(Ok(())),
-    }
-}
+// fn setup_or_teardown_ai_panel<P: Panel>(
+//     workspace: &mut Workspace,
+//     window: &mut Window,
+//     cx: &mut Context<Workspace>,
+//     load_panel: impl FnOnce(
+//         WeakEntity<Workspace>,
+//         AsyncWindowContext,
+//     ) -> Task<anyhow::Result<Entity<P>>>
+//     + 'static,
+// ) -> Task<anyhow::Result<()>> {
+//     let disable_ai = SettingsStore::global(cx)
+//         .get::<DisableAiSettings>(None)
+//         .disable_ai
+//         || cfg!(test);
+//     let existing_panel = workspace.panel::<P>(cx);
+//     match (disable_ai, existing_panel) {
+//         (false, None) => cx.spawn_in(window, async move |workspace, cx| {
+//             let panel = load_panel(workspace.clone(), cx.clone()).await?;
+//             workspace.update_in(cx, |workspace, window, cx| {
+//                 let disable_ai = SettingsStore::global(cx)
+//                     .get::<DisableAiSettings>(None)
+//                     .disable_ai;
+//                 let have_panel = workspace.panel::<P>(cx).is_some();
+//                 if !disable_ai && !have_panel {
+//                     workspace.add_panel(panel, window, cx);
+//                 }
+//             })
+//         }),
+//         (true, Some(existing_panel)) => {
+//             workspace.remove_panel::<P>(&existing_panel, window, cx);
+//             Task::ready(Ok(()))
+//         }
+//         _ => Task::ready(Ok(())),
+//     }
+// }
 
-async fn initialize_agent_panel(
-    workspace_handle: WeakEntity<Workspace>,
-    prompt_builder: Arc<PromptBuilder>,
-    mut cx: AsyncWindowContext,
-) -> anyhow::Result<()> {
-    workspace_handle
-        .update_in(&mut cx, |workspace, window, cx| {
-            let prompt_builder = prompt_builder.clone();
-            setup_or_teardown_ai_panel(workspace, window, cx, move |workspace, cx| {
-                agent_ui::AgentPanel::load(workspace, prompt_builder, cx)
-            })
-        })?
-        .await?;
+// async fn initialize_agent_panel(
+//     workspace_handle: WeakEntity<Workspace>,
+//     prompt_builder: Arc<PromptBuilder>,
+//     mut cx: AsyncWindowContext,
+// ) -> anyhow::Result<()> {
+//     workspace_handle
+//         .update_in(&mut cx, |workspace, window, cx| {
+//             let prompt_builder = prompt_builder.clone();
+//             setup_or_teardown_ai_panel(workspace, window, cx, move |workspace, cx| {
+//                 agent_ui::AgentPanel::load(workspace, prompt_builder, cx)
+//             })
+//         })?
+//         .await?;
+//
+//     workspace_handle.update_in(&mut cx, |workspace, window, cx| {
+//         let prompt_builder = prompt_builder.clone();
+//         cx.observe_global_in::<SettingsStore>(window, move |workspace, window, cx| {
+//             let prompt_builder = prompt_builder.clone();
+//             setup_or_teardown_ai_panel(workspace, window, cx, move |workspace, cx| {
+//                 agent_ui::AgentPanel::load(workspace, prompt_builder, cx)
+//             })
+//             .detach_and_log_err(cx);
+//         })
+//         .detach();
+//
+//         // Register the actions that are shared between `assistant` and `assistant2`.
+//         //
+//         // We need to do this here instead of within the individual `init`
+//         // functions so that we only register the actions once.
+//         //
+//         // Once we ship `assistant2` we can push this back down into `agent::agent_panel::init`.
+//         if !cfg!(test) {
+//             <dyn AgentPanelDelegate>::set_global(
+//                 Arc::new(agent_ui::ConcreteAssistantPanelDelegate),
+//                 cx,
+//             );
+//
+//             workspace
+//                 .register_action(agent_ui::AgentPanel::toggle_focus)
+//                 .register_action(agent_ui::InlineAssistant::inline_assist);
+//         }
+//     })?;
+//
+//     anyhow::Ok(())
+// }
 
-    workspace_handle.update_in(&mut cx, |workspace, window, cx| {
-        let prompt_builder = prompt_builder.clone();
-        cx.observe_global_in::<SettingsStore>(window, move |workspace, window, cx| {
-            let prompt_builder = prompt_builder.clone();
-            setup_or_teardown_ai_panel(workspace, window, cx, move |workspace, cx| {
-                agent_ui::AgentPanel::load(workspace, prompt_builder, cx)
-            })
-            .detach_and_log_err(cx);
-        })
-        .detach();
-
-        // Register the actions that are shared between `assistant` and `assistant2`.
-        //
-        // We need to do this here instead of within the individual `init`
-        // functions so that we only register the actions once.
-        //
-        // Once we ship `assistant2` we can push this back down into `agent::agent_panel::init`.
-        if !cfg!(test) {
-            <dyn AgentPanelDelegate>::set_global(
-                Arc::new(agent_ui::ConcreteAssistantPanelDelegate),
-                cx,
-            );
-
-            workspace
-                .register_action(agent_ui::AgentPanel::toggle_focus)
-                .register_action(agent_ui::InlineAssistant::inline_assist);
-        }
-    })?;
-
-    anyhow::Ok(())
-}
-
-async fn initialize_agents_panel(
-    workspace_handle: WeakEntity<Workspace>,
-    mut cx: AsyncWindowContext,
-) -> anyhow::Result<()> {
-    workspace_handle
-        .update_in(&mut cx, |workspace, window, cx| {
-            setup_or_teardown_ai_panel(workspace, window, cx, |workspace, cx| {
-                AgentsPanel::load(workspace, cx)
-            })
-        })?
-        .await?;
-
-    workspace_handle.update_in(&mut cx, |_workspace, window, cx| {
-        cx.observe_global_in::<SettingsStore>(window, move |workspace, window, cx| {
-            setup_or_teardown_ai_panel(workspace, window, cx, |workspace, cx| {
-                AgentsPanel::load(workspace, cx)
-            })
-            .detach_and_log_err(cx);
-        })
-        .detach();
-    })?;
-
-    anyhow::Ok(())
-}
+// async fn initialize_agents_panel(
+//     workspace_handle: WeakEntity<Workspace>,
+//     mut cx: AsyncWindowContext,
+// ) -> anyhow::Result<()> {
+//     workspace_handle
+//         .update_in(&mut cx, |workspace, window, cx| {
+//             setup_or_teardown_ai_panel(workspace, window, cx, |workspace, cx| {
+//                 AgentsPanel::load(workspace, cx)
+//             })
+//         })?
+//         .await?;
+//
+//     workspace_handle.update_in(&mut cx, |_workspace, window, cx| {
+//         cx.observe_global_in::<SettingsStore>(window, move |workspace, window, cx| {
+//             setup_or_teardown_ai_panel(workspace, window, cx, |workspace, cx| {
+//                 AgentsPanel::load(workspace, cx)
+//             })
+//             .detach_and_log_err(cx);
+//         })
+//         .detach();
+//     })?;
+//
+//     anyhow::Ok(())
+// }
 
 fn register_actions(
     app_state: Arc<AppState>,

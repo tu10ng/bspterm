@@ -33,12 +33,6 @@
       "ctrl-,": "zed::OpenSettings",
       "ctrl-alt-,": "zed::OpenSettingsFile",
       "ctrl-q": "zed::Quit",
-      "f4": "debugger::Start",
-      "shift-f5": "debugger::Stop",
-      "ctrl-shift-f5": "debugger::RerunSession",
-      "f6": "debugger::Pause",
-      "f10": "debugger::StepOver",
-      "shift-f11": "debugger::StepOut",
       "f11": "zed::ToggleFullScreen",
       "ctrl-shift-i": "edit_prediction::ToggleMenu",
       "shift-alt-l": "lsp_tool::ToggleMenu",
@@ -398,41 +392,6 @@
     },
   },
   {
-    "context": "ProjectSearchBar",
-    "use_key_equivalents": true,
-    "bindings": {
-      "escape": "project_search::ToggleFocus",
-      "ctrl-shift-f": "search::FocusSearch",
-      "ctrl-shift-h": "search::ToggleReplace",
-      "alt-r": "search::ToggleRegex", // vscode
-    },
-  },
-  {
-    "context": "ProjectSearchBar > Editor",
-    "use_key_equivalents": true,
-    "bindings": {
-      "up": "search::PreviousHistoryQuery",
-      "down": "search::NextHistoryQuery",
-    },
-  },
-  {
-    "context": "ProjectSearchBar && in_replace > Editor",
-    "use_key_equivalents": true,
-    "bindings": {
-      "enter": "search::ReplaceNext",
-      "ctrl-alt-enter": "search::ReplaceAll",
-    },
-  },
-  {
-    "context": "ProjectSearchView",
-    "use_key_equivalents": true,
-    "bindings": {
-      "escape": "project_search::ToggleFocus",
-      "ctrl-shift-h": "search::ToggleReplace",
-      "alt-r": "search::ToggleRegex", // vscode
-    },
-  },
-  {
     "context": "Pane",
     "use_key_equivalents": true,
     "bindings": {
@@ -467,14 +426,11 @@
       "alt-right": "pane::GoForward",
       "f3": "search::SelectNextMatch",
       "shift-f3": "search::SelectPreviousMatch",
-      "ctrl-shift-f": "project_search::ToggleFocus",
       "shift-alt-h": "search::ToggleReplace",
       "alt-l": "search::ToggleSelection",
       "alt-enter": "search::SelectAllMatches",
       "alt-c": "search::ToggleCaseSensitive",
       "alt-w": "search::ToggleWholeWord",
-      "alt-f": "project_search::ToggleFilters",
-      "ctrl-shift-enter": "project_search::ToggleAllSearchResults",
       "alt-r": "search::ToggleRegex",
       // "ctrl-shift-alt-x": "search::ToggleRegex",
       "ctrl-k shift-enter": "pane::TogglePinTab",
@@ -617,7 +573,6 @@
       "ctrl-e": "file_finder::Toggle",
       "f1": "command_palette::Toggle",
       "ctrl-shift-p": "command_palette::Toggle",
-      "ctrl-shift-m": "diagnostics::Deploy",
       "ctrl-shift-e": "project_panel::ToggleFocus",
       "ctrl-shift-b": "outline_panel::ToggleFocus",
       "ctrl-shift-g": "git_panel::ToggleFocus",
@@ -647,23 +602,8 @@
       // "foo-bar": ["task::Spawn", { "task_name": "MyTask", "reveal_target": "dock" }]
       // or by tag:
       // "foo-bar": ["task::Spawn", { "task_tag": "MyTag" }],
-      "f5": "debugger::Rerun",
       "ctrl-f4": "workspace::CloseActiveDock",
       "ctrl-w": "workspace::CloseActiveDock",
-    },
-  },
-  {
-    "context": "Workspace && debugger_running",
-    "use_key_equivalents": true,
-    "bindings": {
-      "f5": "zed::NoAction",
-    },
-  },
-  {
-    "context": "Workspace && debugger_stopped",
-    "use_key_equivalents": true,
-    "bindings": {
-      "f5": "debugger::Continue",
     },
   },
   {
@@ -831,13 +771,6 @@
     },
   },
   {
-    "context": "ProjectSearchBar && !in_replace",
-    "use_key_equivalents": true,
-    "bindings": {
-      "ctrl-enter": "project_search::SearchInNew",
-    },
-  },
-  {
     "context": "OutlinePanel && not_editing",
     "use_key_equivalents": true,
     "bindings": {
@@ -984,39 +917,6 @@
     },
   },
   {
-    "context": "DebugPanel",
-    "use_key_equivalents": true,
-    "bindings": {
-      "ctrl-t": "debugger::ToggleThreadPicker",
-      "ctrl-i": "debugger::ToggleSessionPicker",
-      "shift-alt-escape": "debugger::ToggleExpandItem",
-    },
-  },
-  {
-    "context": "VariableList",
-    "use_key_equivalents": true,
-    "bindings": {
-      "left": "variable_list::CollapseSelectedEntry",
-      "right": "variable_list::ExpandSelectedEntry",
-      "enter": "variable_list::EditVariable",
-      "ctrl-c": "variable_list::CopyVariableValue",
-      "ctrl-alt-c": "variable_list::CopyVariableName",
-      "delete": "variable_list::RemoveWatch",
-      "backspace": "variable_list::RemoveWatch",
-      "alt-enter": "variable_list::AddWatch",
-    },
-  },
-  {
-    "context": "BreakpointList",
-    "use_key_equivalents": true,
-    "bindings": {
-      "space": "debugger::ToggleEnableBreakpoint",
-      "backspace": "debugger::UnsetBreakpoint",
-      "left": "debugger::PreviousBreakpointProperty",
-      "right": "debugger::NextBreakpointProperty",
-    },
-  },
-  {
     "context": "Picker > Editor",
     "use_key_equivalents": true,
     "bindings": {
@@ -1155,21 +1055,6 @@
     "use_key_equivalents": true,
     "bindings": {
       "escape": "menu::Cancel",
-    },
-  },
-  {
-    "context": "Diagnostics",
-    "use_key_equivalents": true,
-    "bindings": {
-      "ctrl-r": "diagnostics::ToggleDiagnosticsRefresh",
-    },
-  },
-  {
-    "context": "DebugConsole > Editor",
-    "use_key_equivalents": true,
-    "bindings": {
-      "enter": "menu::Confirm",
-      "alt-enter": "console::WatchExpression",
     },
   },
   {
@@ -1344,15 +1229,6 @@
       "ctrl-0": "image_viewer::ResetZoom",
       "ctrl-1": "image_viewer::ZoomToActualSize",
       "ctrl-shift-0": "image_viewer::FitToView",
-    },
-  },
-  {
-    "context": "RunModal",
-    "bindings": {
-      "alt-1": "new_process_modal::ActivateTaskTab",
-      "alt-2": "new_process_modal::ActivateDebugTab",
-      "alt-3": "new_process_modal::ActivateAttachTab",
-      "alt-4": "new_process_modal::ActivateLaunchTab",
     },
   },
   {

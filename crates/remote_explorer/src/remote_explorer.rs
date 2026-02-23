@@ -1469,6 +1469,6 @@ impl Panel for RemoteExplorer {
     }
 
     fn activation_priority(&self) -> u32 {
-        10
+        0
     }
 }
