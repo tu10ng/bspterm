@@ -329,21 +329,9 @@
     },
   },
   {
-    "context": "AgentConfiguration",
-    "bindings": {
-      "ctrl--": "pane::GoBack",
-    },
-  },
-  {
     "context": "AcpThread > ModeSelector",
     "bindings": {
       "cmd-enter": "menu::Confirm",
-    },
-  },
-  {
-    "context": "AcpThread",
-    "bindings": {
-      "ctrl--": "pane::GoBack",
     },
   },
   {
@@ -383,12 +371,6 @@
     "bindings": {
       "cmd-enter": "agent::Chat",
       "enter": "editor::Newline",
-    },
-  },
-  {
-    "context": "ThreadHistory",
-    "bindings": {
-      "ctrl--": "pane::GoBack",
     },
   },
   {
@@ -578,8 +560,6 @@
       "ctrl-8": ["pane::ActivateItem", 7],
       "ctrl-9": ["pane::ActivateItem", 8],
       "ctrl-0": "pane::ActivateLastItem",
-      "ctrl--": "pane::GoBack",
-      "ctrl-_": "pane::GoForward",
       "cmd-shift-f": "pane::DeploySearch",
     },
   },

@@ -1149,6 +1149,8 @@
     // When enabled, pinned tabs appear in a top row and unpinned tabs in a bottom row.
     // When disabled, all tabs appear in a single row (default behavior).
     "show_pinned_tabs_in_separate_row": false,
+    // Whether tabs should wrap to multiple rows instead of scrolling horizontally.
+    "wrap_tabs": true,
   },
   // Settings related to the editor's tabs
   "tabs": {

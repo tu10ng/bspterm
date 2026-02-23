@@ -12,6 +12,7 @@ pub struct TabBar {
     end_children: SmallVec<[AnyElement; 2]>,
     pre_end_children: SmallVec<[AnyElement; 2]>,
     scroll_handle: Option<ScrollHandle>,
+    wrap_tabs: bool,
 }
 
 impl TabBar {
@@ -23,7 +24,13 @@ impl TabBar {
             end_children: SmallVec::new(),
             pre_end_children: SmallVec::new(),
             scroll_handle: None,
+            wrap_tabs: false,
         }
+    }
+
+    pub fn wrap_tabs(mut self, wrap: bool) -> Self {
+        self.wrap_tabs = wrap;
+        self
     }
 
     pub fn track_scroll(mut self, scroll_handle: &ScrollHandle) -> Self {
@@ -102,13 +109,35 @@ impl ParentElement for TabBar {
 
 impl RenderOnce for TabBar {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        let wrap_tabs = self.wrap_tabs;
+
+        let tabs_container = if wrap_tabs {
+            div()
+                .id("tabs")
+                .flex()
+                .flex_wrap()
+                .w_full()
+                .children(self.children)
+        } else {
+            div()
+                .id("tabs")
+                .flex()
+                .flex_grow()
+                .overflow_x_scroll()
+                .when_some(self.scroll_handle, |cx, scroll_handle| {
+                    cx.track_scroll(&scroll_handle)
+                })
+                .children(self.children)
+        };
+
         div()
             .id(self.id)
             .group("tab_bar")
             .flex()
             .flex_none()
             .w_full()
-            .h(Tab::container_height(cx))
+            .when(wrap_tabs, |this| this.min_h(Tab::container_height(cx)))
+            .when(!wrap_tabs, |this| this.h(Tab::container_height(cx)))
             .bg(cx.theme().colors().tab_bar_background)
             .when(!self.start_children.is_empty(), |this| {
                 this.child(
@@ -126,7 +155,7 @@ impl RenderOnce for TabBar {
                 div()
                     .relative()
                     .flex_1()
-                    .h_full()
+                    .when(!wrap_tabs, |this| this.h_full())
                     .overflow_x_hidden()
                     .child(
                         div()
@@ -137,16 +166,7 @@ impl RenderOnce for TabBar {
                             .border_b_1()
                             .border_color(cx.theme().colors().border),
                     )
-                    .child(
-                        h_flex()
-                            .id("tabs")
-                            .flex_grow()
-                            .overflow_x_scroll()
-                            .when_some(self.scroll_handle, |cx, scroll_handle| {
-                                cx.track_scroll(&scroll_handle)
-                            })
-                            .children(self.children),
-                    ),
+                    .child(tabs_container),
             )
             .when(
                 !self.end_children.is_empty() || !self.pre_end_children.is_empty(),

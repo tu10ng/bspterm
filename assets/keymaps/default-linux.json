@@ -295,12 +295,6 @@
     },
   },
   {
-    "context": "AcpThread",
-    "bindings": {
-      "ctrl--": "pane::GoBack",
-    },
-  },
-  {
     "context": "AcpThread > Editor",
     "use_key_equivalents": true,
     "bindings": {
@@ -411,10 +405,6 @@
       "ctrl-k u": ["pane::CloseCleanItems", { "close_pinned": false }],
       "ctrl-k w": ["pane::CloseAllItems", { "close_pinned": false }],
       "ctrl-k ctrl-w": "workspace::CloseAllItemsAndPanes",
-      "back": "pane::GoBack",
-      "ctrl-alt--": "pane::GoBack",
-      "forward": "pane::GoForward",
-      "ctrl-alt-_": "pane::GoForward",
       "ctrl-alt-g": "search::SelectNextMatch",
       "f3": "search::SelectNextMatch",
       "ctrl-alt-shift-g": "search::SelectPreviousMatch",

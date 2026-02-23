@@ -38,6 +38,8 @@ pub struct Tab {
     start_slot: Option<AnyElement>,
     end_slot: Option<AnyElement>,
     children: SmallVec<[AnyElement; 2]>,
+    min_width: Option<Pixels>,
+    max_width: Option<Pixels>,
 }
 
 impl Tab {
@@ -53,7 +55,19 @@ impl Tab {
             start_slot: None,
             end_slot: None,
             children: SmallVec::new(),
+            min_width: None,
+            max_width: None,
         }
+    }
+
+    pub fn min_w_opt(mut self, width: impl Into<Option<Pixels>>) -> Self {
+        self.min_width = width.into();
+        self
+    }
+
+    pub fn max_w_opt(mut self, width: impl Into<Option<Pixels>>) -> Self {
+        self.max_width = width.into();
+        self
     }
 
     pub fn position(mut self, position: TabPosition) -> Self {
@@ -143,6 +157,8 @@ impl RenderOnce for Tab {
 
         self.div
             .h(Tab::container_height(cx))
+            .when_some(self.min_width, |this, w| this.min_w(w))
+            .when_some(self.max_width, |this, w| this.max_w(w).overflow_x_hidden())
             .bg(tab_bg)
             .border_color(cx.theme().colors().border)
             .map(|this| match self.position {

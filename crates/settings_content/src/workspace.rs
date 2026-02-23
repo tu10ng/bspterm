@@ -418,6 +418,10 @@ pub struct TabBarSettingsContent {
     ///
     /// Default: false
     pub show_pinned_tabs_in_separate_row: Option<bool>,
+    /// Whether tabs should wrap to multiple rows instead of scrolling horizontally.
+    ///
+    /// Default: true
+    pub wrap_tabs: Option<bool>,
 }
 
 #[with_fallible_options]

@@ -43,8 +43,6 @@
       "ctrl-alt-l": "editor::Format",
       "ctrl-alt-o": "editor::OrganizeImports",
       "shift-f6": "editor::Rename",
-      "ctrl-alt-left": "pane::GoBack",
-      "ctrl-alt-right": "pane::GoForward",
       "alt-f7": "editor::FindAllReferences",
       "ctrl-alt-f7": "editor::FindAllReferences",
       "ctrl-b": "editor::GoToDefinition", // Conflicts with workspace::ToggleLeftDock
@@ -144,8 +142,6 @@
   {
     "context": "Pane",
     "bindings": {
-      "ctrl-alt-left": "pane::GoBack",
-      "ctrl-alt-right": "pane::GoForward",
       "alt-left": "pane::ActivatePreviousItem",
       "alt-right": "pane::ActivateNextItem",
     },

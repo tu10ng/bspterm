@@ -50,7 +50,6 @@
       "ctrl-x ctrl-;": "editor::ToggleComments",
       "alt-.": "editor::GoToDefinition", // xref-find-definitions
       "alt-?": "editor::FindAllReferences", // xref-find-references
-      "alt-,": "pane::GoBack", // xref-pop-marker-stack
       "ctrl-x h": "editor::SelectAll", // mark-whole-buffer
       "ctrl-d": "editor::Delete", // delete-char
       "alt-d": ["editor::DeleteToNextWordEnd", { "ignore_newlines": false, "ignore_brackets": false }], // kill-word
@@ -191,13 +190,6 @@
       "ctrl-s": "search::SelectNextMatch",
       "ctrl-r": "search::SelectPreviousMatch",
       "ctrl-g": "buffer_search::Dismiss",
-    },
-  },
-  {
-    "context": "Pane",
-    "bindings": {
-      "ctrl-alt-left": "pane::GoBack",
-      "ctrl-alt-right": "pane::GoForward",
     },
   },
 ]

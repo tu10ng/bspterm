@@ -64,8 +64,6 @@
       "`": ["vim::PushJump", { "line": false }],
       ";": "vim::RepeatFind",
       ",": "vim::RepeatFindReversed",
-      "ctrl-o": "pane::GoBack",
-      "ctrl-i": "pane::GoForward",
       "ctrl-]": "editor::GoToDefinition",
       "ctrl-t": "pane::GoToOlderTag",
       "escape": "vim::SwitchToNormalMode",
