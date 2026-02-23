@@ -14,7 +14,7 @@ use futures::{channel::oneshot, future::join_all};
 use gpui::{
     Action, AnyView, App, AsyncApp, AsyncWindowContext, Context, Corner, Entity, EventEmitter,
     ExternalPaths, FocusHandle, Focusable, IntoElement, ParentElement, Pixels, Render, Styled,
-    Task, WeakEntity, Window, actions,
+    Task, WeakEntity, Window,
 };
 use itertools::Itertools;
 use project::{Fs, Project, ProjectEntryId};
@@ -40,19 +40,10 @@ use workspace::{
 
 use anyhow::{Result, anyhow};
 use bspterm_actions::assistant::InlineAssist;
+pub use bspterm_actions::terminal_panel::{Toggle, ToggleFocus};
 use i18n::t;
 
 const TERMINAL_PANEL_KEY: &str = "TerminalPanel";
-
-actions!(
-    terminal_panel,
-    [
-        /// Toggles the terminal panel.
-        Toggle,
-        /// Toggles focus on the terminal panel.
-        ToggleFocus,
-    ]
-);
 
 pub fn init(cx: &mut App) {
     cx.observe_new(

@@ -354,6 +354,56 @@ shortcut:
   new_shortcut_script: "New Shortcut Script"
   select_script: "Select Script"
 
+# Welcome Page
+welcome:
+  title: "Welcome to BspTerm"
+  title_back: "Welcome back"
+  subtitle: "Next-gen AI remote connection manager by BSP Team"
+
+  # Section titles
+  connect: "Connect"
+  protocols: "Protocols"
+  automate: "Automate"
+  features: "Features"
+
+  # Connect section
+  remote_explorer: "Remote Explorer"
+  remote_explorer_desc: "Remote connection resource tree"
+
+  # Protocols section
+  ssh: "SSH"
+  ssh_desc: "SSH protocol for remote server connections"
+  telnet: "Telnet"
+  telnet_desc: "Telnet protocol for remote server connections"
+
+  # Automate section
+  automation_rules: "Automation Rules"
+  automation_rules_desc: "Auto-trigger when output matches conditions"
+  python_scripts: "Python Scripts"
+  python_scripts_desc: "Native Python scripting support"
+  abbreviations: "Abbreviations"
+  abbreviations_desc: "Command abbreviation expansion"
+
+  # Features section
+  ai_agent: "AI Agent"
+  ai_agent_desc: "AI Agent automation support"
+  server_sharing: "Server Sharing"
+  server_sharing_desc: "Right-click to share server info"
+  quick_import: "Quick Import"
+  quick_import_desc: "Quick import of shared session info"
+  lan_discovery: "LAN Discovery"
+  lan_discovery_desc: "LAN user notifications, copy proxy IP"
+  session_drag: "Session Drag & Drop"
+  session_drag_desc: "Drag and drop to reorder sessions"
+  export_output: "Export Output"
+  export_output_desc: "Right-click to export terminal output"
+  line_timestamp: "Line Numbers & Timestamps"
+  line_timestamp_desc: "Display line numbers and timestamps"
+  ping_status: "Connectivity Check"
+  ping_status_desc: "Real-time server ping status"
+  shortcut_bar: "Shortcut Bar"
+  shortcut_bar_desc: "Customizable shortcut buttons"
+
 # SSH Connect Modal
 ssh_connect:
   placeholder: "user@host[:port] or host user password"

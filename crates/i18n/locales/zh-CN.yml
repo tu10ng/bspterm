@@ -354,6 +354,56 @@ shortcut:
   new_shortcut_script: "新建快捷键脚本"
   select_script: "选择脚本"
 
+# Welcome Page
+welcome:
+  title: "欢迎使用 BspTerm"
+  title_back: "欢迎回来"
+  subtitle: "BSP组专门开发的下一代AI远程连接管理器"
+
+  # Section titles
+  connect: "连接"
+  protocols: "协议支持"
+  automate: "自动化"
+  features: "特色功能"
+
+  # Connect section
+  remote_explorer: "远程资源管理器"
+  remote_explorer_desc: "远程连接的资源树"
+
+  # Protocols section
+  ssh: "SSH"
+  ssh_desc: "支持SSH协议连接远程服务器"
+  telnet: "Telnet"
+  telnet_desc: "支持Telnet协议连接远程服务器"
+
+  # Automate section
+  automation_rules: "自动化规则"
+  automation_rules_desc: "回显满足条件时自动触发"
+  python_scripts: "Python脚本"
+  python_scripts_desc: "原生支持Python脚本"
+  abbreviations: "命令缩写"
+  abbreviations_desc: "支持常用命令缩写"
+
+  # Features section
+  ai_agent: "AI Agent"
+  ai_agent_desc: "支持AI Agent自动化操作"
+  server_sharing: "服务器分享"
+  server_sharing_desc: "右键分享服务器信息"
+  quick_import: "快速导入"
+  quick_import_desc: "支持分享的信息快速导入"
+  lan_discovery: "局域网发现"
+  lan_discovery_desc: "局域网用户互相通知, 复制代理IP"
+  session_drag: "会话拖放"
+  session_drag_desc: "支持拖放调整会话顺序"
+  export_output: "导出回显"
+  export_output_desc: "右键导出全部终端回显"
+  line_timestamp: "行号时间戳"
+  line_timestamp_desc: "支持显示行号和时间戳"
+  ping_status: "连通性检测"
+  ping_status_desc: "实时显示服务器Ping状态"
+  shortcut_bar: "快捷栏"
+  shortcut_bar_desc: "支持自定义快捷按钮"
+
 # SSH Connect Modal
 ssh_connect:
   placeholder: "user@host[:port] 或 host user password"

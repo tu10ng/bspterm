@@ -1,25 +1,16 @@
 use crate::{
-    NewFile, PathList, SerializedWorkspaceLocation, WORKSPACE_DB, Workspace, WorkspaceId,
+    Workspace,
     item::{Item, ItemEvent},
 };
+use bspterm_actions::{OpenOnboarding, rule_editor, script_panel, terminal_abbr_bar};
 use gpui::WeakEntity;
 use gpui::{
     Action, App, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
     ParentElement, Render, Styled, Task, Window, actions,
 };
+use i18n::t;
 use menu::{SelectNext, SelectPrevious};
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-use ui::{ButtonLike, Divider, DividerColor, KeyBinding, Vector, VectorName, prelude::*};
-use util::ResultExt;
-use bspterm_actions::{Extensions, OpenKeymap, OpenOnboarding, OpenSettings, command_palette};
-
-#[derive(PartialEq, Clone, Debug, Deserialize, Serialize, JsonSchema, Action)]
-#[action(namespace = welcome)]
-#[serde(transparent)]
-pub struct OpenRecentProject {
-    pub index: usize,
-}
+use ui::{ButtonLike, Divider, DividerColor, KeyBinding, prelude::*};
 
 actions!(
     zed,
@@ -59,25 +50,28 @@ impl RenderOnce for SectionHeader {
 }
 
 #[derive(IntoElement)]
-struct SectionButton {
-    label: SharedString,
+struct FeatureItem {
     icon: IconName,
+    label: SharedString,
+    description: SharedString,
     action: Box<dyn Action>,
     tab_index: usize,
     focus_handle: FocusHandle,
 }
 
-impl SectionButton {
+impl FeatureItem {
     fn new(
-        label: impl Into<SharedString>,
         icon: IconName,
+        label: impl Into<SharedString>,
+        description: impl Into<SharedString>,
         action: &dyn Action,
         tab_index: usize,
         focus_handle: FocusHandle,
     ) -> Self {
         Self {
-            label: label.into(),
             icon,
+            label: label.into(),
+            description: description.into(),
             action: action.boxed_clone(),
             tab_index,
             focus_handle,
@@ -85,9 +79,9 @@ impl SectionButton {
     }
 }
 
-impl RenderOnce for SectionButton {
+impl RenderOnce for FeatureItem {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let id = format!("onb-button-{}", self.label);
+        let id = format!("feature-{}", self.label);
         let action_ref: &dyn Action = &*self.action;
 
         ButtonLike::new(id)
@@ -106,7 +100,15 @@ impl RenderOnce for SectionButton {
                                     .color(Color::Muted)
                                     .size(IconSize::Small),
                             )
-                            .child(Label::new(self.label)),
+                            .child(
+                                v_flex()
+                                    .child(Label::new(self.label))
+                                    .child(
+                                        Label::new(self.description)
+                                            .size(LabelSize::XSmall)
+                                            .color(Color::Muted),
+                                    ),
+                            ),
                     )
                     .child(
                         KeyBinding::for_action_in(action_ref, &self.focus_handle, cx)
@@ -117,100 +119,61 @@ impl RenderOnce for SectionButton {
     }
 }
 
-struct SectionEntry {
+#[derive(IntoElement)]
+struct InfoItem {
     icon: IconName,
-    title: &'static str,
-    action: &'static dyn Action,
+    label: SharedString,
+    description: SharedString,
 }
 
-impl SectionEntry {
-    fn render(&self, button_index: usize, focus: &FocusHandle, _cx: &App) -> impl IntoElement {
-        SectionButton::new(
-            self.title,
-            self.icon,
-            self.action,
-            button_index,
-            focus.clone(),
-        )
+impl InfoItem {
+    fn new(
+        icon: IconName,
+        label: impl Into<SharedString>,
+        description: impl Into<SharedString>,
+    ) -> Self {
+        Self {
+            icon,
+            label: label.into(),
+            description: description.into(),
+        }
     }
 }
 
-const CONTENT: (Section<3>, Section<3>) = (
-    Section {
-        title: "Connect",
-        entries: [
-            SectionEntry {
-                icon: IconName::Server,
-                title: "Remote Explorer",
-                action: &bspterm_actions::remote_explorer::ToggleFocus,
-            },
-            SectionEntry {
-                icon: IconName::ListCollapse,
-                title: "Open Command Palette",
-                action: &command_palette::Toggle,
-            },
-            SectionEntry {
-                icon: IconName::Plus,
-                title: "New File",
-                action: &NewFile,
-            },
-        ],
-    },
-    Section {
-        title: "Configure",
-        entries: [
-            SectionEntry {
-                icon: IconName::Settings,
-                title: "Open Settings",
-                action: &OpenSettings,
-            },
-            SectionEntry {
-                icon: IconName::Keyboard,
-                title: "Open Keymap",
-                action: &OpenKeymap,
-            },
-            SectionEntry {
-                icon: IconName::Blocks,
-                title: "Explore Extensions",
-                action: &Extensions {
-                    category_filter: None,
-                    id: None,
-                },
-            },
-        ],
-    },
-);
-
-struct Section<const COLS: usize> {
-    title: &'static str,
-    entries: [SectionEntry; COLS],
-}
-
-impl<const COLS: usize> Section<COLS> {
-    fn render(self, index_offset: usize, focus: &FocusHandle, cx: &App) -> impl IntoElement {
-        v_flex()
-            .min_w_full()
-            .child(SectionHeader::new(self.title))
-            .children(
-                self.entries
-                    .iter()
-                    .enumerate()
-                    .map(|(index, entry)| entry.render(index_offset + index, focus, cx)),
+impl RenderOnce for InfoItem {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        h_flex()
+            .w_full()
+            .px_2()
+            .py_1()
+            .gap_2()
+            .child(
+                Icon::new(self.icon)
+                    .color(Color::Muted)
+                    .size(IconSize::Small),
+            )
+            .child(
+                v_flex()
+                    .child(Label::new(self.label))
+                    .child(
+                        Label::new(self.description)
+                            .size(LabelSize::XSmall)
+                            .color(Color::Muted),
+                    ),
             )
     }
 }
 
 pub struct WelcomePage {
+    #[allow(dead_code)]
     workspace: WeakEntity<Workspace>,
     focus_handle: FocusHandle,
-    fallback_to_recent_projects: bool,
-    recent_workspaces: Option<Vec<(WorkspaceId, SerializedWorkspaceLocation, PathList)>>,
 }
 
 impl WelcomePage {
     pub fn new(
         workspace: WeakEntity<Workspace>,
-        fallback_to_recent_projects: bool,
+        _fallback_to_recent_projects: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -218,28 +181,9 @@ impl WelcomePage {
         cx.on_focus(&focus_handle, window, |_, _, cx| cx.notify())
             .detach();
 
-        if fallback_to_recent_projects {
-            cx.spawn_in(window, async move |this: WeakEntity<Self>, cx| {
-                let workspaces = WORKSPACE_DB
-                    .recent_workspaces_on_disk()
-                    .await
-                    .log_err()
-                    .unwrap_or_default();
-
-                this.update(cx, |this, cx| {
-                    this.recent_workspaces = Some(workspaces);
-                    cx.notify();
-                })
-                .ok();
-            })
-            .detach();
-        }
-
         WelcomePage {
             workspace,
             focus_handle,
-            fallback_to_recent_projects,
-            recent_workspaces: None,
         }
     }
 
@@ -253,114 +197,125 @@ impl WelcomePage {
         cx.notify();
     }
 
-    fn open_recent_project(
-        &mut self,
-        action: &OpenRecentProject,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(recent_workspaces) = &self.recent_workspaces {
-            if let Some((_workspace_id, location, paths)) = recent_workspaces.get(action.index) {
-                let paths = paths.clone();
-                let location = location.clone();
-                let is_local = matches!(location, SerializedWorkspaceLocation::Local);
-                let workspace = self.workspace.clone();
-
-                if is_local {
-                    let paths = paths.paths().to_vec();
-                    cx.spawn_in(window, async move |_, cx| {
-                        let _ = workspace.update_in(cx, |workspace, window, cx| {
-                            workspace
-                                .open_workspace_for_paths(true, paths, window, cx)
-                                .detach();
-                        });
-                    })
-                    .detach();
-                } else {
-                    use bspterm_actions::OpenRecent;
-                    window.dispatch_action(OpenRecent::default().boxed_clone(), cx);
-                }
-            }
-        }
-    }
-
-    fn render_recent_project_section(
-        &self,
-        recent_projects: Vec<impl IntoElement>,
-    ) -> impl IntoElement {
+    fn render_connect_section(&self, start_index: usize) -> impl IntoElement {
         v_flex()
-            .w_full()
-            .child(SectionHeader::new("Recent Projects"))
-            .children(recent_projects)
+            .min_w_full()
+            .child(SectionHeader::new(t("welcome.connect")))
+            .child(FeatureItem::new(
+                IconName::Server,
+                t("welcome.remote_explorer"),
+                t("welcome.remote_explorer_desc"),
+                &bspterm_actions::remote_explorer::ToggleFocus,
+                start_index,
+                self.focus_handle.clone(),
+            ))
     }
 
-    fn render_recent_project(
-        &self,
-        index: usize,
-        location: &SerializedWorkspaceLocation,
-        paths: &PathList,
-    ) -> impl IntoElement {
-        let (icon, title) = match location {
-            SerializedWorkspaceLocation::Local => {
-                let path = paths.paths().first().map(|p| p.as_path());
-                let name = path
-                    .and_then(|p| p.file_name())
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "Untitled".to_string());
-                (IconName::Folder, name)
-            }
-            SerializedWorkspaceLocation::Remote(_) => {
-                (IconName::Server, "Remote Project".to_string())
-            }
-        };
+    fn render_protocols_section(&self) -> impl IntoElement {
+        v_flex()
+            .min_w_full()
+            .child(SectionHeader::new(t("welcome.protocols")))
+            .child(InfoItem::new(
+                IconName::LockOutlined,
+                t("welcome.ssh"),
+                t("welcome.ssh_desc"),
+            ))
+            .child(InfoItem::new(
+                IconName::TerminalAlt,
+                t("welcome.telnet"),
+                t("welcome.telnet_desc"),
+            ))
+    }
 
-        SectionButton::new(
-            title,
-            icon,
-            &OpenRecentProject { index },
-            10,
-            self.focus_handle.clone(),
-        )
+    fn render_automate_section(&self, start_index: usize) -> impl IntoElement {
+        v_flex()
+            .min_w_full()
+            .child(SectionHeader::new(t("welcome.automate")))
+            .child(FeatureItem::new(
+                IconName::BoltOutlined,
+                t("welcome.automation_rules"),
+                t("welcome.automation_rules_desc"),
+                &rule_editor::ToggleFocus,
+                start_index,
+                self.focus_handle.clone(),
+            ))
+            .child(FeatureItem::new(
+                IconName::Code,
+                t("welcome.python_scripts"),
+                t("welcome.python_scripts_desc"),
+                &script_panel::ToggleFocus,
+                start_index + 1,
+                self.focus_handle.clone(),
+            ))
+            .child(FeatureItem::new(
+                IconName::TextSnippet,
+                t("welcome.abbreviations"),
+                t("welcome.abbreviations_desc"),
+                &terminal_abbr_bar::ConfigureAbbrBar,
+                start_index + 2,
+                self.focus_handle.clone(),
+            ))
+    }
+
+    fn render_features_section(&self) -> impl IntoElement {
+        v_flex()
+            .min_w_full()
+            .child(SectionHeader::new(t("welcome.features")))
+            .child(InfoItem::new(
+                IconName::ZedAgent,
+                t("welcome.ai_agent"),
+                t("welcome.ai_agent_desc"),
+            ))
+            .child(InfoItem::new(
+                IconName::Send,
+                t("welcome.server_sharing"),
+                t("welcome.server_sharing_desc"),
+            ))
+            .child(InfoItem::new(
+                IconName::Download,
+                t("welcome.quick_import"),
+                t("welcome.quick_import_desc"),
+            ))
+            .child(InfoItem::new(
+                IconName::UserGroup,
+                t("welcome.lan_discovery"),
+                t("welcome.lan_discovery_desc"),
+            ))
+            .child(InfoItem::new(
+                IconName::ArrowRightLeft,
+                t("welcome.session_drag"),
+                t("welcome.session_drag_desc"),
+            ))
+            .child(InfoItem::new(
+                IconName::FileTextOutlined,
+                t("welcome.export_output"),
+                t("welcome.export_output_desc"),
+            ))
+            .child(InfoItem::new(
+                IconName::Hash,
+                t("welcome.line_timestamp"),
+                t("welcome.line_timestamp_desc"),
+            ))
+            .child(InfoItem::new(
+                IconName::Indicator,
+                t("welcome.ping_status"),
+                t("welcome.ping_status_desc"),
+            ))
+            .child(InfoItem::new(
+                IconName::Sliders,
+                t("welcome.shortcut_bar"),
+                t("welcome.shortcut_bar_desc"),
+            ))
     }
 }
 
 impl Render for WelcomePage {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let (first_section, second_section) = CONTENT;
-        let first_section_entries = first_section.entries.len();
-        let last_index = first_section_entries + second_section.entries.len();
-
-        let recent_projects = self
-            .recent_workspaces
-            .as_ref()
-            .into_iter()
-            .flatten()
-            .take(5)
-            .enumerate()
-            .map(|(index, (_, loc, paths))| self.render_recent_project(index, loc, paths))
-            .collect::<Vec<_>>();
-
-        let second_section = if self.fallback_to_recent_projects && !recent_projects.is_empty() {
-            self.render_recent_project_section(recent_projects)
-                .into_any_element()
-        } else {
-            second_section
-                .render(first_section_entries, &self.focus_handle, cx)
-                .into_any_element()
-        };
-
-        let welcome_label = if self.fallback_to_recent_projects {
-            "Welcome back to BspTerm"
-        } else {
-            "Welcome to BspTerm"
-        };
-
         h_flex()
             .key_context("Welcome")
             .track_focus(&self.focus_handle(cx))
             .on_action(cx.listener(Self::select_previous))
             .on_action(cx.listener(Self::select_next))
-            .on_action(cx.listener(Self::open_recent_project))
             .size_full()
             .justify_center()
             .overflow_hidden()
@@ -385,34 +340,40 @@ impl Render for WelcomePage {
                                     .justify_center()
                                     .mb_4()
                                     .gap_4()
-                                    .child(Vector::square(VectorName::ZedLogo, rems_from_px(45.)))
                                     .child(
-                                        v_flex().child(Headline::new(welcome_label)).child(
-                                            Label::new("Terminal Session Manager")
-                                                .size(LabelSize::Small)
-                                                .color(Color::Muted)
-                                                .italic(),
-                                        ),
+                                        Icon::new(IconName::Terminal)
+                                            .size(IconSize::Custom(rems_from_px(45.)))
+                                            .color(Color::Accent),
+                                    )
+                                    .child(
+                                        v_flex()
+                                            .child(Headline::new(t("welcome.title")))
+                                            .child(
+                                                Label::new(t("welcome.subtitle"))
+                                                    .size(LabelSize::Small)
+                                                    .color(Color::Muted)
+                                                    .italic(),
+                                            ),
                                     ),
                             )
-                            .child(first_section.render(Default::default(), &self.focus_handle, cx))
-                            .child(second_section)
-                            .when(!self.fallback_to_recent_projects, |this| {
-                                this.child(
-                                    v_flex().gap_1().child(Divider::horizontal()).child(
-                                        Button::new("welcome-exit", "Return to Onboarding")
-                                            .tab_index(last_index as isize)
-                                            .full_width()
-                                            .label_size(LabelSize::XSmall)
-                                            .on_click(|_, window, cx| {
-                                                window.dispatch_action(
-                                                    OpenOnboarding.boxed_clone(),
-                                                    cx,
-                                                );
-                                            }),
-                                    ),
-                                )
-                            }),
+                            .child(self.render_connect_section(0))
+                            .child(self.render_protocols_section())
+                            .child(self.render_automate_section(1))
+                            .child(self.render_features_section())
+                            .child(
+                                v_flex().gap_1().child(Divider::horizontal()).child(
+                                    Button::new("welcome-exit", "Return to Onboarding")
+                                        .tab_index(4_isize)
+                                        .full_width()
+                                        .label_size(LabelSize::XSmall)
+                                        .on_click(|_, window, cx| {
+                                            window.dispatch_action(
+                                                OpenOnboarding.boxed_clone(),
+                                                cx,
+                                            );
+                                        }),
+                                ),
+                            ),
                     ),
             )
     }
