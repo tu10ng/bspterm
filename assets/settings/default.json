@@ -1324,12 +1324,12 @@
   //
   // Default: true
   "word_diff_enabled": true,
-  // Control what info is collected by Zed.
+  // Telemetry is disabled in this build.
   "telemetry": {
     // Send debug info like crash reports.
-    "diagnostics": true,
+    "diagnostics": false,
     // Send anonymized usage data like what languages you're using Zed with.
-    "metrics": true,
+    "metrics": false,
   },
   // Whether to disable all AI features in Zed.
   //

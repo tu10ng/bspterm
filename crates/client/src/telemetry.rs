@@ -7,7 +7,7 @@ use fs::Fs;
 use futures::channel::mpsc;
 use futures::{Future, StreamExt};
 use gpui::{App, AppContext as _, BackgroundExecutor, Task};
-use http_client::{self, AsyncBody, HttpClient, HttpClientWithUrl, Method, Request};
+use http_client::{self, AsyncBody, HttpClientWithUrl, Method, Request};
 use parking_lot::Mutex;
 use regex::Regex;
 use release_channel::ReleaseChannel;
@@ -15,11 +15,10 @@ use settings::{Settings, SettingsStore};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::fs::File;
-use std::io::Write;
 use std::sync::LazyLock;
 use std::time::Instant;
-use std::{env, mem, path::PathBuf, sync::Arc, time::Duration};
-use telemetry_events::{AssistantEventData, AssistantPhase, Event, EventRequestBody, EventWrapper};
+use std::{env, path::PathBuf, sync::Arc, time::Duration};
+use telemetry_events::{AssistantEventData, Event, EventRequestBody, EventWrapper};
 
 pub struct TelemetrySubscription {
     pub historical_events: Result<HistoricalEvents>,
@@ -31,24 +30,27 @@ pub struct HistoricalEvents {
     pub events: Vec<EventWrapper>,
     pub parse_error_count: usize,
 }
-use util::ResultExt as _;
 use worktree::{UpdatedEntriesSet, WorktreeId};
 
 use self::event_coalescer::EventCoalescer;
 
 pub struct Telemetry {
+    #[allow(dead_code)]
     clock: Arc<dyn SystemClock>,
+    #[allow(dead_code)]
     http_client: Arc<HttpClientWithUrl>,
+    #[allow(dead_code)]
     executor: BackgroundExecutor,
     state: Arc<Mutex<TelemetryState>>,
 }
 
+#[allow(dead_code)]
 struct TelemetryState {
     settings: TelemetrySettings,
-    system_id: Option<Arc<str>>,       // Per system
-    installation_id: Option<Arc<str>>, // Per app installation (different for dev, nightly, preview, and stable)
-    session_id: Option<String>,        // Per app launch
-    metrics_id: Option<Arc<str>>,      // Per logged-in user
+    system_id: Option<Arc<str>>,
+    installation_id: Option<Arc<str>>,
+    session_id: Option<String>,
+    metrics_id: Option<Arc<str>>,
     release_channel: Option<ReleaseChannel>,
     architecture: &'static str,
     events_queue: Vec<EventWrapper>,
@@ -68,15 +70,19 @@ struct TelemetryState {
     subscribers: Vec<mpsc::UnboundedSender<EventWrapper>>,
 }
 
+#[allow(dead_code)]
 #[cfg(debug_assertions)]
 const MAX_QUEUE_LEN: usize = 5;
 
+#[allow(dead_code)]
 #[cfg(not(debug_assertions))]
 const MAX_QUEUE_LEN: usize = 50;
 
+#[allow(dead_code)]
 #[cfg(debug_assertions)]
 const FLUSH_INTERVAL: Duration = Duration::from_secs(1);
 
+#[allow(dead_code)]
 #[cfg(not(debug_assertions))]
 const FLUSH_INTERVAL: Duration = Duration::from_secs(60 * 5);
 static BSPTERM_CLIENT_CHECKSUM_SEED: LazyLock<Option<Vec<u8>>> = LazyLock::new(|| {
@@ -89,12 +95,10 @@ static BSPTERM_CLIENT_CHECKSUM_SEED: LazyLock<Option<Vec<u8>>> = LazyLock::new(|
         })
 });
 
-pub static MINIDUMP_ENDPOINT: LazyLock<Option<String>> = LazyLock::new(|| {
-    option_env!("BSPTERM_MINIDUMP_ENDPOINT")
-        .map(str::to_string)
-        .or_else(|| env::var("BSPTERM_MINIDUMP_ENDPOINT").ok())
-});
+/// Minidump endpoint is disabled - crash reports are not uploaded.
+pub static MINIDUMP_ENDPOINT: LazyLock<Option<String>> = LazyLock::new(|| None);
 
+#[allow(dead_code)]
 static DOTNET_PROJECT_FILES_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(global\.json|Directory\.Build\.props|.*\.(csproj|fsproj|vbproj|sln))$").unwrap()
 });
@@ -371,12 +375,14 @@ impl Telemetry {
         state.os_name = os_name();
     }
 
+    /// Telemetry metrics are permanently disabled.
     pub fn metrics_enabled(self: &Arc<Self>) -> bool {
-        self.state.lock().settings.metrics
+        false
     }
 
+    /// Telemetry diagnostics are permanently disabled.
     pub fn diagnostics_enabled(self: &Arc<Self>) -> bool {
-        self.state.lock().settings.diagnostics
+        false
     }
 
     pub fn set_authenticated_user_info(
@@ -396,76 +402,23 @@ impl Telemetry {
         drop(state);
     }
 
-    pub fn report_assistant_event(self: &Arc<Self>, event: AssistantEventData) {
-        let event_type = match event.phase {
-            AssistantPhase::Response => "Assistant Responded",
-            AssistantPhase::Invoked => "Assistant Invoked",
-            AssistantPhase::Accepted => "Assistant Response Accepted",
-            AssistantPhase::Rejected => "Assistant Response Rejected",
-        };
-
-        telemetry::event!(
-            event_type,
-            conversation_id = event.conversation_id,
-            kind = event.kind,
-            phase = event.phase,
-            message_id = event.message_id,
-            model = event.model,
-            model_provider = event.model_provider,
-            response_latency = event.response_latency,
-            error_message = event.error_message,
-            language_name = event.language_name,
-        );
+    pub fn report_assistant_event(self: &Arc<Self>, _event: AssistantEventData) {
+        // Telemetry is disabled
     }
 
-    pub fn log_edit_event(self: &Arc<Self>, environment: &'static str, is_via_ssh: bool) {
-        static LAST_EVENT_TIME: Mutex<Option<Instant>> = Mutex::new(None);
-
-        let mut state = self.state.lock();
-        let period_data = state.event_coalescer.log_event(environment);
-        drop(state);
-
-        if let Some(mut last_event) = LAST_EVENT_TIME.try_lock() {
-            let current_time = std::time::Instant::now();
-            let last_time = last_event.get_or_insert(current_time);
-
-            if current_time.duration_since(*last_time) > Duration::from_secs(60 * 10) {
-                *last_time = current_time;
-            } else {
-                return;
-            }
-
-            if let Some((start, end, environment)) = period_data {
-                let duration = end
-                    .saturating_duration_since(start)
-                    .min(Duration::from_secs(60 * 60 * 24))
-                    .as_millis() as i64;
-
-                telemetry::event!(
-                    "Editor Edited",
-                    duration = duration,
-                    environment = environment,
-                    is_via_ssh = is_via_ssh
-                );
-            }
-        }
+    pub fn log_edit_event(self: &Arc<Self>, _environment: &'static str, _is_via_ssh: bool) {
+        // Telemetry is disabled
     }
 
     pub fn report_discovered_project_type_events(
         self: &Arc<Self>,
-        worktree_id: WorktreeId,
-        updated_entries_set: &UpdatedEntriesSet,
+        _worktree_id: WorktreeId,
+        _updated_entries_set: &UpdatedEntriesSet,
     ) {
-        let Some(project_types) = self.detect_project_types(worktree_id, updated_entries_set)
-        else {
-            return;
-        };
-
-        for project_type in project_types {
-            telemetry::event!("Project Opened", project_type = project_type);
-        }
+        // Telemetry is disabled
     }
 
+    #[allow(dead_code)]
     fn detect_project_types(
         self: &Arc<Self>,
         worktree_id: WorktreeId,
@@ -511,59 +464,9 @@ impl Telemetry {
         Some(project_types)
     }
 
-    fn report_event(self: &Arc<Self>, mut event: Event) {
-        let mut state = self.state.lock();
-        // RUST_LOG=telemetry=trace to debug telemetry events
+    fn report_event(self: &Arc<Self>, event: Event) {
+        // Telemetry is disabled - only log for debugging if trace is enabled
         log::trace!(target: "telemetry", "{:?}", event);
-
-        if !state.settings.metrics {
-            return;
-        }
-
-        match &mut event {
-            Event::Flexible(event) => event
-                .event_properties
-                .insert("event_source".into(), "zed".into()),
-        };
-
-        if state.flush_events_task.is_none() {
-            let this = self.clone();
-            state.flush_events_task = Some(self.executor.spawn(async move {
-                this.executor.timer(FLUSH_INTERVAL).await;
-                this.flush_events().detach();
-            }));
-        }
-
-        let date_time = self.clock.utc_now();
-
-        let milliseconds_since_first_event = match state.first_event_date_time {
-            Some(first_event_date_time) => date_time
-                .saturating_duration_since(first_event_date_time)
-                .min(Duration::from_secs(60 * 60 * 24))
-                .as_millis() as i64,
-            None => {
-                state.first_event_date_time = Some(date_time);
-                0
-            }
-        };
-
-        let signed_in = state.metrics_id.is_some();
-        let event_wrapper = EventWrapper {
-            signed_in,
-            milliseconds_since_first_event,
-            event,
-        };
-
-        state
-            .subscribers
-            .retain(|tx| tx.unbounded_send(event_wrapper.clone()).is_ok());
-
-        state.events_queue.push(event_wrapper);
-
-        if state.installation_id.is_some() && state.events_queue.len() >= state.max_queue_size {
-            drop(state);
-            self.flush_events().detach();
-        }
     }
 
     pub fn metrics_id(self: &Arc<Self>) -> Option<Arc<str>> {
@@ -582,9 +485,9 @@ impl Telemetry {
         self.state.lock().is_staff
     }
 
+    #[allow(dead_code)]
     fn build_request(
         self: &Arc<Self>,
-        // We take in the JSON bytes buffer so we can reuse the existing allocation.
         mut json_bytes: Vec<u8>,
         event_request: &EventRequestBody,
     ) -> Result<Request<AsyncBody>> {
@@ -605,62 +508,14 @@ impl Telemetry {
             .body(json_bytes.into())?)
     }
 
+    /// Telemetry flushing is disabled - events are not sent.
     pub async fn flush_events_inner(self: &Arc<Self>) -> Result<()> {
-        let (json_bytes, request_body) = {
-            let mut state = self.state.lock();
-            state.first_event_date_time = None;
-            let events = mem::take(&mut state.events_queue);
-            state.flush_events_task.take();
-            if events.is_empty() {
-                return Ok(());
-            }
-
-            let mut json_bytes = Vec::new();
-
-            if let Some(file) = &mut state.log_file {
-                for event in &events {
-                    json_bytes.clear();
-                    serde_json::to_writer(&mut json_bytes, event)?;
-                    file.write_all(&json_bytes)?;
-                    file.write_all(b"\n")?;
-                }
-            }
-
-            (
-                json_bytes,
-                EventRequestBody {
-                    system_id: state.system_id.as_deref().map(Into::into),
-                    installation_id: state.installation_id.as_deref().map(Into::into),
-                    session_id: state.session_id.clone(),
-                    metrics_id: state.metrics_id.as_deref().map(Into::into),
-                    is_staff: state.is_staff,
-                    app_version: state.app_version.clone(),
-                    os_name: state.os_name.clone(),
-                    os_version: state.os_version.clone(),
-                    architecture: state.architecture.to_string(),
-
-                    release_channel: state
-                        .release_channel
-                        .map(|channel| channel.display_name().to_owned()),
-                    events,
-                },
-            )
-        };
-
-        let request = self.build_request(json_bytes, &request_body)?;
-        let response = self.http_client.send(request).await?;
-        if response.status() != 200 {
-            log::error!("Failed to send events: HTTP {:?}", response.status());
-        }
-
-        anyhow::Ok(())
+        Ok(())
     }
 
+    /// Telemetry flushing is disabled - events are not sent.
     pub fn flush_events(self: &Arc<Self>) -> Task<()> {
-        let this = self.clone();
-        self.executor.spawn(async move {
-            this.flush_events_inner().await.log_err();
-        })
+        Task::ready(())
     }
 }
 
@@ -693,6 +548,7 @@ mod tests {
     use worktree::{PathChange, ProjectEntryId, WorktreeId};
 
     #[gpui::test]
+    #[ignore = "telemetry is disabled"]
     async fn test_telemetry_flush_on_max_queue_size(
         executor: BackgroundExecutor,
         cx: &mut TestAppContext,
@@ -770,6 +626,7 @@ mod tests {
     }
 
     #[gpui::test]
+    #[ignore = "telemetry is disabled"]
     async fn test_telemetry_flush_on_flush_interval(
         executor: BackgroundExecutor,
         cx: &mut TestAppContext,
