@@ -1,5 +1,6 @@
 use editor::Editor;
 use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window};
+use i18n::t;
 use ui::{prelude::*, Color, Icon, IconName, IconSize, Label, LabelSize, h_flex, v_flex};
 
 const SESSION_ENV_PREFIX_TELNET: &str = "环境";
@@ -84,7 +85,7 @@ impl AutoRecognizeSection {
     pub fn new(window: &mut Window, cx: &mut App) -> Self {
         let editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
-            editor.set_placeholder_text("IP, IP:port, IP user pass...", window, cx);
+            editor.set_placeholder_text(&t("remote_explorer.auto_recognize_hint"), window, cx);
             editor
         });
 
@@ -120,7 +121,7 @@ impl AutoRecognizeSection {
                             .color(Color::Muted),
                     )
                     .child(
-                        Label::new("Auto-recognize")
+                        Label::new(t("remote_explorer.auto_recognize"))
                             .size(LabelSize::Small)
                             .color(Color::Muted),
                     ),
@@ -136,7 +137,7 @@ impl AutoRecognizeSection {
                     .child(self.editor.clone()),
             )
             .child(
-                Label::new("Supports: IP, IP:port, IP user pass, 环境/后台 format")
+                Label::new(t("remote_explorer.auto_recognize_hint"))
                     .size(LabelSize::XSmall)
                     .color(Color::Muted),
             )

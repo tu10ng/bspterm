@@ -40,6 +40,7 @@ use workspace::{
 
 use anyhow::{Result, anyhow};
 use bspterm_actions::assistant::InlineAssist;
+use i18n::t;
 
 const TERMINAL_PANEL_KEY: &str = "TerminalPanel";
 
@@ -166,7 +167,7 @@ impl TerminalPanel {
                         PopoverMenu::new("terminal-tab-bar-popover-menu")
                             .trigger_with_tooltip(
                                 IconButton::new("plus", IconName::Plus).icon_size(IconSize::Small),
-                                Tooltip::text("New…"),
+                                Tooltip::text(t("terminal_panel.new")),
                             )
                             .anchor(Corner::TopRight)
                             .with_handle(pane.new_item_context_menu_handle.clone())
@@ -175,14 +176,14 @@ impl TerminalPanel {
                                 let menu = ContextMenu::build(window, cx, |menu, _, _| {
                                     menu.context(focus_handle.clone())
                                         .action(
-                                            "New Terminal",
+                                            t("terminal_panel.new_terminal"),
                                             workspace::NewTerminal::default().boxed_clone(),
                                         )
                                         // We want the focus to go back to terminal panel once task modal is dismissed,
                                         // hence we focus that first. Otherwise, we'd end up without a focused element, as
                                         // context menu will be gone the moment we spawn the modal.
                                         .action(
-                                            "Spawn Task",
+                                            t("terminal_panel.spawn_task"),
                                             bspterm_actions::Spawn::modal().boxed_clone(),
                                         )
                                 });
@@ -193,7 +194,7 @@ impl TerminalPanel {
                     .child(
                         IconButton::new("ssh-connect", IconName::Server)
                             .icon_size(IconSize::Small)
-                            .tooltip(Tooltip::text("Connect SSH…"))
+                            .tooltip(Tooltip::text(t("terminal_panel.connect_ssh")))
                             .on_click(|_, window, cx| {
                                 window.dispatch_action(ConnectSsh.boxed_clone(), cx);
                             }),
@@ -204,7 +205,7 @@ impl TerminalPanel {
                             .trigger_with_tooltip(
                                 IconButton::new("terminal-pane-split", IconName::Split)
                                     .icon_size(IconSize::Small),
-                                Tooltip::text("Split Pane"),
+                                Tooltip::text(t("terminal_panel.split_terminal")),
                             )
                             .anchor(Corner::TopRight)
                             .with_handle(pane.split_item_context_menu_handle.clone())
@@ -215,10 +216,10 @@ impl TerminalPanel {
                                             split_context.clone(),
                                             |menu, split_context| menu.context(split_context),
                                         )
-                                        .action("Split Right", SplitRight::default().boxed_clone())
-                                        .action("Split Left", SplitLeft::default().boxed_clone())
-                                        .action("Split Up", SplitUp::default().boxed_clone())
-                                        .action("Split Down", SplitDown::default().boxed_clone())
+                                        .action(t("menu.split_right"), SplitRight::default().boxed_clone())
+                                        .action(t("menu.split_left"), SplitLeft::default().boxed_clone())
+                                        .action(t("menu.split_up"), SplitUp::default().boxed_clone())
+                                        .action(t("menu.split_down"), SplitDown::default().boxed_clone())
                                     })
                                     .into()
                                 }
@@ -235,7 +236,7 @@ impl TerminalPanel {
                             }))
                             .tooltip(move |_window, cx| {
                                 Tooltip::for_action(
-                                    if zoomed { "Zoom Out" } else { "Zoom In" },
+                                    if zoomed { t("menu.zoom_out") } else { t("menu.zoom_in") },
                                     &ToggleZoom,
                                     cx,
                                 )
@@ -1442,9 +1443,9 @@ impl Render for FailedToSpawnTerminal {
             .menu(move |window, cx| {
                 Some(ContextMenu::build(window, cx, |context_menu, _, _| {
                     context_menu
-                        .action("Open Settings", bspterm_actions::OpenSettings.boxed_clone())
+                        .action(t("terminal_panel.open_settings"), bspterm_actions::OpenSettings.boxed_clone())
                         .action(
-                            "Edit settings.json",
+                            t("terminal_panel.edit_settings_json"),
                             bspterm_actions::OpenSettingsFile.boxed_clone(),
                         )
                 }))
@@ -1468,7 +1469,7 @@ impl Render for FailedToSpawnTerminal {
                     .items_center()
                     .justify_center()
                     .text_center()
-                    .child(Label::new("Failed to spawn terminal"))
+                    .child(Label::new(t("terminal_panel.failed_to_spawn")))
                     .child(
                         Label::new(self.error.to_string())
                             .size(LabelSize::Small)
@@ -1477,7 +1478,7 @@ impl Render for FailedToSpawnTerminal {
                     )
                     .child(SplitButton::new(
                         ButtonLike::new("open-settings-ui")
-                            .child(Label::new("Edit Settings").size(LabelSize::Small))
+                            .child(Label::new(t("terminal_panel.edit_settings")).size(LabelSize::Small))
                             .on_click(|_, window, cx| {
                                 window.dispatch_action(bspterm_actions::OpenSettings.boxed_clone(), cx);
                             }),
@@ -1493,7 +1494,7 @@ impl workspace::Item for FailedToSpawnTerminal {
     type Event = ();
 
     fn tab_content_text(&self, _detail: usize, _cx: &App) -> SharedString {
-        SharedString::new_static("Failed to spawn terminal")
+        t("terminal_panel.failed_to_spawn")
     }
 }
 
@@ -1790,7 +1791,7 @@ impl Panel for TerminalPanel {
     }
 
     fn icon_tooltip(&self, _window: &Window, _cx: &App) -> Option<&'static str> {
-        Some("Terminal Panel")
+        Some("terminal_panel.title")
     }
 
     fn toggle_action(&self) -> Box<dyn gpui::Action> {

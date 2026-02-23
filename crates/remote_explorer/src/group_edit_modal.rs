@@ -3,6 +3,7 @@ use gpui::{
     App, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable, IntoElement,
     ParentElement, Render, Styled, Window,
 };
+use i18n::t;
 use terminal::{SessionGroup, SessionNode, SessionStoreEntity};
 use ui::{prelude::*, Button, ButtonStyle, Color, Label, LabelSize, h_flex, v_flex};
 use uuid::Uuid;
@@ -27,7 +28,7 @@ impl GroupEditModal {
 
         let name_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
-            editor.set_placeholder_text("Group Name", window, cx);
+            editor.set_placeholder_text(&t("group_edit.group_name_placeholder"), window, cx);
             editor
         });
 
@@ -58,7 +59,7 @@ impl GroupEditModal {
         let name_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
             editor.set_text(name, window, cx);
-            editor.set_placeholder_text("Group Name", window, cx);
+            editor.set_placeholder_text(&t("group_edit.group_name_placeholder"), window, cx);
             editor
         });
 
@@ -117,9 +118,9 @@ impl Render for GroupEditModal {
         let border_variant_color = theme.colors().border_variant;
 
         let title = if self.group_id.is_some() {
-            "Rename Group"
+            t("group_edit.title_rename")
         } else {
-            "New Group"
+            t("group_edit.title_new")
         };
 
         v_flex()
@@ -157,7 +158,7 @@ impl Render for GroupEditModal {
                     .child(
                         v_flex()
                             .gap_1()
-                            .child(Label::new("Name").size(LabelSize::Small).color(Color::Muted))
+                            .child(Label::new(t("common.name")).size(LabelSize::Small).color(Color::Muted))
                             .child(
                                 div()
                                     .w_full()
@@ -179,14 +180,14 @@ impl Render for GroupEditModal {
                     .border_t_1()
                     .border_color(border_variant_color)
                     .child(
-                        Button::new("cancel", "Cancel")
+                        Button::new("cancel", t("common.cancel"))
                             .style(ButtonStyle::Subtle)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.cancel(window, cx);
                             })),
                     )
                     .child(
-                        Button::new("save", "Save")
+                        Button::new("save", t("common.save"))
                             .style(ButtonStyle::Filled)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.save(window, cx);

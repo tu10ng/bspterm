@@ -3,6 +3,7 @@ use gpui::{
     App, Context, Corner, Entity, FocusHandle, Focusable, IntoElement, ParentElement, Render,
     SharedString, Styled, Subscription, Window,
 };
+use i18n::t;
 use settings::SettingsStore;
 use ui::{prelude::*, right_click_menu, ContextMenu, IconButton, Tooltip, v_flex};
 use util::ResultExt as _;
@@ -57,7 +58,7 @@ impl Render for ActivityBar {
                 } else {
                     panel.toggle_action(window, cx)
                 };
-                let tooltip: SharedString = icon_tooltip.into();
+                let tooltip: SharedString = t(icon_tooltip);
 
                 let focus_handle = dock.focus_handle(cx);
 

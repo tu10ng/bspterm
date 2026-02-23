@@ -6,6 +6,7 @@ use gpui::{
     App, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable, IntoElement,
     KeyContext, ParentElement, Render, Styled, Subscription, WeakEntity, Window,
 };
+use i18n::t;
 use terminal::{
     AbbreviationProtocol, get_action_label, Clear, ClearScrollback, Copy, Paste, ScrollLineDown,
     ScrollLineUp, ScrollPageDown, ScrollPageUp, ScrollToBottom, ScrollToTop,
@@ -242,7 +243,7 @@ impl Render for ShortcutBarConfigModal {
                         div()
                             .text_sm()
                             .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .child("快捷键栏配置"),
+                            .child(t("shortcut.config_title")),
                     )
                     .child(
                         h_flex()
@@ -250,7 +251,7 @@ impl Render for ShortcutBarConfigModal {
                             .child(
                                 IconButton::new("add-shortcut-btn", IconName::Plus)
                                     .icon_size(IconSize::Small)
-                                    .tooltip(Tooltip::text("添加脚本快捷键"))
+                                    .tooltip(Tooltip::text(t("shortcut.add_script_shortcut")))
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.open_add_modal(window, cx);
                                     })),
@@ -275,7 +276,7 @@ impl Render for ShortcutBarConfigModal {
                             .text_xs()
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(cx.theme().colors().text_muted)
-                            .child("系统快捷键"),
+                            .child(t("shortcut.system_shortcuts")),
                     )
                     .child(
                         v_flex()
@@ -342,7 +343,7 @@ impl Render for ShortcutBarConfigModal {
                                                 div()
                                                     .text_xs()
                                                     .text_color(cx.theme().colors().text_muted)
-                                                    .child("显示"),
+                                                    .child(t("shortcut.show")),
                                             ),
                                     )
                             })),
@@ -358,7 +359,7 @@ impl Render for ShortcutBarConfigModal {
                                 .text_xs()
                                 .font_weight(gpui::FontWeight::MEDIUM)
                                 .text_color(cx.theme().colors().text_muted)
-                                .child("脚本快捷键"),
+                                .child(t("shortcut.script_shortcuts")),
                         )
                         .child(
                             v_flex()
@@ -428,7 +429,7 @@ impl Render for ShortcutBarConfigModal {
                                                             div()
                                                                 .text_xs()
                                                                 .text_color(cx.theme().colors().text_muted)
-                                                                .child("显示"),
+                                                                .child(t("shortcut.show")),
                                                         ),
                                                 )
                                                 .child(
@@ -438,7 +439,7 @@ impl Render for ShortcutBarConfigModal {
                                                     )
                                                     .icon_size(IconSize::Small)
                                                     .icon_color(Color::Muted)
-                                                    .tooltip(Tooltip::text("删除"))
+                                                    .tooltip(Tooltip::text(t("shortcut.delete")))
                                                     .on_click(move |_, _window, cx| {
                                                         Self::delete_script_shortcut(shortcut_id, cx);
                                                     }),
@@ -468,10 +469,10 @@ fn shortcut_protocol_button(
 ) -> impl IntoElement {
     let is_selected = &protocol == current;
     let label = match &protocol {
-        None => "通用",
-        Some(AbbreviationProtocol::All) => "通用",
-        Some(AbbreviationProtocol::Ssh) => "SSH",
-        Some(AbbreviationProtocol::Telnet) => "Telnet",
+        None => t("shortcut.scope_all"),
+        Some(AbbreviationProtocol::All) => t("shortcut.scope_all"),
+        Some(AbbreviationProtocol::Ssh) => "SSH".into(),
+        Some(AbbreviationProtocol::Telnet) => "Telnet".into(),
     };
 
     Button::new(SharedString::from(id.to_string()), label)
@@ -509,13 +510,13 @@ impl AddShortcutModal {
 
         let label_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
-            editor.set_placeholder_text("标签", window, cx);
+            editor.set_placeholder_text(&t("shortcut.label"), window, cx);
             editor
         });
 
         let keybinding_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
-            editor.set_placeholder_text("快捷键 (如 ctrl-shift-1)", window, cx);
+            editor.set_placeholder_text(&t("shortcut.shortcut_placeholder"), window, cx);
             editor
         });
 
@@ -671,7 +672,7 @@ if __name__ == "__main__":
                             .size(IconSize::Small)
                             .color(Color::Accent),
                     )
-                    .child("新建 Python 脚本")
+                    .child(t("shortcut.new_python_script"))
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.set_mode(AddShortcutMode::NewScript, window, cx);
                     })),
@@ -684,7 +685,7 @@ if __name__ == "__main__":
                             .size(IconSize::Small)
                             .color(Color::Accent),
                     )
-                    .child("选择现有脚本")
+                    .child(t("shortcut.select_existing_script"))
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.set_mode(AddShortcutMode::SelectExisting, window, cx);
                     })),
@@ -697,7 +698,7 @@ if __name__ == "__main__":
             .child(
                 v_flex()
                     .gap_1()
-                    .child(div().text_xs().text_color(cx.theme().colors().text_muted).child("标签"))
+                    .child(div().text_xs().text_color(cx.theme().colors().text_muted).child(t("shortcut.label")))
                     .child(
                         div()
                             .w_full()
@@ -712,7 +713,7 @@ if __name__ == "__main__":
             .child(
                 v_flex()
                     .gap_1()
-                    .child(div().text_xs().text_color(cx.theme().colors().text_muted).child("快捷键"))
+                    .child(div().text_xs().text_color(cx.theme().colors().text_muted).child(t("shortcut.shortcut_key")))
                     .child(
                         div()
                             .w_full()
@@ -727,7 +728,7 @@ if __name__ == "__main__":
             .child(
                 v_flex()
                     .gap_1()
-                    .child(div().text_xs().text_color(cx.theme().colors().text_muted).child("适用范围"))
+                    .child(div().text_xs().text_color(cx.theme().colors().text_muted).child(t("shortcut.scope")))
                     .child(
                         h_flex()
                             .gap_1()
@@ -756,14 +757,14 @@ if __name__ == "__main__":
                     .gap_2()
                     .justify_end()
                     .child(
-                        Button::new("cancel-btn", "取消")
+                        Button::new("cancel-btn", t("common.cancel"))
                             .style(ButtonStyle::Subtle)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.set_mode(AddShortcutMode::SelectType, window, cx);
                             })),
                     )
                     .child(
-                        Button::new("create-btn", "创建并编辑")
+                        Button::new("create-btn", t("shortcut.create_and_edit"))
                             .style(ButtonStyle::Filled)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.create_new_script(window, cx);
@@ -789,7 +790,7 @@ if __name__ == "__main__":
                             div()
                                 .text_sm()
                                 .text_color(cx.theme().colors().text_muted)
-                                .child("没有可用的脚本"),
+                                .child(t("shortcut.no_scripts_available")),
                         )
                     })
                     .children(scripts.iter().map(|path| {
@@ -820,7 +821,7 @@ if __name__ == "__main__":
             .child(
                 v_flex()
                     .gap_1()
-                    .child(div().text_xs().text_color(cx.theme().colors().text_muted).child("标签"))
+                    .child(div().text_xs().text_color(cx.theme().colors().text_muted).child(t("shortcut.label")))
                     .child(
                         div()
                             .w_full()
@@ -835,7 +836,7 @@ if __name__ == "__main__":
             .child(
                 v_flex()
                     .gap_1()
-                    .child(div().text_xs().text_color(cx.theme().colors().text_muted).child("快捷键"))
+                    .child(div().text_xs().text_color(cx.theme().colors().text_muted).child(t("shortcut.shortcut_key")))
                     .child(
                         div()
                             .w_full()
@@ -850,7 +851,7 @@ if __name__ == "__main__":
             .child(
                 v_flex()
                     .gap_1()
-                    .child(div().text_xs().text_color(cx.theme().colors().text_muted).child("适用范围"))
+                    .child(div().text_xs().text_color(cx.theme().colors().text_muted).child(t("shortcut.scope")))
                     .child(
                         h_flex()
                             .gap_1()
@@ -879,14 +880,14 @@ if __name__ == "__main__":
                     .gap_2()
                     .justify_end()
                     .child(
-                        Button::new("cancel-btn", "取消")
+                        Button::new("cancel-btn", t("common.cancel"))
                             .style(ButtonStyle::Subtle)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.set_mode(AddShortcutMode::SelectType, window, cx);
                             })),
                     )
                     .child(
-                        Button::new("add-btn", "添加")
+                        Button::new("add-btn", t("common.add"))
                             .style(ButtonStyle::Filled)
                             .disabled(self.selected_script.is_none())
                             .on_click(cx.listener(|this, _, window, cx| {
@@ -906,9 +907,9 @@ impl Focusable for AddShortcutModal {
 impl Render for AddShortcutModal {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let title = match self.mode {
-            AddShortcutMode::SelectType => "添加脚本快捷键",
-            AddShortcutMode::NewScript => "新建快捷键脚本",
-            AddShortcutMode::SelectExisting => "选择脚本",
+            AddShortcutMode::SelectType => t("shortcut.add_script_shortcut"),
+            AddShortcutMode::NewScript => t("shortcut.new_shortcut_script"),
+            AddShortcutMode::SelectExisting => t("shortcut.select_script"),
         };
 
         v_flex()

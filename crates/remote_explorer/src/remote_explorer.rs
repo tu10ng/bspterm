@@ -15,6 +15,7 @@ use gpui::{
     Styled, Subscription, Task, UniformListScrollHandle, WeakEntity, Window, anchored, deferred,
     px, uniform_list,
 };
+use i18n::t;
 use lan_discovery::{DiscoveredUser, LanDiscoveryEntity, LanDiscoveryEvent};
 use lan_messaging::{ChatModal, UserIdentity};
 use terminal::{
@@ -482,7 +483,7 @@ impl RemoteExplorer {
                 ContextMenu::build(window, cx, move |menu, _window, _cx| {
                     let workspace_for_edit = workspace.clone();
 
-                    menu.entry("Edit Session", None, move |window, cx| {
+                    menu.entry(t("remote_explorer.edit_session"), None, move |window, cx| {
                         if let Some(workspace) = workspace_for_edit.upgrade() {
                             workspace.update(cx, |ws, cx| {
                                 ws.toggle_modal(window, cx, |window, cx| {
@@ -491,7 +492,7 @@ impl RemoteExplorer {
                             });
                         }
                     })
-                    .entry("复制环境信息", None, {
+                    .entry(t("remote_explorer.copy_env_info"), None, {
                         let session_store = session_store_for_copy.clone();
                         move |_window, cx| {
                             let store = session_store.read(cx);
@@ -503,7 +504,7 @@ impl RemoteExplorer {
                             }
                         }
                     })
-                    .entry("Delete Session", None, move |_window, cx| {
+                    .entry(t("remote_explorer.delete_session"), None, move |_window, cx| {
                         session_store_entity.update(cx, |store, cx| {
                             store.remove_node(entry_id, cx);
                         });
@@ -515,7 +516,7 @@ impl RemoteExplorer {
                 ContextMenu::build(window, cx, move |menu, _window, _cx| {
                     let workspace_for_edit = workspace.clone();
 
-                    menu.entry("Rename Group", None, move |window, cx| {
+                    menu.entry(t("remote_explorer.rename_group"), None, move |window, cx| {
                         if let Some(workspace) = workspace_for_edit.upgrade() {
                             workspace.update(cx, |ws, cx| {
                                 ws.toggle_modal(window, cx, |window, cx| {
@@ -524,7 +525,7 @@ impl RemoteExplorer {
                             });
                         }
                     })
-                    .entry("复制环境信息", None, {
+                    .entry(t("remote_explorer.copy_env_info"), None, {
                         let session_store = session_store_for_copy.clone();
                         move |_window, cx| {
                             let store = session_store.read(cx);
@@ -541,7 +542,7 @@ impl RemoteExplorer {
                             }
                         }
                     })
-                    .entry("Delete Group", None, move |_window, cx| {
+                    .entry(t("remote_explorer.delete_group"), None, move |_window, cx| {
                         session_store_entity.update(cx, |store, cx| {
                             store.remove_node(entry_id, cx);
                         });
@@ -568,7 +569,7 @@ impl RemoteExplorer {
         let workspace = self.workspace.clone();
 
         let context_menu = ContextMenu::build(window, cx, move |menu, _window, _cx| {
-            menu.entry("New Group", None, move |window, cx| {
+            menu.entry(t("remote_explorer.new_group"), None, move |window, cx| {
                 if let Some(workspace) = workspace.upgrade() {
                     workspace.update(cx, |ws, cx| {
                         ws.toggle_modal(window, cx, |window, cx| {
@@ -651,7 +652,7 @@ impl RemoteExplorer {
             }))
             .child(Disclosure::new("quick-add-disclosure", expanded))
             .child(
-                Label::new("Quick Add")
+                Label::new(t("remote_explorer.quick_add"))
                     .size(LabelSize::Small)
                     .color(Color::Muted),
             )
@@ -692,7 +693,7 @@ impl RemoteExplorer {
                             .color(Color::Muted),
                     )
                     .child(
-                        Label::new("Auto-recognize")
+                        Label::new(t("remote_explorer.auto_recognize"))
                             .size(LabelSize::Small)
                             .color(Color::Muted),
                     ),
@@ -716,7 +717,7 @@ impl RemoteExplorer {
                     ),
             )
             .child(
-                Label::new("Supports: IP, IP:port, IP user pass")
+                Label::new(t("remote_explorer.auto_recognize_hint"))
                     .size(LabelSize::XSmall)
                     .color(Color::Muted),
             )
@@ -783,7 +784,7 @@ impl RemoteExplorer {
                             .color(Color::Muted),
                     )
                     .child(
-                        Label::new("Telnet Quick Connect")
+                        Label::new(t("remote_explorer.telnet_quick_connect"))
                             .size(LabelSize::Small)
                             .color(Color::Muted),
                     ),
@@ -818,7 +819,7 @@ impl RemoteExplorer {
                     .w_full()
                     .gap_1()
                     .child(
-                        Label::new("Credential:")
+                        Label::new(t("remote_explorer.credential"))
                             .size(LabelSize::Small)
                             .color(Color::Muted),
                     )
@@ -854,7 +855,7 @@ impl RemoteExplorer {
             )
             .child(
                 h_flex().w_full().justify_end().child(
-                    ui::Button::new("telnet-connect", "Connect")
+                    ui::Button::new("telnet-connect", t("common.connect"))
                         .style(ui::ButtonStyle::Filled)
                         .size(ui::ButtonSize::Compact)
                         .on_click(cx.listener(|this, _, window, cx| {
@@ -884,7 +885,7 @@ impl RemoteExplorer {
                             .color(Color::Muted),
                     )
                     .child(
-                        Label::new("SSH Quick Connect")
+                        Label::new(t("remote_explorer.ssh_quick_connect"))
                             .size(LabelSize::Small)
                             .color(Color::Muted),
                     ),
@@ -907,7 +908,7 @@ impl RemoteExplorer {
                             .child(host_editor),
                     )
                     .child(
-                        ui::Button::new("ssh-connect", "Connect")
+                        ui::Button::new("ssh-connect", t("common.connect"))
                             .style(ui::ButtonStyle::Filled)
                             .size(ui::ButtonSize::Compact)
                             .on_click(cx.listener(|this, _, window, cx| {
@@ -916,7 +917,7 @@ impl RemoteExplorer {
                     ),
             )
             .child(
-                Label::new("Default: root/root")
+                Label::new(t("remote_explorer.default_credentials"))
                     .size(LabelSize::XSmall)
                     .color(Color::Muted),
             )
@@ -1145,10 +1146,10 @@ impl RemoteExplorer {
             .start_slot({
                 let ping_status = self.ping_status.get(&id).copied().unwrap_or_default();
                 let (indicator_color, tooltip_text) = match ping_status {
-                    PingStatus::Unknown => (Color::Muted, "连通性未知"),
-                    PingStatus::Checking => (Color::Muted, "正在检测..."),
-                    PingStatus::Reachable => (Color::Success, "服务器可达"),
-                    PingStatus::Unreachable => (Color::Error, "服务器不可达"),
+                    PingStatus::Unknown => (Color::Muted, t("remote_explorer.ping_unknown")),
+                    PingStatus::Checking => (Color::Muted, t("remote_explorer.ping_checking")),
+                    PingStatus::Reachable => (Color::Success, t("remote_explorer.ping_reachable")),
+                    PingStatus::Unreachable => (Color::Error, t("remote_explorer.ping_unreachable")),
                 };
                 h_flex()
                     .gap_1()
@@ -1227,7 +1228,7 @@ impl RemoteExplorer {
                                         .size(LabelSize::XSmall)
                                         .color(Color::Muted),
                                 )
-                                .tooltip(Tooltip::text(format!("还有 {} 位用户", remaining))),
+                                .tooltip(Tooltip::text(format!("{} {}", remaining, t("remote_explorer.more_users")))),
                         )
                     })
             });
@@ -1367,7 +1368,7 @@ impl Render for RemoteExplorer {
                         v_flex()
                             .p_4()
                             .gap_2()
-                            .child(Label::new("No saved sessions").color(Color::Muted))
+                            .child(Label::new(t("remote_explorer.no_saved_sessions")).color(Color::Muted))
                             .into_any_element()
                     })
                     .child(
@@ -1461,7 +1462,7 @@ impl Panel for RemoteExplorer {
     }
 
     fn icon_tooltip(&self, _window: &Window, _cx: &App) -> Option<&'static str> {
-        Some("Remote Explorer")
+        Some("remote_explorer.title")
     }
 
     fn toggle_action(&self) -> Box<dyn Action> {

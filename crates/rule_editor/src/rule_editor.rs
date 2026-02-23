@@ -6,6 +6,7 @@ use gpui::{
     FocusHandle, Focusable, IntoElement, ListSizingBehavior, ParentElement, Render, Styled,
     Subscription, UniformListScrollHandle, WeakEntity, Window, px, uniform_list,
 };
+use i18n::t;
 use terminal::{
     AutomationRule, CredentialType, Protocol, RuleAction, RuleCondition, RuleStoreEntity,
     RuleStoreEvent, TriggerEvent,
@@ -142,9 +143,9 @@ impl RuleEditor {
         let enabled = rule.enabled;
         let _is_selected = self.selected_rule_id == Some(id);
         let trigger_text = match &rule.trigger {
-            TriggerEvent::Wakeup => "Wakeup",
-            TriggerEvent::Connected => "Connected",
-            TriggerEvent::Disconnected => "Disconnected",
+            TriggerEvent::Wakeup => t("rule_editor.trigger_wakeup"),
+            TriggerEvent::Connected => t("rule_editor.trigger_connected"),
+            TriggerEvent::Disconnected => t("rule_editor.trigger_disconnected"),
         };
 
         let condition_text = format_condition(&rule.condition);
@@ -181,7 +182,7 @@ impl RuleEditor {
                 h_flex()
                     .gap_1()
                     .child(
-                        Button::new(SharedString::from(format!("edit-{}", id)), "Edit")
+                        Button::new(SharedString::from(format!("edit-{}", id)), t("common.edit"))
                             .style(ButtonStyle::Subtle)
                             .on_click(cx.listener({
                                 let rule = rule.clone();
@@ -191,7 +192,7 @@ impl RuleEditor {
                             })),
                     )
                     .child(
-                        Button::new(SharedString::from(format!("delete-{}", id)), "Delete")
+                        Button::new(SharedString::from(format!("delete-{}", id)), t("common.delete"))
                             .style(ButtonStyle::Subtle)
                             .color(Color::Error)
                             .on_click(cx.listener(move |this, _, _window, cx| {
@@ -215,20 +216,20 @@ fn format_condition(condition: &RuleCondition) -> String {
             } else {
                 pattern.clone()
             };
-            format!("Pattern: {}", truncated)
+            t("rule_edit.condition_pattern").replace("{}", &truncated)
         }
         RuleCondition::ConnectionType { protocol } => {
             let proto = match protocol {
                 Protocol::Ssh => "SSH",
                 Protocol::Telnet => "Telnet",
             };
-            format!("Protocol: {}", proto)
+            t("rule_edit.condition_protocol").replace("{}", proto)
         }
         RuleCondition::All { conditions } => {
-            format!("All ({} conditions)", conditions.len())
+            t("rule_edit.condition_all").replace("{}", &conditions.len().to_string())
         }
         RuleCondition::Any { conditions } => {
-            format!("Any ({} conditions)", conditions.len())
+            t("rule_edit.condition_any").replace("{}", &conditions.len().to_string())
         }
     }
 }
@@ -241,21 +242,21 @@ fn format_action(action: &RuleAction) -> String {
             } else {
                 text.clone()
             };
-            format!("Send: {}", truncated)
+            t("rule_edit.action_send").replace("{}", &truncated)
         }
         RuleAction::SendCredential { credential_type } => {
             let cred = match credential_type {
-                CredentialType::Username => "Username",
-                CredentialType::Password => "Password",
+                CredentialType::Username => t("rule_edit.credential_username"),
+                CredentialType::Password => t("rule_edit.credential_password"),
             };
-            format!("Send {}", cred)
+            t("rule_edit.action_send_credential").replace("{}", &cred)
         }
-        RuleAction::RunPython { .. } => "Run Python".to_string(),
+        RuleAction::RunPython { .. } => t("rule_edit.action_run_python").to_string(),
         RuleAction::Sequence { actions } => {
-            format!("Sequence ({} actions)", actions.len())
+            t("rule_edit.action_sequence").replace("{}", &actions.len().to_string())
         }
         RuleAction::Delay { milliseconds } => {
-            format!("Delay {}ms", milliseconds)
+            t("rule_edit.action_delay").replace("{}", &milliseconds.to_string())
         }
     }
 }
@@ -280,10 +281,10 @@ impl Render for RuleEditor {
                         h_flex()
                             .gap_1()
                             .child(Icon::new(IconName::Cog).size(IconSize::Small))
-                            .child(Label::new("Terminal Rules").size(LabelSize::Default)),
+                            .child(Label::new(t("rule_editor.title")).size(LabelSize::Default)),
                     )
                     .child(
-                        Button::new("add-rule", "Add Rule")
+                        Button::new("add-rule", t("rule_editor.add_rule"))
                             .style(ButtonStyle::Filled)
                             .icon(IconName::Plus)
                             .icon_size(IconSize::Small)
@@ -319,13 +320,8 @@ impl Render for RuleEditor {
                                     .color(Color::Muted),
                             )
                             .child(
-                                Label::new("No automation rules")
+                                Label::new(t("rule_editor.no_rules"))
                                     .size(LabelSize::Default)
-                                    .color(Color::Muted),
-                            )
-                            .child(
-                                Label::new("Add a rule to automate terminal actions")
-                                    .size(LabelSize::Small)
                                     .color(Color::Muted),
                             )
                             .into_any_element()
@@ -381,7 +377,7 @@ impl Panel for RuleEditor {
     }
 
     fn icon_tooltip(&self, _window: &Window, _cx: &App) -> Option<&'static str> {
-        Some("Terminal Rule Editor")
+        Some("rule_editor.title")
     }
 
     fn toggle_action(&self) -> Box<dyn Action> {

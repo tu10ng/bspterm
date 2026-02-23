@@ -3,6 +3,7 @@ use gpui::{
     App, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable, IntoElement,
     ParentElement, Render, Styled, Subscription, Window,
 };
+use i18n::t;
 use terminal::{
     Abbreviation, AbbreviationProtocol, AbbreviationStoreEntity, AbbreviationStoreEvent,
 };
@@ -82,7 +83,7 @@ impl Render for AbbrBarConfigModal {
                         div()
                             .text_sm()
                             .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .child("缩写配置"),
+                            .child(t("abbr.config_title")),
                     )
                     .child(
                         IconButton::new("close-modal", IconName::Close)
@@ -99,7 +100,7 @@ impl Render for AbbrBarConfigModal {
                     .rounded_sm()
                     .justify_between()
                     .bg(cx.theme().colors().element_background)
-                    .child(div().text_sm().child("启用缩写展开"))
+                    .child(div().text_sm().child(t("abbr.enable_expansion")))
                     .child(
                         Switch::new(
                             "expansion-enabled-switch",
@@ -126,7 +127,7 @@ impl Render for AbbrBarConfigModal {
                             div()
                                 .text_sm()
                                 .text_color(cx.theme().colors().text_muted)
-                                .child("暂无缩写，点击下方按钮添加"),
+                                .child(t("abbr.empty_hint")),
                         )
                     })
                     .children(abbreviations.iter().map(|abbr| {
@@ -252,13 +253,13 @@ impl AddAbbrModal {
 
         let trigger_editor = cx.new(|cx| {
             let mut ed = Editor::single_line(window, cx);
-            ed.set_placeholder_text("触发词 (如: g)", window, cx);
+            ed.set_placeholder_text(&t("abbr.trigger_placeholder"), window, cx);
             ed
         });
 
         let expansion_editor = cx.new(|cx| {
             let mut ed = Editor::single_line(window, cx);
-            ed.set_placeholder_text("展开内容 (如: git)", window, cx);
+            ed.set_placeholder_text(&t("abbr.expansion_placeholder"), window, cx);
             ed
         });
 
@@ -315,7 +316,7 @@ impl Render for AddAbbrModal {
                 div()
                     .text_sm()
                     .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child("添加缩写"),
+                    .child(t("abbr.add_title")),
             )
             .child(
                 v_flex()
@@ -323,19 +324,19 @@ impl Render for AddAbbrModal {
                     .child(
                         v_flex()
                             .gap_1()
-                            .child(Label::new("触发词").size(LabelSize::Small))
+                            .child(Label::new(t("abbr.trigger_word")).size(LabelSize::Small))
                             .child(self.trigger_editor.clone()),
                     )
                     .child(
                         v_flex()
                             .gap_1()
-                            .child(Label::new("展开内容").size(LabelSize::Small))
+                            .child(Label::new(t("abbr.expansion_text")).size(LabelSize::Small))
                             .child(self.expansion_editor.clone()),
                     )
                     .child(
                         v_flex()
                             .gap_1()
-                            .child(Label::new("适用协议").size(LabelSize::Small))
+                            .child(Label::new(t("abbr.applicable_protocol")).size(LabelSize::Small))
                             .child(
                                 h_flex()
                                     .gap_2()
@@ -365,13 +366,13 @@ impl Render for AddAbbrModal {
                     .justify_end()
                     .gap_2()
                     .child(
-                        ui::Button::new("cancel", "取消")
+                        ui::Button::new("cancel", t("common.cancel"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.dismiss(&menu::Cancel, window, cx)
                             })),
                     )
                     .child(
-                        ui::Button::new("confirm", "确定")
+                        ui::Button::new("confirm", t("common.confirm"))
                             .style(ui::ButtonStyle::Filled)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.confirm(&menu::Confirm, window, cx)
@@ -488,7 +489,7 @@ impl Render for EditAbbrModal {
                 div()
                     .text_sm()
                     .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child("编辑缩写"),
+                    .child(t("abbr.edit_title")),
             )
             .child(
                 v_flex()
@@ -496,19 +497,19 @@ impl Render for EditAbbrModal {
                     .child(
                         v_flex()
                             .gap_1()
-                            .child(Label::new("触发词").size(LabelSize::Small))
+                            .child(Label::new(t("abbr.trigger_word")).size(LabelSize::Small))
                             .child(self.trigger_editor.clone()),
                     )
                     .child(
                         v_flex()
                             .gap_1()
-                            .child(Label::new("展开内容").size(LabelSize::Small))
+                            .child(Label::new(t("abbr.expansion_text")).size(LabelSize::Small))
                             .child(self.expansion_editor.clone()),
                     )
                     .child(
                         v_flex()
                             .gap_1()
-                            .child(Label::new("适用协议").size(LabelSize::Small))
+                            .child(Label::new(t("abbr.applicable_protocol")).size(LabelSize::Small))
                             .child(
                                 h_flex()
                                     .gap_2()
@@ -538,13 +539,13 @@ impl Render for EditAbbrModal {
                     .justify_end()
                     .gap_2()
                     .child(
-                        ui::Button::new("cancel", "取消")
+                        ui::Button::new("cancel", t("common.cancel"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.dismiss(&menu::Cancel, window, cx)
                             })),
                     )
                     .child(
-                        ui::Button::new("confirm", "确定")
+                        ui::Button::new("confirm", t("common.confirm"))
                             .style(ui::ButtonStyle::Filled)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.confirm(&menu::Confirm, window, cx)

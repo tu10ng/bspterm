@@ -3,6 +3,7 @@ use gpui::{
     App, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable, IntoElement,
     ParentElement, Render, Styled, Window,
 };
+use i18n::t;
 use terminal::{
     AutomationRule, CredentialType, Protocol, RuleAction, RuleCondition, RuleStoreEntity,
     TriggerEvent,
@@ -45,20 +46,20 @@ impl RuleEditModal {
 
         let name_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
-            editor.set_text("New Rule", window, cx);
-            editor.set_placeholder_text("Rule Name", window, cx);
+            editor.set_text(t("rule_edit.title_new").to_string(), window, cx);
+            editor.set_placeholder_text(&t("rule_edit.name_placeholder"), window, cx);
             editor
         });
 
         let pattern_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
-            editor.set_placeholder_text("Enter regex pattern (e.g., (?i)login:)", window, cx);
+            editor.set_placeholder_text(&t("rule_edit.pattern_placeholder"), window, cx);
             editor
         });
 
         let send_text_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
-            editor.set_placeholder_text("Text to send", window, cx);
+            editor.set_placeholder_text(&t("rule_edit.send_text_placeholder"), window, cx);
             editor
         });
 
@@ -92,21 +93,21 @@ impl RuleEditModal {
         let name_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
             editor.set_text(rule.name.clone(), window, cx);
-            editor.set_placeholder_text("Rule Name", window, cx);
+            editor.set_placeholder_text(&t("rule_edit.name_placeholder"), window, cx);
             editor
         });
 
         let pattern_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
             editor.set_text(pattern, window, cx);
-            editor.set_placeholder_text("Enter regex pattern", window, cx);
+            editor.set_placeholder_text(&t("rule_edit.pattern_placeholder"), window, cx);
             editor
         });
 
         let send_text_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
             editor.set_text(send_text, window, cx);
-            editor.set_placeholder_text("Text to send", window, cx);
+            editor.set_placeholder_text(&t("rule_edit.send_text_placeholder"), window, cx);
             editor
         });
 
@@ -258,9 +259,9 @@ fn extract_action(action: &RuleAction) -> (ActionType, CredentialType, String, b
 impl Render for RuleEditModal {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let title = if self.editing_rule_id.is_some() {
-            "Edit Rule"
+            t("rule_edit.title_edit")
         } else {
-            "New Rule"
+            t("rule_edit.title_new")
         };
 
         let trigger = self.trigger.clone();
@@ -279,7 +280,7 @@ impl Render for RuleEditModal {
             .child(
                 v_flex()
                     .gap_1()
-                    .child(Label::new("Name").size(LabelSize::Small))
+                    .child(Label::new(t("common.name")).size(LabelSize::Small))
                     .child(
                         div()
                             .border_1()
@@ -297,12 +298,12 @@ impl Render for RuleEditModal {
                         v_flex()
                             .gap_1()
                             .flex_1()
-                            .child(Label::new("Trigger").size(LabelSize::Small))
+                            .child(Label::new(t("rule_editor.trigger")).size(LabelSize::Small))
                             .child(
                                 h_flex()
                                     .gap_1()
                                     .child(
-                                        Button::new("trigger-wakeup", "Wakeup")
+                                        Button::new("trigger-wakeup", t("rule_editor.trigger_wakeup"))
                                             .style(if trigger == TriggerEvent::Wakeup {
                                                 ButtonStyle::Filled
                                             } else {
@@ -313,7 +314,7 @@ impl Render for RuleEditModal {
                                             })),
                                     )
                                     .child(
-                                        Button::new("trigger-connected", "Connected")
+                                        Button::new("trigger-connected", t("rule_editor.trigger_connected"))
                                             .style(if trigger == TriggerEvent::Connected {
                                                 ButtonStyle::Filled
                                             } else {
@@ -329,7 +330,7 @@ impl Render for RuleEditModal {
                         v_flex()
                             .gap_1()
                             .flex_1()
-                            .child(Label::new("Protocol").size(LabelSize::Small))
+                            .child(Label::new(t("session_edit.protocol")).size(LabelSize::Small))
                             .child(
                                 h_flex()
                                     .gap_1()
@@ -361,7 +362,7 @@ impl Render for RuleEditModal {
             .child(
                 v_flex()
                     .gap_1()
-                    .child(Label::new("Pattern (regex)").size(LabelSize::Small))
+                    .child(Label::new(t("rule_edit.pattern")).size(LabelSize::Small))
                     .child(
                         div()
                             .border_1()
@@ -375,12 +376,12 @@ impl Render for RuleEditModal {
             .child(
                 v_flex()
                     .gap_1()
-                    .child(Label::new("Action").size(LabelSize::Small))
+                    .child(Label::new(t("rule_editor.action")).size(LabelSize::Small))
                     .child(
                         h_flex()
                             .gap_1()
                             .child(
-                                Button::new("action-credential", "Send Credential")
+                                Button::new("action-credential", t("rule_edit.action_credential"))
                                     .style(if action_type == ActionType::SendCredential {
                                         ButtonStyle::Filled
                                     } else {
@@ -391,7 +392,7 @@ impl Render for RuleEditModal {
                                     })),
                             )
                             .child(
-                                Button::new("action-text", "Send Text")
+                                Button::new("action-text", t("rule_edit.action_text"))
                                     .style(if action_type == ActionType::SendText {
                                         ButtonStyle::Filled
                                     } else {
@@ -408,7 +409,7 @@ impl Render for RuleEditModal {
                                 .gap_1()
                                 .mt_1()
                                 .child(
-                                    Button::new("cred-username", "Username")
+                                    Button::new("cred-username", t("rule_edit.credential_username"))
                                         .style(if credential_type == CredentialType::Username {
                                             ButtonStyle::Filled
                                         } else {
@@ -419,7 +420,7 @@ impl Render for RuleEditModal {
                                         })),
                                 )
                                 .child(
-                                    Button::new("cred-password", "Password")
+                                    Button::new("cred-password", t("rule_edit.credential_password"))
                                         .style(if credential_type == CredentialType::Password {
                                             ButtonStyle::Filled
                                         } else {
@@ -450,14 +451,14 @@ impl Render for RuleEditModal {
                     .gap_2()
                     .mt_2()
                     .child(
-                        Button::new("cancel", "Cancel")
+                        Button::new("cancel", t("common.cancel"))
                             .style(ButtonStyle::Subtle)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.cancel(window, cx);
                             })),
                     )
                     .child(
-                        Button::new("save", "Save")
+                        Button::new("save", t("common.save"))
                             .style(ButtonStyle::Filled)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.save(window, cx);

@@ -1,5 +1,6 @@
 use editor::Editor;
 use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window};
+use i18n::t;
 use ui::{
     prelude::*, Button, ButtonStyle, Color, Icon, IconName, IconSize, Label, LabelSize, h_flex,
     v_flex,
@@ -13,7 +14,7 @@ impl SshSection {
     pub fn new(window: &mut Window, cx: &mut App) -> Self {
         let host_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
-            editor.set_placeholder_text("user@host:port", window, cx);
+            editor.set_placeholder_text(&t("ssh_connect.placeholder"), window, cx);
             editor
         });
 
@@ -49,7 +50,7 @@ impl SshSection {
                             .color(Color::Muted),
                     )
                     .child(
-                        Label::new("SSH Quick Connect")
+                        Label::new(t("remote_explorer.ssh_quick_connect"))
                             .size(LabelSize::Small)
                             .color(Color::Muted),
                     ),
@@ -69,13 +70,13 @@ impl SshSection {
                             .child(self.host_editor.clone()),
                     )
                     .child(
-                        Button::new("ssh-connect", "Connect")
+                        Button::new("ssh-connect", t("common.connect"))
                             .style(ButtonStyle::Filled)
                             .size(ButtonSize::Compact),
                     ),
             )
             .child(
-                Label::new("Default: root/root")
+                Label::new(t("remote_explorer.default_credentials"))
                     .size(LabelSize::XSmall)
                     .color(Color::Muted),
             )

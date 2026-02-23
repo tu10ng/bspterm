@@ -1,0 +1,335 @@
+# Application Menu
+menu:
+  bspterm: "BspTerm"
+  file: "文件"
+  edit: "编辑"
+  selection: "选择"
+  view: "视图"
+  go: "转到"
+  run: "运行"
+  window: "窗口"
+  help: "帮助"
+
+  # BspTerm Menu
+  about_bspterm: "关于 BspTerm"
+  check_for_updates: "检查更新"
+  settings: "设置"
+  open_settings: "打开设置"
+  open_settings_file: "打开设置文件"
+  open_project_settings: "打开项目设置"
+  open_project_settings_file: "打开项目设置文件"
+  open_default_settings: "打开默认设置"
+  open_keymap: "打开快捷键"
+  open_keymap_file: "打开快捷键文件"
+  open_default_key_bindings: "打开默认快捷键"
+  select_theme: "选择主题..."
+  select_icon_theme: "选择图标主题..."
+  extensions: "扩展"
+  install_cli: "安装 CLI"
+  hide_bspterm: "隐藏 BspTerm"
+  hide_others: "隐藏其他"
+  show_all: "显示全部"
+  quit_bspterm: "退出 BspTerm"
+
+  # File Menu
+  new: "新建"
+  new_window: "新建窗口"
+  open_remote: "打开远程..."
+  open_file: "打开文件..."
+  save: "保存"
+  save_as: "另存为…"
+  save_all: "全部保存"
+  close_editor: "关闭编辑器"
+  close_window: "关闭窗口"
+
+  # Edit Menu
+  undo: "撤销"
+  redo: "重做"
+  cut: "剪切"
+  copy: "复制"
+  copy_and_trim: "复制并修剪"
+  paste: "粘贴"
+  find: "查找"
+  toggle_line_comment: "切换行注释"
+
+  # Selection Menu
+  select_all: "全选"
+  expand_selection: "扩展选择"
+  shrink_selection: "收缩选择"
+  select_next_sibling: "选择下一个同级"
+  select_previous_sibling: "选择上一个同级"
+  add_cursor_above: "在上方添加光标"
+  add_cursor_below: "在下方添加光标"
+  select_next_occurrence: "选择下一个匹配项"
+  select_previous_occurrence: "选择上一个匹配项"
+  select_all_occurrences: "选择所有匹配项"
+  move_line_up: "上移行"
+  move_line_down: "下移行"
+  duplicate_selection: "复制选择"
+
+  # View Menu
+  zoom_in: "放大"
+  zoom_out: "缩小"
+  reset_zoom: "重置缩放"
+  reset_all_zoom: "重置所有缩放"
+  toggle_left_dock: "切换左侧停靠栏"
+  toggle_right_dock: "切换右侧停靠栏"
+  toggle_bottom_dock: "切换底部停靠栏"
+  toggle_all_docks: "切换所有停靠栏"
+  editor_layout: "编辑器布局"
+  split_up: "向上拆分"
+  split_down: "向下拆分"
+  split_left: "向左拆分"
+  split_right: "向右拆分"
+  remote_explorer: "远程资源管理器"
+  terminal_panel: "终端面板"
+  outline_panel: "大纲面板"
+  project_panel: "项目面板"
+  toggle_gpui_inspector: "切换 GPUI 检查器"
+
+  # Go Menu
+  back: "后退"
+  forward: "前进"
+  command_palette: "命令面板..."
+  go_to_file: "转到文件..."
+  go_to_symbol_in_editor: "转到编辑器中的符号..."
+  go_to_line_column: "转到行/列..."
+  go_to_definition: "转到定义"
+  go_to_declaration: "转到声明"
+  go_to_type_definition: "转到类型定义"
+  find_all_references: "查找所有引用"
+  next_problem: "下一个问题"
+  previous_problem: "上一个问题"
+
+  # Run Menu
+  spawn_task: "运行任务"
+  edit_tasks_json: "编辑 tasks.json..."
+
+  # Window Menu
+  minimize: "最小化"
+  zoom: "缩放"
+
+  # Help Menu
+  view_release_notes_locally: "本地查看发行说明"
+  view_telemetry: "查看遥测数据"
+  view_dependency_licenses: "查看依赖许可证"
+  show_welcome: "显示欢迎页"
+  file_bug_report: "报告问题..."
+  request_feature: "请求功能..."
+
+# Common
+common:
+  ok: "确定"
+  cancel: "取消"
+  save: "保存"
+  delete: "删除"
+  edit: "编辑"
+  add: "添加"
+  connect: "连接"
+  close: "关闭"
+  custom: "自定义"
+  confirm: "确认"
+  name: "名称"
+  enabled: "已启用"
+  disabled: "已禁用"
+
+# Remote Explorer Panel
+remote_explorer:
+  title: "远程资源管理器"
+  quick_add: "快速添加"
+  auto_recognize: "自动识别"
+  auto_recognize_hint: "支持: IP, IP:端口, IP 用户名 密码"
+  telnet_quick_connect: "Telnet 快速连接"
+  ssh_quick_connect: "SSH 快速连接"
+  default_credentials: "默认: root/root"
+  credential: "凭据:"
+  no_saved_sessions: "没有保存的会话"
+  edit_session: "编辑会话"
+  delete_session: "删除会话"
+  rename_group: "重命名分组"
+  delete_group: "删除分组"
+  new_group: "新建分组"
+  copy_env_info: "复制环境信息"
+
+  # Ping status
+  ping_unknown: "连通性未知"
+  ping_checking: "正在检测..."
+  ping_reachable: "服务器可达"
+  ping_unreachable: "服务器不可达"
+
+  # User avatars
+  more_users: "位用户"
+
+# Terminal Panel
+terminal_panel:
+  title: "终端"
+  new_terminal: "新建终端"
+  spawn_task: "运行任务"
+  connect_ssh: "连接 SSH..."
+  new: "新建…"
+  split_terminal: "拆分终端"
+  failed_to_spawn: "无法启动终端"
+  edit_settings: "编辑设置"
+  open_settings: "打开设置"
+  edit_settings_json: "编辑 settings.json"
+
+# Editor Panel
+editor_panel:
+  title: "编辑器面板"
+  new: "新建..."
+  new_file: "新建文件"
+  open_file: "打开文件"
+  split_pane: "拆分窗格"
+  split_right: "向右拆分"
+  split_left: "向左拆分"
+  split_up: "向上拆分"
+  split_down: "向下拆分"
+  zoom_in: "放大"
+  zoom_out: "缩小"
+
+# Script Panel
+script_panel:
+  title: "脚本面板"
+  scripts: "脚本"
+  refresh: "刷新"
+  run: "运行"
+  stop: "停止"
+  output_placeholder: "输出将显示在此处..."
+
+# Rule Editor Panel
+rule_editor:
+  title: "规则编辑器"
+  add_rule: "添加规则"
+  edit_rule: "编辑规则"
+  delete_rule: "删除规则"
+  no_rules: "没有自动化规则"
+  trigger: "触发器"
+  condition: "条件"
+  action: "动作"
+
+  # Triggers
+  trigger_wakeup: "唤醒"
+  trigger_connected: "已连接"
+  trigger_disconnected: "已断开"
+
+# Session Edit Modal
+session_edit:
+  title_new: "新建会话"
+  title_edit: "编辑会话"
+  session_name: "会话名称"
+  protocol: "协议"
+  host: "主机"
+  port: "端口"
+  username: "用户名"
+  password: "密码"
+  auth_method: "认证方式"
+  auth_interactive: "交互式"
+  auth_password: "密码"
+  auth_private_key: "私钥"
+  auth_agent: "SSH Agent"
+  private_key_path: "私钥路径"
+
+# Group Edit Modal
+group_edit:
+  title_new: "新建分组"
+  title_edit: "编辑分组"
+  title_rename: "重命名分组"
+  group_name: "分组名称"
+  group_name_placeholder: "分组名称"
+
+# Rule Edit Modal
+rule_edit:
+  title_new: "新建规则"
+  title_edit: "编辑规则"
+  name_placeholder: "规则名称"
+  pattern_placeholder: "输入正则表达式 (如 (?i)login:)"
+  send_text_placeholder: "要发送的文本"
+  pattern: "匹配模式 (正则)"
+  action_credential: "发送凭据"
+  action_text: "发送文本"
+  credential_username: "用户名"
+  credential_password: "密码"
+  condition_pattern: "模式: {}"
+  condition_protocol: "协议: {}"
+  condition_all: "全部 ({} 个条件)"
+  condition_any: "任意 ({} 个条件)"
+  action_send: "发送: {}"
+  action_send_credential: "发送{}"
+  action_run_python: "运行 Python"
+  action_sequence: "序列 ({} 个动作)"
+  action_delay: "延迟 {}ms"
+
+# Session Edit Modal (additional keys)
+session_edit:
+  title_edit_protocol: "编辑 {} 会话"
+  terminal_type: "终端类型"
+
+# Quick Add - Multi Connection Modal
+multi_connection:
+  title: "配置多个连接"
+  ip: "IP"
+  protocol: "协议"
+  port: "端口"
+  user: "用户"
+  pass: "密码"
+  apply_to_all: "应用到全部:"
+  apply: "应用"
+  connect_all: "全部连接"
+
+# Abbreviation Bar
+abbr:
+  config_title: "缩写配置"
+  enable_expansion: "启用缩写展开"
+  empty_hint: "暂无缩写，点击下方按钮添加"
+  add_title: "添加缩写"
+  edit_title: "编辑缩写"
+  trigger_word: "触发词"
+  expansion_text: "展开内容"
+  applicable_protocol: "适用协议"
+  trigger_placeholder: "触发词 (如: g)"
+  expansion_placeholder: "展开内容 (如: git)"
+
+# Button Bar
+button_bar:
+  new_script_tab: "新建按钮脚本"
+  config_title: "快捷按钮配置"
+  empty_hint: "脚本目录为空，点击下方按钮添加脚本"
+  add_button: "添加按钮"
+  add_title: "添加按钮"
+  edit_name_title: "修改按钮名称"
+  name_placeholder: "按钮名称"
+
+# Shortcut Bar
+shortcut:
+  config_title: "快捷键栏配置"
+  add_script_shortcut: "添加脚本快捷键"
+  system_shortcuts: "系统快捷键"
+  script_shortcuts: "脚本快捷键"
+  show: "显示"
+  delete: "删除"
+  label: "标签"
+  shortcut_key: "快捷键"
+  shortcut_placeholder: "快捷键 (如 ctrl-shift-1)"
+  scope: "适用范围"
+  scope_all: "通用"
+  new_python_script: "新建 Python 脚本"
+  select_existing_script: "选择现有脚本"
+  create_and_edit: "创建并编辑"
+  no_scripts_available: "没有可用的脚本"
+  new_shortcut_script: "新建快捷键脚本"
+  select_script: "选择脚本"
+
+# SSH Connect Modal
+ssh_connect:
+  placeholder: "user@host[:port] 或 host user password"
+  enter_string: "输入 SSH 连接字符串"
+  connecting: "连接中..."
+  error_auth_failed: "认证失败 - 请检查用户名和凭据"
+  error_connection_refused: "连接被拒绝 - 请检查主机和端口"
+  error_network_unreachable: "网络不可达 - 请检查主机地址"
+  error_timeout: "连接超时"
+  error_hostname: "无法解析主机名"
+  error_string_required: "需要连接字符串"
+  error_invalid_port: "无效的端口号"
+  error_format_hint: "格式: user@host[:port] 或 host user password [port]"
+  error_user_host_required: "需要用户名和主机"

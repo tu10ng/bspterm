@@ -1,5 +1,6 @@
 use editor::Editor;
 use gpui::{App, Entity, IntoElement, ParentElement, Styled, Subscription, Window};
+use i18n::t;
 use terminal::SessionStoreEntity;
 use ui::{
     prelude::*, Button, ButtonStyle, Color, Icon, IconName, IconSize, Label, LabelSize, h_flex,
@@ -24,7 +25,7 @@ impl TelnetSection {
     ) -> Self {
         let ip_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
-            editor.set_placeholder_text("IP address", window, cx);
+            editor.set_placeholder_text(&t("session_edit.host"), window, cx);
             editor
         });
 
@@ -36,13 +37,13 @@ impl TelnetSection {
 
         let username_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
-            editor.set_placeholder_text("Username", window, cx);
+            editor.set_placeholder_text(&t("session_edit.username"), window, cx);
             editor
         });
 
         let password_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
-            editor.set_placeholder_text("Password", window, cx);
+            editor.set_placeholder_text(&t("session_edit.password"), window, cx);
             editor
         });
 
@@ -108,7 +109,7 @@ impl TelnetSection {
 
     pub fn get_credential_label(&self) -> String {
         match &self.selected_credential {
-            None => "Custom".to_string(),
+            None => t("common.custom").to_string(),
             Some((username, password)) => format!("{}/{}", username, password),
         }
     }
@@ -129,7 +130,7 @@ impl TelnetSection {
                             .color(Color::Muted),
                     )
                     .child(
-                        Label::new("Telnet Quick Connect")
+                        Label::new(t("remote_explorer.telnet_quick_connect"))
                             .size(LabelSize::Small)
                             .color(Color::Muted),
                     ),
@@ -189,7 +190,7 @@ impl TelnetSection {
                     .w_full()
                     .justify_end()
                     .child(
-                        Button::new("telnet-connect", "Connect")
+                        Button::new("telnet-connect", t("common.connect"))
                             .style(ButtonStyle::Filled)
                             .size(ButtonSize::Compact),
                     ),

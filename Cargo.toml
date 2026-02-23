@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/acp_tools",
+    "crates/i18n",
     "crates/acp_thread",
     "crates/action_log",
     "crates/activity_indicator",
@@ -337,6 +338,7 @@ gpui_tokio = { path = "crates/gpui_tokio" }
 html_to_markdown = { path = "crates/html_to_markdown" }
 http_client = { path = "crates/http_client" }
 http_client_tls = { path = "crates/http_client_tls" }
+i18n = { path = "crates/i18n" }
 icons = { path = "crates/icons" }
 image_viewer = { path = "crates/image_viewer" }
 edit_prediction_types = { path = "crates/edit_prediction_types" }

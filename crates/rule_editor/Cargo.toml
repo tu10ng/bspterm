@@ -15,6 +15,7 @@ doctest = false
 [dependencies]
 anyhow.workspace = true
 gpui.workspace = true
+i18n.workspace = true
 log.workspace = true
 settings.workspace = true
 terminal.workspace = true

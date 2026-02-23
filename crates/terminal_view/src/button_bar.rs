@@ -3,6 +3,7 @@ use gpui::{
     AnyElement, App, Context, DismissEvent, Entity, EntityId, EventEmitter, FocusHandle, Focusable,
     IntoElement, ParentElement, Render, Styled, Subscription, Task, WeakEntity, Window,
 };
+use i18n::t;
 use language::Buffer;
 use project::Project;
 use std::path::Path;
@@ -100,11 +101,11 @@ impl Item for ButtonScriptEditor {
     type Event = ButtonScriptEditorEvent;
 
     fn tab_content_text(&self, _detail: usize, _cx: &App) -> SharedString {
-        "新建按钮脚本".into()
+        t("button_bar.new_script_tab")
     }
 
     fn tab_content(&self, params: TabContentParams, _window: &Window, _cx: &App) -> AnyElement {
-        Label::new("新建按钮脚本")
+        Label::new(t("button_bar.new_script_tab"))
             .color(params.text_color())
             .into_any_element()
     }
@@ -313,7 +314,7 @@ impl Render for ButtonBarConfigModal {
                         div()
                             .text_sm()
                             .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .child("快捷按钮配置"),
+                            .child(t("button_bar.config_title")),
                     )
                     .child(
                         IconButton::new("close-modal", IconName::Close)
@@ -331,7 +332,7 @@ impl Render for ButtonBarConfigModal {
                             div()
                                 .text_sm()
                                 .text_color(cx.theme().colors().text_muted)
-                                .child("脚本目录为空，点击下方按钮添加脚本"),
+                                .child(t("button_bar.empty_hint")),
                         )
                     })
                     .children(all_scripts.iter().map(|script| {
@@ -368,7 +369,7 @@ impl Render for ButtonBarConfigModal {
             )
             .child(
                 h_flex().justify_end().child(
-                    ui::Button::new("add-button", "添加按钮")
+                    ui::Button::new("add-button", t("button_bar.add_button"))
                         .style(ui::ButtonStyle::Filled)
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.add_button(window, cx);
@@ -411,7 +412,7 @@ impl AddButtonModal {
 
         let name_editor = cx.new(|cx| {
             let mut ed = Editor::single_line(window, cx);
-            ed.set_placeholder_text("按钮名称", window, cx);
+            ed.set_placeholder_text(&t("button_bar.name_placeholder"), window, cx);
             ed
         });
 
@@ -484,7 +485,7 @@ impl Render for AddButtonModal {
                 div()
                     .text_sm()
                     .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child("添加按钮"),
+                    .child(t("button_bar.add_title")),
             )
             .child(self.name_editor.clone())
             .child(
@@ -492,12 +493,12 @@ impl Render for AddButtonModal {
                     .justify_end()
                     .gap_2()
                     .child(
-                        ui::Button::new("cancel", "取消").on_click(
+                        ui::Button::new("cancel", t("common.cancel")).on_click(
                             cx.listener(|this, _, window, cx| this.dismiss(&menu::Cancel, window, cx)),
                         ),
                     )
                     .child(
-                        ui::Button::new("confirm", "确定")
+                        ui::Button::new("confirm", t("common.confirm"))
                             .style(ui::ButtonStyle::Filled)
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.confirm(&menu::Confirm, window, cx)),
@@ -609,7 +610,7 @@ impl Render for RenameButtonModal {
                 div()
                     .text_sm()
                     .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child("修改按钮名称"),
+                    .child(t("button_bar.edit_name_title")),
             )
             .child(self.name_editor.clone())
             .child(
@@ -617,12 +618,12 @@ impl Render for RenameButtonModal {
                     .justify_end()
                     .gap_2()
                     .child(
-                        ui::Button::new("cancel", "取消").on_click(
+                        ui::Button::new("cancel", t("common.cancel")).on_click(
                             cx.listener(|this, _, window, cx| this.dismiss(&menu::Cancel, window, cx)),
                         ),
                     )
                     .child(
-                        ui::Button::new("confirm", "确定")
+                        ui::Button::new("confirm", t("common.confirm"))
                             .style(ui::ButtonStyle::Filled)
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.confirm(&menu::Confirm, window, cx)),

@@ -16,6 +16,7 @@ doctest = false
 anyhow.workspace = true
 editor.workspace = true
 gpui.workspace = true
+i18n.workspace = true
 lan_discovery.workspace = true
 lan_messaging.workspace = true
 local_user.workspace = true

@@ -3,6 +3,7 @@ use gpui::{
     App, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable, IntoElement,
     ParentElement, Render, Styled, Window,
 };
+use i18n::t;
 use terminal::SessionStoreEntity;
 use ui::{prelude::*, Button, ButtonStyle, Color, Label, LabelSize, h_flex, v_flex};
 use workspace::{ModalView, Pane};
@@ -72,13 +73,13 @@ impl MultiConnectionModal {
 
         let apply_all_username_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
-            editor.set_placeholder_text("Username", window, cx);
+            editor.set_placeholder_text(&t("session_edit.username"), window, cx);
             editor
         });
 
         let apply_all_password_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
-            editor.set_placeholder_text("Password", window, cx);
+            editor.set_placeholder_text(&t("session_edit.password"), window, cx);
             editor
         });
 
@@ -278,7 +279,7 @@ impl Render for MultiConnectionModal {
                     .border_b_1()
                     .border_color(border_variant_color)
                     .justify_between()
-                    .child(Label::new("Configure Multiple Connections"))
+                    .child(Label::new(t("multi_connection.title")))
                     .child(
                         Button::new("close", "")
                             .icon(IconName::Close)
@@ -296,11 +297,11 @@ impl Render for MultiConnectionModal {
                     .py_1()
                     .gap_1()
                     .bg(editor_bg)
-                    .child(div().w_32().child(Label::new("IP").size(LabelSize::XSmall).color(Color::Muted)))
-                    .child(div().w_20().child(Label::new("Protocol").size(LabelSize::XSmall).color(Color::Muted)))
-                    .child(div().w_16().child(Label::new("Port").size(LabelSize::XSmall).color(Color::Muted)))
-                    .child(div().w_24().child(Label::new("User").size(LabelSize::XSmall).color(Color::Muted)))
-                    .child(div().w_24().child(Label::new("Pass").size(LabelSize::XSmall).color(Color::Muted))),
+                    .child(div().w_32().child(Label::new(t("multi_connection.ip")).size(LabelSize::XSmall).color(Color::Muted)))
+                    .child(div().w_20().child(Label::new(t("multi_connection.protocol")).size(LabelSize::XSmall).color(Color::Muted)))
+                    .child(div().w_16().child(Label::new(t("multi_connection.port")).size(LabelSize::XSmall).color(Color::Muted)))
+                    .child(div().w_24().child(Label::new(t("multi_connection.user")).size(LabelSize::XSmall).color(Color::Muted)))
+                    .child(div().w_24().child(Label::new(t("multi_connection.pass")).size(LabelSize::XSmall).color(Color::Muted))),
             )
             .child(
                 v_flex()
@@ -319,7 +320,7 @@ impl Render for MultiConnectionModal {
                     .border_t_1()
                     .border_color(border_variant_color)
                     .bg(editor_bg)
-                    .child(Label::new("Apply to All:").size(LabelSize::Small).color(Color::Muted))
+                    .child(Label::new(t("multi_connection.apply_to_all")).size(LabelSize::Small).color(Color::Muted))
                     .child(
                         div()
                             .w_24()
@@ -341,7 +342,7 @@ impl Render for MultiConnectionModal {
                             .child(self.apply_all_password_editor.clone()),
                     )
                     .child(
-                        Button::new("apply-all", "Apply")
+                        Button::new("apply-all", t("multi_connection.apply"))
                             .style(ButtonStyle::Subtle)
                             .size(ButtonSize::Compact)
                             .on_click(cx.listener(|this, _, window, cx| {
@@ -358,14 +359,14 @@ impl Render for MultiConnectionModal {
                     .border_t_1()
                     .border_color(border_variant_color)
                     .child(
-                        Button::new("cancel", "Cancel")
+                        Button::new("cancel", t("common.cancel"))
                             .style(ButtonStyle::Subtle)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.cancel(window, cx);
                             })),
                     )
                     .child(
-                        Button::new("connect-all", "Connect All")
+                        Button::new("connect-all", t("multi_connection.connect_all"))
                             .style(ButtonStyle::Filled)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.connect_all(window, cx);

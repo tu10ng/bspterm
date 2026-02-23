@@ -3,6 +3,7 @@ use gpui::{
     App, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable, IntoElement,
     ParentElement, Render, Styled, Subscription, Window,
 };
+use i18n::t;
 use terminal::{
     AuthMethod, ProtocolConfig, SessionConfig, SessionNode, SessionStoreEntity,
     SshSessionConfig, TelnetSessionConfig,
@@ -61,21 +62,21 @@ impl SessionEditModal {
         let name_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
             editor.set_text(name, window, cx);
-            editor.set_placeholder_text("Session Name", window, cx);
+            editor.set_placeholder_text(&t("session_edit.session_name"), window, cx);
             editor
         });
 
         let host_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
             editor.set_text(host, window, cx);
-            editor.set_placeholder_text("Host", window, cx);
+            editor.set_placeholder_text(&t("session_edit.host"), window, cx);
             editor
         });
 
         let port_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
             editor.set_text(port.to_string(), window, cx);
-            editor.set_placeholder_text("Port", window, cx);
+            editor.set_placeholder_text(&t("session_edit.port"), window, cx);
             editor
         });
 
@@ -85,14 +86,14 @@ impl SessionEditModal {
         let username_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
             editor.set_text(username, window, cx);
-            editor.set_placeholder_text("Username", window, cx);
+            editor.set_placeholder_text(&t("session_edit.username"), window, cx);
             editor
         });
 
         let password_editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
             editor.set_text(password, window, cx);
-            editor.set_placeholder_text("Password", window, cx);
+            editor.set_placeholder_text(&t("session_edit.password"), window, cx);
             editor
         });
 
@@ -246,7 +247,7 @@ impl SessionEditModal {
 
     fn get_credential_label(&self) -> String {
         match &self.selected_credential {
-            None => "Custom".to_string(),
+            None => t("common.custom").to_string(),
             Some((username, password)) => format!("{}/{}", username, password),
         }
     }
@@ -375,7 +376,7 @@ impl Render for SessionEditModal {
                     .border_b_1()
                     .border_color(border_variant_color)
                     .justify_between()
-                    .child(Label::new(format!("Edit {} Session", protocol_label)))
+                    .child(Label::new(t("session_edit.title_edit_protocol").replace("{}", protocol_label)))
                     .child(
                         Button::new("close", "")
                             .icon(IconName::Close)
@@ -394,7 +395,7 @@ impl Render for SessionEditModal {
                     .child(
                         v_flex()
                             .gap_1()
-                            .child(Label::new("Name").size(LabelSize::Small).color(Color::Muted))
+                            .child(Label::new(t("common.name")).size(LabelSize::Small).color(Color::Muted))
                             .child(
                                 div()
                                     .w_full()
@@ -414,7 +415,7 @@ impl Render for SessionEditModal {
                                     .flex_1()
                                     .gap_1()
                                     .child(
-                                        Label::new("Host")
+                                        Label::new(t("session_edit.host"))
                                             .size(LabelSize::Small)
                                             .color(Color::Muted),
                                     )
@@ -434,7 +435,7 @@ impl Render for SessionEditModal {
                                     .w_16()
                                     .gap_1()
                                     .child(
-                                        Label::new("Port")
+                                        Label::new(t("session_edit.port"))
                                             .size(LabelSize::Small)
                                             .color(Color::Muted),
                                     )
@@ -458,7 +459,7 @@ impl Render for SessionEditModal {
                                     .flex_1()
                                     .gap_1()
                                     .child(
-                                        Label::new("Username")
+                                        Label::new(t("session_edit.username"))
                                             .size(LabelSize::Small)
                                             .color(Color::Muted),
                                     )
@@ -478,7 +479,7 @@ impl Render for SessionEditModal {
                                     .flex_1()
                                     .gap_1()
                                     .child(
-                                        Label::new("Password")
+                                        Label::new(t("session_edit.password"))
                                             .size(LabelSize::Small)
                                             .color(Color::Muted),
                                     )
@@ -501,7 +502,7 @@ impl Render for SessionEditModal {
                                 h_flex()
                                     .gap_2()
                                     .child(
-                                        Label::new("Credential:")
+                                        Label::new(t("remote_explorer.credential"))
                                             .size(LabelSize::Small)
                                             .color(Color::Muted),
                                     )
@@ -520,7 +521,7 @@ impl Render for SessionEditModal {
                         v_flex()
                             .gap_1()
                             .child(
-                                Label::new("Terminal Type")
+                                Label::new(t("session_edit.terminal_type"))
                                     .size(LabelSize::Small)
                                     .color(Color::Muted),
                             )
@@ -544,14 +545,14 @@ impl Render for SessionEditModal {
                     .border_t_1()
                     .border_color(border_variant_color)
                     .child(
-                        Button::new("cancel", "Cancel")
+                        Button::new("cancel", t("common.cancel"))
                             .style(ButtonStyle::Subtle)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.cancel(window, cx);
                             })),
                     )
                     .child(
-                        Button::new("save", "Save")
+                        Button::new("save", t("common.save"))
                             .style(ButtonStyle::Filled)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.save(window, cx);

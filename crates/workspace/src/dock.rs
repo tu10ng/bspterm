@@ -10,6 +10,7 @@ use gpui::{
     Render, SharedString, StyleRefinement, Styled, Subscription, WeakEntity, Window, deferred, div,
     px,
 };
+use i18n::t;
 use settings::SettingsStore;
 use std::sync::Arc;
 use ui::{ContextMenu, Divider, DividerColor, IconButton, Tooltip, h_flex};
@@ -1001,7 +1002,7 @@ impl Render for PanelButtons {
                 } else {
                     entry.panel.toggle_action(window, cx)
                 };
-                let tooltip: SharedString = icon_tooltip.into();
+                let tooltip: SharedString = t(icon_tooltip);
 
                 let focus_handle = dock.focus_handle(cx);
 

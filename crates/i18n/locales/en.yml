@@ -1,0 +1,335 @@
+# Application Menu
+menu:
+  bspterm: "BspTerm"
+  file: "File"
+  edit: "Edit"
+  selection: "Selection"
+  view: "View"
+  go: "Go"
+  run: "Run"
+  window: "Window"
+  help: "Help"
+
+  # BspTerm Menu
+  about_bspterm: "About BspTerm"
+  check_for_updates: "Check for Updates"
+  settings: "Settings"
+  open_settings: "Open Settings"
+  open_settings_file: "Open Settings File"
+  open_project_settings: "Open Project Settings"
+  open_project_settings_file: "Open Project Settings File"
+  open_default_settings: "Open Default Settings"
+  open_keymap: "Open Keymap"
+  open_keymap_file: "Open Keymap File"
+  open_default_key_bindings: "Open Default Key Bindings"
+  select_theme: "Select Theme..."
+  select_icon_theme: "Select Icon Theme..."
+  extensions: "Extensions"
+  install_cli: "Install CLI"
+  hide_bspterm: "Hide BspTerm"
+  hide_others: "Hide Others"
+  show_all: "Show All"
+  quit_bspterm: "Quit BspTerm"
+
+  # File Menu
+  new: "New"
+  new_window: "New Window"
+  open_remote: "Open Remote..."
+  open_file: "Open File..."
+  save: "Save"
+  save_as: "Save As…"
+  save_all: "Save All"
+  close_editor: "Close Editor"
+  close_window: "Close Window"
+
+  # Edit Menu
+  undo: "Undo"
+  redo: "Redo"
+  cut: "Cut"
+  copy: "Copy"
+  copy_and_trim: "Copy and Trim"
+  paste: "Paste"
+  find: "Find"
+  toggle_line_comment: "Toggle Line Comment"
+
+  # Selection Menu
+  select_all: "Select All"
+  expand_selection: "Expand Selection"
+  shrink_selection: "Shrink Selection"
+  select_next_sibling: "Select Next Sibling"
+  select_previous_sibling: "Select Previous Sibling"
+  add_cursor_above: "Add Cursor Above"
+  add_cursor_below: "Add Cursor Below"
+  select_next_occurrence: "Select Next Occurrence"
+  select_previous_occurrence: "Select Previous Occurrence"
+  select_all_occurrences: "Select All Occurrences"
+  move_line_up: "Move Line Up"
+  move_line_down: "Move Line Down"
+  duplicate_selection: "Duplicate Selection"
+
+  # View Menu
+  zoom_in: "Zoom In"
+  zoom_out: "Zoom Out"
+  reset_zoom: "Reset Zoom"
+  reset_all_zoom: "Reset All Zoom"
+  toggle_left_dock: "Toggle Left Dock"
+  toggle_right_dock: "Toggle Right Dock"
+  toggle_bottom_dock: "Toggle Bottom Dock"
+  toggle_all_docks: "Toggle All Docks"
+  editor_layout: "Editor Layout"
+  split_up: "Split Up"
+  split_down: "Split Down"
+  split_left: "Split Left"
+  split_right: "Split Right"
+  remote_explorer: "Remote Explorer"
+  terminal_panel: "Terminal Panel"
+  outline_panel: "Outline Panel"
+  project_panel: "Project Panel"
+  toggle_gpui_inspector: "Toggle GPUI Inspector"
+
+  # Go Menu
+  back: "Back"
+  forward: "Forward"
+  command_palette: "Command Palette..."
+  go_to_file: "Go to File..."
+  go_to_symbol_in_editor: "Go to Symbol in Editor..."
+  go_to_line_column: "Go to Line/Column..."
+  go_to_definition: "Go to Definition"
+  go_to_declaration: "Go to Declaration"
+  go_to_type_definition: "Go to Type Definition"
+  find_all_references: "Find All References"
+  next_problem: "Next Problem"
+  previous_problem: "Previous Problem"
+
+  # Run Menu
+  spawn_task: "Spawn Task"
+  edit_tasks_json: "Edit tasks.json..."
+
+  # Window Menu
+  minimize: "Minimize"
+  zoom: "Zoom"
+
+  # Help Menu
+  view_release_notes_locally: "View Release Notes Locally"
+  view_telemetry: "View Telemetry"
+  view_dependency_licenses: "View Dependency Licenses"
+  show_welcome: "Show Welcome"
+  file_bug_report: "File Bug Report..."
+  request_feature: "Request Feature..."
+
+# Common
+common:
+  ok: "OK"
+  cancel: "Cancel"
+  save: "Save"
+  delete: "Delete"
+  edit: "Edit"
+  add: "Add"
+  connect: "Connect"
+  close: "Close"
+  custom: "Custom"
+  confirm: "Confirm"
+  name: "Name"
+  enabled: "Enabled"
+  disabled: "Disabled"
+
+# Remote Explorer Panel
+remote_explorer:
+  title: "Remote Explorer"
+  quick_add: "Quick Add"
+  auto_recognize: "Auto-recognize"
+  auto_recognize_hint: "Supports: IP, IP:port, IP user pass"
+  telnet_quick_connect: "Telnet Quick Connect"
+  ssh_quick_connect: "SSH Quick Connect"
+  default_credentials: "Default: root/root"
+  credential: "Credential:"
+  no_saved_sessions: "No saved sessions"
+  edit_session: "Edit Session"
+  delete_session: "Delete Session"
+  rename_group: "Rename Group"
+  delete_group: "Delete Group"
+  new_group: "New Group"
+  copy_env_info: "Copy Environment Info"
+
+  # Ping status
+  ping_unknown: "Connectivity unknown"
+  ping_checking: "Checking..."
+  ping_reachable: "Server reachable"
+  ping_unreachable: "Server unreachable"
+
+  # User avatars
+  more_users: "more users"
+
+# Terminal Panel
+terminal_panel:
+  title: "Terminal"
+  new_terminal: "New Terminal"
+  spawn_task: "Spawn Task"
+  connect_ssh: "Connect SSH..."
+  new: "New…"
+  split_terminal: "Split Terminal"
+  failed_to_spawn: "Failed to spawn terminal"
+  edit_settings: "Edit Settings"
+  open_settings: "Open Settings"
+  edit_settings_json: "Edit settings.json"
+
+# Editor Panel
+editor_panel:
+  title: "Editor Panel"
+  new: "New..."
+  new_file: "New File"
+  open_file: "Open File"
+  split_pane: "Split Pane"
+  split_right: "Split Right"
+  split_left: "Split Left"
+  split_up: "Split Up"
+  split_down: "Split Down"
+  zoom_in: "Zoom In"
+  zoom_out: "Zoom Out"
+
+# Script Panel
+script_panel:
+  title: "Script Panel"
+  scripts: "Scripts"
+  refresh: "Refresh"
+  run: "Run"
+  stop: "Stop"
+  output_placeholder: "Output will appear here..."
+
+# Rule Editor Panel
+rule_editor:
+  title: "Rule Editor"
+  add_rule: "Add Rule"
+  edit_rule: "Edit Rule"
+  delete_rule: "Delete Rule"
+  no_rules: "No automation rules"
+  trigger: "Trigger"
+  condition: "Condition"
+  action: "Action"
+
+  # Triggers
+  trigger_wakeup: "Wakeup"
+  trigger_connected: "Connected"
+  trigger_disconnected: "Disconnected"
+
+# Session Edit Modal
+session_edit:
+  title_new: "New Session"
+  title_edit: "Edit Session"
+  session_name: "Session Name"
+  protocol: "Protocol"
+  host: "Host"
+  port: "Port"
+  username: "Username"
+  password: "Password"
+  auth_method: "Authentication"
+  auth_interactive: "Interactive"
+  auth_password: "Password"
+  auth_private_key: "Private Key"
+  auth_agent: "SSH Agent"
+  private_key_path: "Private Key Path"
+
+# Group Edit Modal
+group_edit:
+  title_new: "New Group"
+  title_edit: "Edit Group"
+  title_rename: "Rename Group"
+  group_name: "Group Name"
+  group_name_placeholder: "Group Name"
+
+# Rule Edit Modal
+rule_edit:
+  title_new: "New Rule"
+  title_edit: "Edit Rule"
+  name_placeholder: "Rule Name"
+  pattern_placeholder: "Enter regex pattern (e.g., (?i)login:)"
+  send_text_placeholder: "Text to send"
+  pattern: "Pattern (regex)"
+  action_credential: "Send Credential"
+  action_text: "Send Text"
+  credential_username: "Username"
+  credential_password: "Password"
+  condition_pattern: "Pattern: {}"
+  condition_protocol: "Protocol: {}"
+  condition_all: "All ({} conditions)"
+  condition_any: "Any ({} conditions)"
+  action_send: "Send: {}"
+  action_send_credential: "Send {}"
+  action_run_python: "Run Python"
+  action_sequence: "Sequence ({} actions)"
+  action_delay: "Delay {}ms"
+
+# Session Edit Modal (additional keys)
+session_edit:
+  title_edit_protocol: "Edit {} Session"
+  terminal_type: "Terminal Type"
+
+# Quick Add - Multi Connection Modal
+multi_connection:
+  title: "Configure Multiple Connections"
+  ip: "IP"
+  protocol: "Protocol"
+  port: "Port"
+  user: "User"
+  pass: "Pass"
+  apply_to_all: "Apply to All:"
+  apply: "Apply"
+  connect_all: "Connect All"
+
+# Abbreviation Bar
+abbr:
+  config_title: "Abbreviation Configuration"
+  enable_expansion: "Enable Abbreviation Expansion"
+  empty_hint: "No abbreviations, click button below to add"
+  add_title: "Add Abbreviation"
+  edit_title: "Edit Abbreviation"
+  trigger_word: "Trigger Word"
+  expansion_text: "Expansion Text"
+  applicable_protocol: "Applicable Protocol"
+  trigger_placeholder: "Trigger word (e.g., g)"
+  expansion_placeholder: "Expansion text (e.g., git)"
+
+# Button Bar
+button_bar:
+  new_script_tab: "New Button Script"
+  config_title: "Quick Button Configuration"
+  empty_hint: "Scripts directory empty, click button below to add script"
+  add_button: "Add Button"
+  add_title: "Add Button"
+  edit_name_title: "Modify Button Name"
+  name_placeholder: "Button Name"
+
+# Shortcut Bar
+shortcut:
+  config_title: "Shortcut Bar Configuration"
+  add_script_shortcut: "Add Script Shortcut"
+  system_shortcuts: "System Shortcuts"
+  script_shortcuts: "Script Shortcuts"
+  show: "Show"
+  delete: "Delete"
+  label: "Label"
+  shortcut_key: "Shortcut Key"
+  shortcut_placeholder: "Shortcut key (e.g., ctrl-shift-1)"
+  scope: "Scope"
+  scope_all: "All"
+  new_python_script: "Create New Python Script"
+  select_existing_script: "Select Existing Script"
+  create_and_edit: "Create and Edit"
+  no_scripts_available: "No available scripts"
+  new_shortcut_script: "New Shortcut Script"
+  select_script: "Select Script"
+
+# SSH Connect Modal
+ssh_connect:
+  placeholder: "user@host[:port] or host user password"
+  enter_string: "Enter SSH connection string"
+  connecting: "Connecting..."
+  error_auth_failed: "Authentication failed - check username and credentials"
+  error_connection_refused: "Connection refused - check host and port"
+  error_network_unreachable: "Network unreachable - check host address"
+  error_timeout: "Connection timed out"
+  error_hostname: "Could not resolve hostname"
+  error_string_required: "Connection string required"
+  error_invalid_port: "Invalid port number"
+  error_format_hint: "Format: user@host[:port] or host user password [port]"
+  error_user_host_required: "Username and host required"

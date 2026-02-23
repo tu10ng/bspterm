@@ -4,6 +4,7 @@ use gpui::{
     App, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable, IntoElement, Render,
     Styled, Task, WeakEntity, Window,
 };
+use i18n::t;
 use settings::Settings;
 use terminal::{TerminalBuilder, connection::ssh::{SshAuthConfig, SshConfig}, terminal_settings::TerminalSettings};
 use ui::prelude::*;
@@ -35,7 +36,7 @@ impl SshConnectModal {
     ) -> Self {
         let editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
-            editor.set_placeholder_text("user@host[:port] or host user password", window, cx);
+            editor.set_placeholder_text(&t("ssh_connect.placeholder"), window, cx);
             editor
         });
 
@@ -171,26 +172,26 @@ fn format_ssh_error(error: &anyhow::Error) -> String {
     let error_string = format!("{:#}", error);
 
     if error_string.contains("authentication") {
-        return "Authentication failed - check username and credentials".to_string();
+        return t("ssh_connect.error_auth_failed").to_string();
     }
 
     if error_string.contains("Connection refused") {
-        return "Connection refused - check host and port".to_string();
+        return t("ssh_connect.error_connection_refused").to_string();
     }
 
     if error_string.contains("No route to host") || error_string.contains("Network is unreachable")
     {
-        return "Network unreachable - check host address".to_string();
+        return t("ssh_connect.error_network_unreachable").to_string();
     }
 
     if error_string.contains("timed out") || error_string.contains("Timeout") {
-        return "Connection timed out".to_string();
+        return t("ssh_connect.error_timeout").to_string();
     }
 
     if error_string.contains("Name or service not known")
         || error_string.contains("Could not resolve")
     {
-        return "Could not resolve hostname".to_string();
+        return t("ssh_connect.error_hostname").to_string();
     }
 
     let root_cause = error.root_cause().to_string();
@@ -239,14 +240,14 @@ impl Render for SshConnectModal {
                     .gap_1()
                     .map(|this| match &status {
                         ConnectionStatus::Idle => this.child(
-                            Label::new("Enter SSH connection string")
+                            Label::new(t("ssh_connect.enter_string"))
                                 .color(Color::Muted)
                                 .size(LabelSize::Small),
                         ),
                         ConnectionStatus::Connecting => this
                             .child(SpinnerLabel::new().size(LabelSize::Small))
                             .child(
-                                Label::new("Connecting...")
+                                Label::new(t("ssh_connect.connecting"))
                                     .color(Color::Muted)
                                     .size(LabelSize::Small),
                             ),
@@ -265,7 +266,7 @@ impl Render for SshConnectModal {
 fn parse_ssh_string(input: &str) -> Result<SshConfig, String> {
     let input = input.trim();
     if input.is_empty() {
-        return Err("Connection string required".into());
+        return Err(t("ssh_connect.error_string_required").into());
     }
 
     // Try space-separated format: host username password [port]
@@ -275,7 +276,7 @@ fn parse_ssh_string(input: &str) -> Result<SshConfig, String> {
         let username = parts[1];
         let password = parts[2];
         let port = if parts.len() >= 4 {
-            parts[3].parse::<u16>().map_err(|_| "Invalid port number")?
+            parts[3].parse::<u16>().map_err(|_| t("ssh_connect.error_invalid_port"))?
         } else {
             22
         };
@@ -289,7 +290,7 @@ fn parse_ssh_string(input: &str) -> Result<SshConfig, String> {
     let (user_host, port) = if let Some((left, port_str)) = input.rsplit_once(':') {
         let port = port_str
             .parse::<u16>()
-            .map_err(|_| "Invalid port number")?;
+            .map_err(|_| t("ssh_connect.error_invalid_port"))?;
         (left, port)
     } else {
         (input, 22)
@@ -297,10 +298,10 @@ fn parse_ssh_string(input: &str) -> Result<SshConfig, String> {
 
     let (username, host) = user_host
         .split_once('@')
-        .ok_or("Format: user@host[:port] or host user password [port]")?;
+        .ok_or_else(|| t("ssh_connect.error_format_hint"))?;
 
     if username.is_empty() || host.is_empty() {
-        return Err("Username and host required".into());
+        return Err(t("ssh_connect.error_user_host_required").into());
     }
 
     Ok(SshConfig::new(host, port).with_username(username))

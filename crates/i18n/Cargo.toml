@@ -1,0 +1,13 @@
+[package]
+name = "i18n"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/i18n.rs"
+
+[dependencies]
+gpui.workspace = true
+rust-i18n = "3"
+serde = { workspace = true, features = ["derive"] }

@@ -7,6 +7,7 @@ use gpui::{
     Action, App, Context, Entity, EventEmitter, FocusHandle, Focusable, IntoElement, ParentElement,
     Render, Styled, WeakEntity, Window, px,
 };
+use i18n::t;
 use ui::{
     prelude::*, Color, Icon, IconName, IconSize, Label, LabelSize, ListItem, ListItemSpacing,
     h_flex, v_flex,
@@ -271,7 +272,7 @@ impl ScriptPanel {
             .gap_2()
             .p_2()
             .child(
-                ui::Button::new("refresh", "Refresh")
+                ui::Button::new("refresh", t("script_panel.refresh"))
                     .style(ui::ButtonStyle::Subtle)
                     .size(ui::ButtonSize::Compact)
                     .icon(IconName::ArrowCircle)
@@ -285,7 +286,7 @@ impl ScriptPanel {
             )
             .when(has_selection && !is_running, |this| {
                 this.child(
-                    ui::Button::new("run", "Run")
+                    ui::Button::new("run", t("script_panel.run"))
                         .style(ui::ButtonStyle::Filled)
                         .size(ui::ButtonSize::Compact)
                         .icon(IconName::PlayFilled)
@@ -300,7 +301,7 @@ impl ScriptPanel {
             })
             .when(is_running, |this| {
                 this.child(
-                    ui::Button::new("stop", "Stop")
+                    ui::Button::new("stop", t("script_panel.stop"))
                         .style(ui::ButtonStyle::Filled)
                         .size(ui::ButtonSize::Compact)
                         .icon(IconName::Stop)
@@ -328,7 +329,7 @@ impl ScriptPanel {
             .overflow_y_scroll()
             .child(
                 Label::new(if output.is_empty() {
-                    "Output will appear here...".to_string()
+                    t("script_panel.output_placeholder").to_string()
                 } else {
                     output
                 })
@@ -368,7 +369,7 @@ impl Render for ScriptPanel {
                             .color(Color::Muted),
                     )
                     .child(
-                        Label::new("Scripts")
+                        Label::new(t("script_panel.scripts"))
                             .size(LabelSize::Small)
                             .color(Color::Muted),
                     ),
@@ -436,7 +437,7 @@ impl Panel for ScriptPanel {
     }
 
     fn icon_tooltip(&self, _window: &Window, _cx: &App) -> Option<&'static str> {
-        Some("Script Panel")
+        Some("script_panel.title")
     }
 
     fn toggle_action(&self) -> Box<dyn Action> {

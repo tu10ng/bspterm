@@ -9,6 +9,7 @@ use gpui::{
     Focusable, IntoElement, ParentElement, Pixels, Render, Styled, Task, WeakEntity, Window,
     actions, px,
 };
+use i18n::t;
 use project::{Fs, Project};
 use serde::{Deserialize, Serialize};
 use ui::{
@@ -108,7 +109,7 @@ impl EditorPanel {
                         PopoverMenu::new("editor-tab-bar-popover-menu")
                             .trigger_with_tooltip(
                                 IconButton::new("plus", IconName::Plus).icon_size(IconSize::Small),
-                                Tooltip::text("New..."),
+                                Tooltip::text(t("editor_panel.new")),
                             )
                             .anchor(Corner::TopRight)
                             .with_handle(pane.new_item_context_menu_handle.clone())
@@ -116,9 +117,9 @@ impl EditorPanel {
                                 let focus_handle = focus_handle.clone();
                                 let menu = ContextMenu::build(window, cx, |menu, _, _| {
                                     menu.context(focus_handle.clone())
-                                        .action("New File", NewFile.boxed_clone())
+                                        .action(t("editor_panel.new_file"), NewFile.boxed_clone())
                                         .action(
-                                            "Open File",
+                                            t("editor_panel.open_file"),
                                             ToggleFileFinder::default().boxed_clone(),
                                         )
                                 });
@@ -131,7 +132,7 @@ impl EditorPanel {
                                 IconButton::new("editor-pane-split", IconName::Split)
                                     .icon_size(IconSize::Small)
                                     .disabled(!can_clone && !can_split_move),
-                                Tooltip::text("Split Pane"),
+                                Tooltip::text(t("editor_panel.split_pane")),
                             )
                             .anchor(Corner::TopRight)
                             .with_handle(pane.split_item_context_menu_handle.clone())
@@ -139,18 +140,18 @@ impl EditorPanel {
                                 ContextMenu::build(window, cx, |menu, _, _| {
                                     let mode = SplitMode::MovePane;
                                     if can_split_move {
-                                        menu.action("Split Right", SplitRight { mode }.boxed_clone())
-                                            .action("Split Left", SplitLeft { mode }.boxed_clone())
-                                            .action("Split Up", SplitUp { mode }.boxed_clone())
-                                            .action("Split Down", SplitDown { mode }.boxed_clone())
+                                        menu.action(t("editor_panel.split_right"), SplitRight { mode }.boxed_clone())
+                                            .action(t("editor_panel.split_left"), SplitLeft { mode }.boxed_clone())
+                                            .action(t("editor_panel.split_up"), SplitUp { mode }.boxed_clone())
+                                            .action(t("editor_panel.split_down"), SplitDown { mode }.boxed_clone())
                                     } else {
                                         menu.action(
-                                            "Split Right",
+                                            t("editor_panel.split_right"),
                                             SplitRight::default().boxed_clone(),
                                         )
-                                        .action("Split Left", SplitLeft::default().boxed_clone())
-                                        .action("Split Up", SplitUp::default().boxed_clone())
-                                        .action("Split Down", SplitDown::default().boxed_clone())
+                                        .action(t("editor_panel.split_left"), SplitLeft::default().boxed_clone())
+                                        .action(t("editor_panel.split_up"), SplitUp::default().boxed_clone())
+                                        .action(t("editor_panel.split_down"), SplitDown::default().boxed_clone())
                                     }
                                 })
                                 .into()
@@ -167,7 +168,7 @@ impl EditorPanel {
                             }))
                             .tooltip(move |_window, cx| {
                                 Tooltip::for_action(
-                                    if zoomed { "Zoom Out" } else { "Zoom In" },
+                                    if zoomed { t("editor_panel.zoom_out") } else { t("editor_panel.zoom_in") },
                                     &workspace::ToggleZoom,
                                     cx,
                                 )
@@ -625,7 +626,7 @@ impl Panel for EditorPanel {
     }
 
     fn icon_tooltip(&self, _window: &Window, _cx: &App) -> Option<&'static str> {
-        Some("Editor Panel")
+        Some("editor_panel.title")
     }
 
     fn activation_priority(&self) -> u32 {

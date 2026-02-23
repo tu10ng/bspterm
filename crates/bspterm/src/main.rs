@@ -423,6 +423,7 @@ fn main() {
             }
         };
         trusted_worktrees::init(db_trusted_paths, cx);
+        i18n::LocaleEntity::init(cx);
         menu::init();
         bspterm_actions::init();
 
