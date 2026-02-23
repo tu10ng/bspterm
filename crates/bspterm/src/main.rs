@@ -624,14 +624,14 @@ fn main() {
         edit_prediction_registry::init(app_state.client.clone(), app_state.user_store.clone(), cx);
         let prompt_builder = PromptBuilder::load(app_state.fs.clone(), stdout_is_a_pty(), cx);
         project::AgentRegistryStore::init_global(cx);
-        // agent_ui::init(
-        //     app_state.fs.clone(),
-        //     app_state.client.clone(),
-        //     prompt_builder.clone(),
-        //     app_state.languages.clone(),
-        //     false,
-        //     cx,
-        // );
+        agent_ui::init(
+            app_state.fs.clone(),
+            app_state.client.clone(),
+            prompt_builder.clone(),
+            app_state.languages.clone(),
+            false,
+            cx,
+        );
         // agent_ui_v2::agents_panel::init(cx);
         repl::init(app_state.fs.clone(), cx);
         recent_projects::init(cx);

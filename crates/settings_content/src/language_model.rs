@@ -228,6 +228,8 @@ pub enum OpenAiReasoningEffort {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, JsonSchema, MergeFrom)]
 pub struct OpenAiCompatibleSettingsContent {
     pub api_url: String,
+    /// API key for authentication. If provided, this takes precedence over environment variables.
+    pub api_key: Option<String>,
     pub available_models: Vec<OpenAiCompatibleAvailableModel>,
 }
 
@@ -261,9 +263,13 @@ pub struct OpenAiCompatibleAvailableModel {
 #[with_fallible_options]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema, MergeFrom)]
 pub struct OpenAiCompatibleModelCapabilities {
+    #[serde(default)]
     pub tools: bool,
+    #[serde(default)]
     pub images: bool,
+    #[serde(default)]
     pub parallel_tool_calls: bool,
+    #[serde(default)]
     pub prompt_cache_key: bool,
     #[serde(default = "default_true")]
     pub chat_completions: bool,

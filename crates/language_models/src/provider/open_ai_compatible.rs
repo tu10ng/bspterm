@@ -30,6 +30,7 @@ pub use settings::OpenAiCompatibleModelCapabilities as ModelCapabilities;
 #[derive(Default, Clone, Debug, PartialEq)]
 pub struct OpenAiCompatibleSettings {
     pub api_url: String,
+    pub api_key: Option<String>,
     pub available_models: Vec<AvailableModel>,
 }
 
@@ -48,7 +49,7 @@ pub struct State {
 
 impl State {
     fn is_authenticated(&self) -> bool {
-        self.api_key_state.has_key()
+        self.settings.api_key.is_some() || self.api_key_state.has_key()
     }
 
     fn set_api_key(&mut self, api_key: Option<String>, cx: &mut Context<Self>) -> Task<Result<()>> {
@@ -216,10 +217,13 @@ impl OpenAiCompatibleLanguageModel {
 
         let (api_key, api_url) = self.state.read_with(cx, |state, _cx| {
             let api_url = &state.settings.api_url;
-            (
-                state.api_key_state.key(api_url),
-                state.settings.api_url.clone(),
-            )
+            let api_key = state
+                .settings
+                .api_key
+                .clone()
+                .map(Arc::from)
+                .or_else(|| state.api_key_state.key(api_url));
+            (api_key, state.settings.api_url.clone())
         });
 
         let provider = self.provider_name.clone();
@@ -251,10 +255,13 @@ impl OpenAiCompatibleLanguageModel {
 
         let (api_key, api_url) = self.state.read_with(cx, |state, _cx| {
             let api_url = &state.settings.api_url;
-            (
-                state.api_key_state.key(api_url),
-                state.settings.api_url.clone(),
-            )
+            let api_key = state
+                .settings
+                .api_key
+                .clone()
+                .map(Arc::from)
+                .or_else(|| state.api_key_state.key(api_url));
+            (api_key, state.settings.api_url.clone())
         });
 
         let provider = self.provider_name.clone();
@@ -489,6 +496,7 @@ impl Render for ConfigurationView {
         let state = self.state.read(cx);
         let env_var_set = state.api_key_state.is_from_env_var();
         let env_var_name = state.api_key_state.env_var_name();
+        let config_key_set = state.settings.api_key.is_some();
 
         let api_key_section = if self.should_render_editor(cx) {
             v_flex()
@@ -527,7 +535,9 @@ impl Render for ConfigurationView {
                                 .overflow_x_hidden()
                                 .text_ellipsis()
                                 .child(Label::new(
-                                    if env_var_set {
+                                    if config_key_set {
+                                        "API key configured in settings".to_string()
+                                    } else if env_var_set {
                                         format!("API key set in {env_var_name} environment variable")
                                     } else {
                                         format!("API key configured for {}", &state.settings.api_url)
@@ -538,18 +548,20 @@ impl Render for ConfigurationView {
                 .child(
                     h_flex()
                         .flex_shrink_0()
-                        .child(
-                            Button::new("reset-api-key", "Reset API Key")
-                                .label_size(LabelSize::Small)
-                                .icon(IconName::Undo)
-                                .icon_size(IconSize::Small)
-                                .icon_position(IconPosition::Start)
-                                .layer(ElevationIndex::ModalSurface)
-                                .when(env_var_set, |this| {
-                                    this.tooltip(Tooltip::text(format!("To reset your API key, unset the {env_var_name} environment variable.")))
-                                })
-                                .on_click(cx.listener(|this, _, window, cx| this.reset_api_key(window, cx))),
-                        ),
+                        .when(!config_key_set, |this| {
+                            this.child(
+                                Button::new("reset-api-key", "Reset API Key")
+                                    .label_size(LabelSize::Small)
+                                    .icon(IconName::Undo)
+                                    .icon_size(IconSize::Small)
+                                    .icon_position(IconPosition::Start)
+                                    .layer(ElevationIndex::ModalSurface)
+                                    .when(env_var_set, |this| {
+                                        this.tooltip(Tooltip::text(format!("To reset your API key, unset the {env_var_name} environment variable.")))
+                                    })
+                                    .on_click(cx.listener(|this, _, window, cx| this.reset_api_key(window, cx))),
+                            )
+                        }),
                 )
                 .into_any()
         };
