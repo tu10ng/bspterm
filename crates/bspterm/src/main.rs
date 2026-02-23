@@ -681,6 +681,7 @@ fn main() {
         user_info_panel::init(cx);
         terminal::ActiveSessionTrackerEntity::init(cx);
         editor_panel::init(cx);
+        command_panel::init(cx);
         journal::init(app_state.clone(), cx);
         encoding_selector::init(cx);
         language_selector::init(cx);

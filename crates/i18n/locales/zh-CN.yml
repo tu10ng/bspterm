@@ -83,6 +83,7 @@ menu:
   split_right: "向右拆分"
   remote_explorer: "远程资源管理器"
   terminal_panel: "终端面板"
+  command_panel: "命令面板"
   outline_panel: "大纲面板"
   project_panel: "项目面板"
   toggle_gpui_inspector: "切换 GPUI 检查器"
@@ -195,6 +196,15 @@ script_panel:
   run: "运行"
   stop: "停止"
   output_placeholder: "输出将显示在此处..."
+
+# Command Panel
+command_panel:
+  title: "命令面板"
+  hint: "Enter: 换行 | Ctrl+Enter: 发送"
+  send_tooltip: "发送到终端"
+  clear_tooltip: "清除"
+  placeholder: "在此输入命令..."
+  no_terminal: "没有聚焦的终端"
 
 # Rule Editor Panel
 rule_editor:

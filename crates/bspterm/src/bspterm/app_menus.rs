@@ -41,6 +41,7 @@ pub fn app_menus(cx: &mut App) -> Vec<Menu> {
         MenuItem::separator(),
         MenuItem::action(t("menu.remote_explorer"), bspterm_actions::remote_explorer::ToggleFocus),
         MenuItem::action(t("menu.terminal_panel"), terminal_panel::ToggleFocus),
+        MenuItem::action(t("menu.command_panel"), bspterm_actions::command_panel::ToggleFocus),
         MenuItem::action(t("menu.outline_panel"), outline_panel::ToggleFocus),
         MenuItem::action(t("menu.project_panel"), bspterm_actions::project_panel::ToggleFocus),
         MenuItem::separator(),

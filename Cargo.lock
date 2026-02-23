@@ -2526,6 +2526,7 @@ dependencies = [
  "codestral",
  "collections",
  "command_palette",
+ "command_panel",
  "component",
  "component_preview",
  "copilot",
@@ -3864,6 +3865,27 @@ dependencies = [
  "collections",
  "derive_more 0.99.20",
  "gpui",
+ "workspace",
+]
+
+[[package]]
+name = "command_panel"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bspterm_actions",
+ "collections",
+ "editor",
+ "gpui",
+ "i18n",
+ "language",
+ "log",
+ "multi_buffer",
+ "settings",
+ "terminal",
+ "terminal_view",
+ "text",
+ "ui",
  "workspace",
 ]
 

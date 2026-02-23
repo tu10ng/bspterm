@@ -1352,4 +1352,11 @@
       "cmd-c": "notebook::InterruptKernel",
     },
   },
+  {
+    "context": "CommandPanel > Editor",
+    "bindings": {
+      "cmd-enter": "command_panel::Send",
+      "cmd-l": "command_panel::Clear",
+    },
+  },
 ]

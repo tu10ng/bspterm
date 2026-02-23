@@ -85,6 +85,7 @@ client.workspace = true
 codestral.workspace = true
 collections.workspace = true
 command_palette.workspace = true
+command_panel.workspace = true
 component.workspace = true
 component_preview.workspace = true
 copilot.workspace = true

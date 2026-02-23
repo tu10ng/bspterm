@@ -344,6 +344,22 @@ pub mod rule_editor {
     );
 }
 
+pub mod command_panel {
+    use gpui::actions;
+
+    actions!(
+        command_panel,
+        [
+            /// Toggles focus on the command panel.
+            ToggleFocus,
+            /// Sends the command panel content to the focused terminal.
+            Send,
+            /// Clears the command panel content.
+            Clear
+        ]
+    );
+}
+
 pub mod user_info_panel {
     use gpui::actions;
 

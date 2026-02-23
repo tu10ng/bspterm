@@ -83,6 +83,7 @@ menu:
   split_right: "Split Right"
   remote_explorer: "Remote Explorer"
   terminal_panel: "Terminal Panel"
+  command_panel: "Command Panel"
   outline_panel: "Outline Panel"
   project_panel: "Project Panel"
   toggle_gpui_inspector: "Toggle GPUI Inspector"
@@ -195,6 +196,15 @@ script_panel:
   run: "Run"
   stop: "Stop"
   output_placeholder: "Output will appear here..."
+
+# Command Panel
+command_panel:
+  title: "Command Panel"
+  hint: "Enter: New line | Ctrl+Enter: Send"
+  send_tooltip: "Send to Terminal"
+  clear_tooltip: "Clear"
+  placeholder: "Type commands here..."
+  no_terminal: "No terminal focused"
 
 # Rule Editor Panel
 rule_editor:

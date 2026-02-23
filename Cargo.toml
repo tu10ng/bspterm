@@ -38,6 +38,7 @@ members = [
     "crates/collab_ui",
     "crates/collections",
     "crates/command_palette",
+    "crates/command_panel",
     "crates/command_palette_hooks",
     "crates/component",
     "crates/component_preview",
@@ -293,6 +294,7 @@ collab = { path = "crates/collab" }
 collab_ui = { path = "crates/collab_ui" }
 collections = { path = "crates/collections", version = "0.1.0" }
 command_palette = { path = "crates/command_palette" }
+command_panel = { path = "crates/command_panel" }
 command_palette_hooks = { path = "crates/command_palette_hooks" }
 component = { path = "crates/component" }
 component_preview  = { path = "crates/component_preview" }
