@@ -263,6 +263,7 @@ pub struct TerminalView {
     _shortcut_bar_subscription: Option<Subscription>,
     _subscriptions: Vec<Subscription>,
     _terminal_subscriptions: Vec<Subscription>,
+    timestamp_tick_task: Option<Task<()>>,
 }
 
 #[derive(Default, Clone)]
@@ -425,6 +426,12 @@ impl TerminalView {
             })
         });
 
+        let timestamp_tick_task = if TerminalSettings::get_global(cx).gutter.timestamps {
+            Some(Self::start_timestamp_tick(cx))
+        } else {
+            None
+        };
+
         Self {
             terminal,
             workspace: workspace_handle,
@@ -460,6 +467,7 @@ impl TerminalView {
             _shortcut_bar_subscription: shortcut_bar_subscription,
             _subscriptions: subscriptions,
             _terminal_subscriptions: terminal_subscriptions,
+            timestamp_tick_task,
         }
     }
 
@@ -473,6 +481,32 @@ impl TerminalView {
             max_lines_when_unfocused,
         };
         cx.notify();
+    }
+
+    fn start_timestamp_tick(cx: &mut Context<Self>) -> Task<()> {
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_secs(1))
+                    .await;
+
+                let should_continue = this
+                    .update(cx, |_this, cx| {
+                        let settings = TerminalSettings::get_global(cx);
+                        if settings.gutter.timestamps {
+                            cx.notify();
+                            true
+                        } else {
+                            false
+                        }
+                    })
+                    .unwrap_or(false);
+
+                if !should_continue {
+                    break;
+                }
+            }
+        })
     }
 
     const MAX_EMBEDDED_LINES: usize = 1_000;
@@ -721,7 +755,7 @@ impl TerminalView {
     }
 
     fn settings_changed(&mut self, cx: &mut Context<Self>) {
-        let (breadcrumb_visibility_changed, should_blink, new_cursor_shape, send_keybindings_to_shell) = {
+        let (breadcrumb_visibility_changed, should_blink, new_cursor_shape, send_keybindings_to_shell, timestamps_enabled) = {
             let settings = TerminalSettings::get_global(cx);
             let breadcrumb_visibility_changed = self.show_breadcrumbs != settings.toolbar.breadcrumbs;
             self.show_breadcrumbs = settings.toolbar.breadcrumbs;
@@ -737,6 +771,7 @@ impl TerminalView {
                 should_blink,
                 settings.cursor_shape,
                 settings.send_keybindings_to_shell,
+                settings.gutter.timestamps,
             )
         };
 
@@ -761,6 +796,12 @@ impl TerminalView {
             self.keystroke_intercept_subscription.take();
         } else {
             self.register_keystroke_interceptor(cx);
+        }
+
+        if timestamps_enabled && self.timestamp_tick_task.is_none() {
+            self.timestamp_tick_task = Some(Self::start_timestamp_tick(cx));
+        } else if !timestamps_enabled {
+            self.timestamp_tick_task = None;
         }
 
         if breadcrumb_visibility_changed {

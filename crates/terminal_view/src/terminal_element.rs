@@ -1,3 +1,4 @@
+use chrono::Local;
 use editor::{CursorLayout, EditorSettings, HighlightedRange, HighlightedRangeLine};
 use gpui::{
     AbsoluteLength, AnyElement, App, AvailableSpace, Bounds, ContentMask, Context, DispatchPhase,
@@ -686,7 +687,13 @@ impl TerminalElement {
             };
 
             let timestamp = if gutter_settings.timestamps {
-                if let Some(ts) = terminal.get_line_timestamp(grid_line) {
+                let display_time = if grid_line == cursor_line && display_offset == 0 {
+                    Some(Local::now())
+                } else {
+                    terminal.get_line_timestamp(grid_line)
+                };
+
+                if let Some(ts) = display_time {
                     let ts_str = ts.format(&gutter_settings.timestamp_format).to_string();
                     let ts_len = ts_str.len();
                     let shaped = window.text_system().shape_line(
