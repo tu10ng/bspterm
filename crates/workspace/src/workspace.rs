@@ -2811,7 +2811,7 @@ impl Workspace {
             .iter()
             .flat_map(|pane| {
                 pane.read(cx).items().filter_map(|item| {
-                    if item.is_dirty(cx) {
+                    if item.needs_close_serialization(cx) {
                         item.tab_content_text(0, cx);
                         Some((pane.downgrade(), item.boxed_clone()))
                     } else {

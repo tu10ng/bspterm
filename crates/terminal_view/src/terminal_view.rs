@@ -3205,6 +3205,13 @@ impl Item for TerminalView {
         }
     }
 
+    fn needs_close_serialization(&self, cx: &App) -> bool {
+        if self.terminal.read(cx).connection_info().is_some() {
+            return true;
+        }
+        self.is_dirty(cx)
+    }
+
     fn has_conflict(&self, _cx: &App) -> bool {
         false
     }

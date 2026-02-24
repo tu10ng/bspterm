@@ -1846,7 +1846,8 @@ impl Pane {
             }
         });
         if dirty_project_item_ids.is_empty() {
-            return !(item.buffer_kind(cx) == ItemBufferKind::Singleton && item.is_dirty(cx));
+            return !(item.buffer_kind(cx) == ItemBufferKind::Singleton
+                && item.needs_close_serialization(cx));
         }
 
         for open_item in workspace.items(cx) {
@@ -1925,7 +1926,8 @@ impl Pane {
                 items_to_close
                     .iter()
                     .filter(|item| {
-                        item.is_dirty(cx) && !Self::skip_save_on_close(item.as_ref(), workspace, cx)
+                        item.needs_close_serialization(cx)
+                            && !Self::skip_save_on_close(item.as_ref(), workspace, cx)
                     })
                     .map(|item| item.boxed_clone())
                     .collect::<Vec<_>>()
