@@ -90,22 +90,43 @@ impl ScriptingServer {
         cx.set_global(GlobalScriptingServer(Arc::new(RwLock::new(None))));
 
         let (shutdown_tx, shutdown_rx) = smol::channel::bounded::<()>(1);
-        let (addr_tx, addr_rx) = smol::channel::bounded::<std::net::SocketAddr>(1);
+
+        // Bind synchronously on main thread to avoid deadlock
+        let std_listener = match std::net::TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => listener,
+            Err(e) => {
+                log::error!("Failed to bind TCP socket for scripting server: {}", e);
+                return;
+            }
+        };
+        let local_addr = match std_listener.local_addr() {
+            Ok(addr) => addr,
+            Err(e) => {
+                log::error!("Failed to get local address for scripting server: {}", e);
+                return;
+            }
+        };
+
+        // Set non-blocking for async use
+        if let Err(e) = std_listener.set_nonblocking(true) {
+            log::error!("Failed to set non-blocking mode: {}", e);
+            return;
+        }
+
+        log::info!("Scripting server will listen on {:?}", local_addr);
 
         let server_task = cx.spawn({
             async move |cx: &mut AsyncApp| {
-                if let Err(e) = Self::run_server_tcp(addr_tx, shutdown_rx, cx).await {
+                let listener = TcpListener::from(std_listener);
+                if let Err(e) = Self::run_server_tcp_with_listener(listener, shutdown_rx, cx).await
+                {
                     log::error!("Scripting server error: {}", e);
                 }
             }
         });
 
-        let addr = smol::block_on(addr_rx.recv()).unwrap_or_else(|_| {
-            std::net::SocketAddr::from(([127, 0, 0, 1], 0))
-        });
-
         let handle = ScriptingServerHandle {
-            connection_info: ConnectionInfo::TcpAddress(addr),
+            connection_info: ConnectionInfo::TcpAddress(local_addr),
             shutdown_tx,
             _server_task: server_task,
         };
@@ -160,19 +181,12 @@ impl ScriptingServer {
     }
 
     #[cfg(target_os = "windows")]
-    async fn run_server_tcp(
-        addr_tx: smol::channel::Sender<std::net::SocketAddr>,
+    async fn run_server_tcp_with_listener(
+        listener: TcpListener,
         shutdown_rx: smol::channel::Receiver<()>,
         cx: &mut AsyncApp,
     ) -> Result<()> {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .context("Failed to bind TCP socket")?;
-
-        let local_addr = listener.local_addr()?;
-        log::info!("Scripting server listening on {:?}", local_addr);
-
-        addr_tx.send(local_addr).await.ok();
+        log::info!("Scripting server listening on {:?}", listener.local_addr()?);
 
         loop {
             futures::select! {
