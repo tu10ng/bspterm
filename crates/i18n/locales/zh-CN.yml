@@ -161,6 +161,12 @@ remote_explorer:
   # User avatars
   more_users: "位用户"
 
+# Terminal Outline Panel
+terminal_outline:
+  title: "终端命令"
+  no_terminal: "没有活动的终端"
+  no_commands: "没有记录的命令"
+
 # Terminal Panel
 terminal_panel:
   title: "终端"

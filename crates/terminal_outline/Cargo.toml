@@ -1,0 +1,23 @@
+[package]
+name = "terminal_outline"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+license = "GPL-3.0-or-later"
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/terminal_outline.rs"
+doctest = false
+
+[dependencies]
+anyhow.workspace = true
+bspterm_actions.workspace = true
+gpui.workspace = true
+i18n.workspace = true
+terminal.workspace = true
+terminal_view.workspace = true
+ui.workspace = true
+workspace.workspace = true

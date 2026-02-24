@@ -1,28 +1,33 @@
 use anyhow::{Context, Result};
 use futures::FutureExt;
 use gpui::{App, AsyncApp, Global, Task};
+#[cfg(not(target_os = "windows"))]
 use net::async_net::{UnixListener, UnixStream};
+#[cfg(target_os = "windows")]
+use smol::net::{TcpListener, TcpStream};
 use parking_lot::RwLock;
 use smol::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+#[cfg(not(target_os = "windows"))]
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::handlers::handle_request;
 use crate::protocol::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
+use crate::ConnectionInfo;
 
 struct GlobalScriptingServer(Arc<RwLock<Option<ScriptingServerHandle>>>);
 
 impl Global for GlobalScriptingServer {}
 
 pub struct ScriptingServerHandle {
-    pub socket_path: PathBuf,
+    connection_info: ConnectionInfo,
     shutdown_tx: smol::channel::Sender<()>,
     _server_task: Task<()>,
 }
 
 impl ScriptingServerHandle {
-    pub fn socket_path(&self) -> &PathBuf {
-        &self.socket_path
+    pub fn connection_info(&self) -> &ConnectionInfo {
+        &self.connection_info
     }
 
     pub fn shutdown(&self) {
@@ -33,8 +38,12 @@ impl ScriptingServerHandle {
 impl Drop for ScriptingServerHandle {
     fn drop(&mut self) {
         self.shutdown_tx.try_send(()).ok();
-        if self.socket_path.exists() {
-            std::fs::remove_file(&self.socket_path).ok();
+        #[cfg(not(target_os = "windows"))]
+        {
+            let ConnectionInfo::UnixSocket(ref path) = self.connection_info;
+            if path.exists() {
+                std::fs::remove_file(path).ok();
+            }
         }
     }
 }
@@ -42,6 +51,7 @@ impl Drop for ScriptingServerHandle {
 pub struct ScriptingServer;
 
 impl ScriptingServer {
+    #[cfg(not(target_os = "windows"))]
     pub fn init(cx: &mut App) {
         cx.set_global(GlobalScriptingServer(Arc::new(RwLock::new(None))));
 
@@ -59,14 +69,14 @@ impl ScriptingServer {
         let server_task = cx.spawn({
             let socket_path = socket_path.clone();
             async move |cx: &mut AsyncApp| {
-                if let Err(e) = Self::run_server(socket_path, shutdown_rx, cx).await {
+                if let Err(e) = Self::run_server_unix(socket_path, shutdown_rx, cx).await {
                     log::error!("Scripting server error: {}", e);
                 }
             }
         });
 
         let handle = ScriptingServerHandle {
-            socket_path,
+            connection_info: ConnectionInfo::UnixSocket(socket_path),
             shutdown_tx,
             _server_task: server_task,
         };
@@ -75,13 +85,43 @@ impl ScriptingServer {
         *global.0.write() = Some(handle);
     }
 
-    pub fn get(cx: &App) -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    pub fn init(cx: &mut App) {
+        cx.set_global(GlobalScriptingServer(Arc::new(RwLock::new(None))));
+
+        let (shutdown_tx, shutdown_rx) = smol::channel::bounded::<()>(1);
+        let (addr_tx, addr_rx) = smol::channel::bounded::<std::net::SocketAddr>(1);
+
+        let server_task = cx.spawn({
+            async move |cx: &mut AsyncApp| {
+                if let Err(e) = Self::run_server_tcp(addr_tx, shutdown_rx, cx).await {
+                    log::error!("Scripting server error: {}", e);
+                }
+            }
+        });
+
+        let addr = smol::block_on(addr_rx.recv()).unwrap_or_else(|_| {
+            std::net::SocketAddr::from(([127, 0, 0, 1], 0))
+        });
+
+        let handle = ScriptingServerHandle {
+            connection_info: ConnectionInfo::TcpAddress(addr),
+            shutdown_tx,
+            _server_task: server_task,
+        };
+
         let global = cx.global::<GlobalScriptingServer>();
-        let inner = global.0.read();
-        inner.as_ref().map(|h| h.socket_path.clone())
+        *global.0.write() = Some(handle);
     }
 
-    async fn run_server(
+    pub fn get(cx: &App) -> Option<ConnectionInfo> {
+        let global = cx.global::<GlobalScriptingServer>();
+        let inner = global.0.read();
+        inner.as_ref().map(|h| h.connection_info.clone())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    async fn run_server_unix(
         socket_path: PathBuf,
         shutdown_rx: smol::channel::Receiver<()>,
         cx: &mut AsyncApp,
@@ -96,7 +136,7 @@ impl ScriptingServer {
                 result = listener.accept().fuse() => {
                     match result {
                         Ok((stream, _)) => {
-                            if let Err(e) = Self::handle_client(stream, cx).await {
+                            if let Err(e) = Self::handle_unix_client(stream, cx).await {
                                 log::error!("Client error: {}", e);
                             }
                         }
@@ -119,13 +159,73 @@ impl ScriptingServer {
         Ok(())
     }
 
-    async fn handle_client(
+    #[cfg(target_os = "windows")]
+    async fn run_server_tcp(
+        addr_tx: smol::channel::Sender<std::net::SocketAddr>,
+        shutdown_rx: smol::channel::Receiver<()>,
+        cx: &mut AsyncApp,
+    ) -> Result<()> {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .context("Failed to bind TCP socket")?;
+
+        let local_addr = listener.local_addr()?;
+        log::info!("Scripting server listening on {:?}", local_addr);
+
+        addr_tx.send(local_addr).await.ok();
+
+        loop {
+            futures::select! {
+                result = listener.accept().fuse() => {
+                    match result {
+                        Ok((stream, _)) => {
+                            if let Err(e) = Self::handle_tcp_client(stream, cx).await {
+                                log::error!("Client error: {}", e);
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Accept error: {}", e);
+                        }
+                    }
+                }
+                _ = shutdown_rx.recv().fuse() => {
+                    log::info!("Scripting server shutting down");
+                    break;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    async fn handle_unix_client(
         stream: UnixStream,
         cx: &mut AsyncApp,
     ) -> Result<()> {
         let (reader, writer) = smol::io::split(stream);
+        Self::handle_client_stream(reader, writer, cx).await
+    }
+
+    #[cfg(target_os = "windows")]
+    async fn handle_tcp_client(
+        stream: TcpStream,
+        cx: &mut AsyncApp,
+    ) -> Result<()> {
+        let (reader, writer) = smol::io::split(stream);
+        Self::handle_client_stream(reader, writer, cx).await
+    }
+
+    async fn handle_client_stream<R, W>(
+        reader: R,
+        mut writer: W,
+        cx: &mut AsyncApp,
+    ) -> Result<()>
+    where
+        R: smol::io::AsyncRead + Unpin,
+        W: smol::io::AsyncWrite + Unpin,
+    {
         let mut reader = BufReader::new(reader);
-        let mut writer = writer;
         let mut line = String::new();
 
         loop {

@@ -207,6 +207,7 @@ tasks_ui.workspace = true
 telemetry.workspace = true
 telemetry_events.workspace = true
 terminal.workspace = true
+terminal_outline.workspace = true
 terminal_view.workspace = true
 terminal_scripting.workspace = true
 script_panel.workspace = true

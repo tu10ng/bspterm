@@ -344,6 +344,18 @@ pub mod rule_editor {
     );
 }
 
+pub mod terminal_outline {
+    use gpui::actions;
+
+    actions!(
+        terminal_outline,
+        [
+            /// Toggles focus on the terminal command outline panel.
+            ToggleFocus
+        ]
+    );
+}
+
 pub mod terminal_panel {
     use gpui::actions;
 

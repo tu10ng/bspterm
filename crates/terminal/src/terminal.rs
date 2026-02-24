@@ -1,6 +1,7 @@
 pub mod abbr_store;
 pub mod active_session_tracker;
 pub mod button_bar_config;
+pub mod command_history;
 pub mod connection;
 pub mod mappings;
 pub mod rule_engine;
@@ -40,6 +41,8 @@ pub use active_session_tracker::{
     ActiveSession, ActiveSessionTrackerEntity, ActiveSessionTrackerEvent,
     GlobalActiveSessionTracker, SessionProtocolType,
 };
+
+pub use command_history::{CommandHistory, TerminalCommand};
 
 pub use crate::connection::ssh::{SshAuthConfig, SshConfig};
 pub use crate::connection::telnet::TelnetConfig;
@@ -186,6 +189,7 @@ pub enum Event {
     NewNavigationTarget(Option<MaybeNavigationTarget>),
     Open(MaybeNavigationTarget),
     LoginCompleted,
+    CommandHistoryChanged,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -481,6 +485,7 @@ impl TerminalBuilder {
             line_timestamps: HashMap::default(),
             last_cursor_line: 0,
             last_topmost_line: 0,
+            command_history: CommandHistory::new(),
         };
 
         Ok(TerminalBuilder {
@@ -729,6 +734,7 @@ impl TerminalBuilder {
                 line_timestamps: HashMap::default(),
                 last_cursor_line: 0,
                 last_topmost_line: 0,
+                command_history: CommandHistory::new(),
             };
 
             if !activation_script.is_empty() && no_task {
@@ -928,6 +934,7 @@ impl TerminalBuilder {
                 line_timestamps: HashMap::default(),
                 last_cursor_line: 0,
                 last_topmost_line: 0,
+                command_history: CommandHistory::new(),
             };
 
             terminal.init_rule_engine();
@@ -1093,6 +1100,7 @@ impl TerminalBuilder {
                 line_timestamps: HashMap::default(),
                 last_cursor_line: 0,
                 last_topmost_line: 0,
+                command_history: CommandHistory::new(),
             };
 
             terminal.init_rule_engine();
@@ -1271,6 +1279,7 @@ impl TerminalBuilder {
             line_timestamps: HashMap::default(),
             last_cursor_line: 0,
             last_topmost_line: 0,
+            command_history: CommandHistory::new(),
         };
 
         terminal.init_rule_engine();
@@ -1445,6 +1454,8 @@ pub struct Terminal {
     last_cursor_line: i32,
     /// Tracks the last known topmost line to detect scrolling
     last_topmost_line: i32,
+    /// Command history extracted from terminal output
+    command_history: CommandHistory,
 }
 
 struct CopyTemplate {
@@ -1568,7 +1579,10 @@ impl Terminal {
                     }
                 }
 
-                self.record_output_timestamps();
+                let commands_changed = self.record_output_timestamps();
+                if commands_changed {
+                    cx.emit(Event::CommandHistoryChanged);
+                }
 
                 self.check_rules(rule_store::TriggerEvent::Wakeup, cx);
 
@@ -2037,6 +2051,47 @@ impl Terminal {
             .push_back(InternalEvent::Scroll(AlacScroll::Bottom));
     }
 
+    /// Scrolls the terminal view to make the specified line visible.
+    /// The line number can be negative for scrollback history.
+    pub fn scroll_to_line(&mut self, target_line: i32) {
+        let term = self.term.lock();
+        let current_display_offset = self.last_content.display_offset as i32;
+        let screen_lines = term.screen_lines() as i32;
+
+        // Calculate what line is currently at the top of the visible area
+        // display_offset of 0 means we're at the bottom (showing the most recent lines)
+        // Higher display_offset means we've scrolled up into history
+        let current_top_line = -current_display_offset;
+
+        // We want target_line to be visible. Calculate the needed display_offset.
+        // If target_line is above current view, scroll up (increase display_offset)
+        // If target_line is below current view, scroll down (decrease display_offset)
+
+        // Check if target_line is already visible
+        let current_bottom_line = current_top_line + screen_lines - 1;
+        if target_line >= current_top_line && target_line <= current_bottom_line {
+            // Already visible, no scroll needed
+            return;
+        }
+
+        // Calculate new display_offset to put target_line in the middle of the screen
+        let middle_offset = screen_lines / 2;
+        let new_display_offset = -(target_line - middle_offset);
+
+        // Clamp to valid range
+        let history_size = term.history_size() as i32;
+        let clamped_offset = new_display_offset.clamp(0, history_size);
+
+        // Calculate delta from current position
+        let delta = clamped_offset - current_display_offset;
+        drop(term);
+
+        if delta != 0 {
+            self.events
+                .push_back(InternalEvent::Scroll(AlacScroll::Delta(delta)));
+        }
+    }
+
     pub fn scrolled_to_top(&self) -> bool {
         self.last_content.scrolled_to_top
     }
@@ -2445,7 +2500,7 @@ impl Terminal {
         self.last_content = Self::make_content(&terminal, &self.last_content);
     }
 
-    /// Records timestamps for lines that received output.
+    /// Records timestamps for lines that received output and extracts commands.
     /// Called when Wakeup event is processed (actual data arrival), NOT during sync.
     ///
     /// Uses self.last_cursor_line as reference point - this is where the cursor
@@ -2453,9 +2508,12 @@ impl Terminal {
     ///
     /// When content scrolls (topmost_line becomes more negative), we adjust all
     /// timestamp keys by the scroll delta so they continue to match their content.
-    fn record_output_timestamps(&mut self) {
+    ///
+    /// Returns true if new commands were detected.
+    fn record_output_timestamps(&mut self) -> bool {
         let term = self.term.lock();
-        let cursor_line = term.grid().cursor.point.line.0;
+        let grid = term.grid();
+        let cursor_line = grid.cursor.point.line.0;
         let topmost_line = term.topmost_line().0;
         let now = Local::now();
 
@@ -2470,20 +2528,40 @@ impl Terminal {
                 .collect();
             // Also adjust last_cursor_line to match the shifted content
             self.last_cursor_line -= scroll_delta;
+            // Adjust command history line numbers
+            self.command_history.adjust_for_scroll(scroll_delta, topmost_line);
         }
 
-        // Record timestamps for new output lines
-        if cursor_line != self.last_cursor_line {
+        // Collect lines to process for command extraction
+        let lines_to_check: Vec<i32> = if cursor_line != self.last_cursor_line {
             let (start, end) = if cursor_line > self.last_cursor_line {
                 (self.last_cursor_line, cursor_line)
             } else {
                 (cursor_line, self.last_cursor_line)
             };
-            for line in start..=end {
-                self.line_timestamps.insert(line, now);
-            }
+            (start..=end).collect()
         } else {
-            self.line_timestamps.insert(cursor_line, now);
+            vec![cursor_line]
+        };
+
+        // Record timestamps for new output lines
+        for &line in &lines_to_check {
+            self.line_timestamps.insert(line, now);
+        }
+
+        // Extract commands from newly updated lines
+        let mut commands_changed = false;
+        for &line in &lines_to_check {
+            if line >= topmost_line && line <= grid.bottommost_line().0 {
+                let row = &grid[Line(line)];
+                let content = row_to_string(row);
+                let trimmed = content.trim_end();
+                if !trimmed.is_empty() {
+                    if self.command_history.process_line(trimmed, line, Some(now)) {
+                        commands_changed = true;
+                    }
+                }
+            }
         }
 
         // Update tracking state
@@ -2493,10 +2571,23 @@ impl Terminal {
         // Clean up timestamps that have scrolled out of history
         self.line_timestamps
             .retain(|&line, _| line >= topmost_line);
+        self.command_history.cleanup_old_commands(topmost_line);
+
+        commands_changed
     }
 
     pub fn get_line_timestamp(&self, line: i32) -> Option<DateTime<Local>> {
         self.line_timestamps.get(&line).copied()
+    }
+
+    /// Returns the command history extracted from terminal output.
+    pub fn command_history(&self) -> &CommandHistory {
+        &self.command_history
+    }
+
+    /// Clears the command history.
+    pub fn clear_command_history(&mut self) {
+        self.command_history.clear();
     }
 
     fn make_content(term: &Term<ZedListener>, last_content: &TerminalContent) -> TerminalContent {

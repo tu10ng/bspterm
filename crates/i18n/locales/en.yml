@@ -161,6 +161,12 @@ remote_explorer:
   # User avatars
   more_users: "more users"
 
+# Terminal Outline Panel
+terminal_outline:
+  title: "Terminal Commands"
+  no_terminal: "No terminal active"
+  no_commands: "No commands recorded"
+
 # Terminal Panel
 terminal_panel:
   title: "Terminal"

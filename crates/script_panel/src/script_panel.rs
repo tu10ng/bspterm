@@ -155,17 +155,18 @@ impl ScriptPanel {
         let focused_terminal_id = terminal_scripting::TerminalRegistry::focused_id(cx)
             .map(|id| id.to_string());
 
-        let socket_path = terminal_scripting::ScriptingServer::get(cx);
+        let connection_info = terminal_scripting::ScriptingServer::get(cx);
 
-        if socket_path.is_none() {
+        if connection_info.is_none() {
             self.output.push_str("Error: Scripting server not running\n");
             cx.notify();
             return;
         }
 
+        let connection_string = connection_info.unwrap().to_env_string();
         let runner = ScriptRunner::new(
             script.path.clone(),
-            socket_path.unwrap(),
+            connection_string,
             focused_terminal_id,
         );
 

@@ -1171,7 +1171,7 @@ print(output)
             return;
         };
 
-        let Some(socket_path) = ScriptingServer::get(cx) else {
+        let Some(connection_info) = ScriptingServer::get(cx) else {
             let err_msg = t("script.service_unavailable");
             log::error!("Scripting server not available for button bar script");
             self.show_script_error(&err_msg, cx);
@@ -1187,7 +1187,7 @@ print(output)
         let script_path = shellexpand::tilde(&button.script_path.to_string_lossy()).into_owned();
         let mut runner = ButtonBarScriptRunner::new(
             PathBuf::from(script_path),
-            socket_path,
+            connection_info.to_env_string(),
             terminal_id,
         );
 
@@ -1587,7 +1587,7 @@ print(output)
             return;
         };
 
-        let Some(socket_path) = ScriptingServer::get(cx) else {
+        let Some(connection_info) = ScriptingServer::get(cx) else {
             let err_msg = t("script.service_unavailable");
             log::error!("Scripting server not available for script shortcut");
             self.show_script_error(&err_msg, cx);
@@ -1603,7 +1603,7 @@ print(output)
             shellexpand::tilde(&shortcut.script_path.to_string_lossy()).into_owned();
         let mut runner = ButtonBarScriptRunner::new(
             PathBuf::from(script_path),
-            socket_path,
+            connection_info.to_env_string(),
             terminal_id,
         );
 
@@ -2469,6 +2469,9 @@ fn subscribe_for_terminal_events(
                 }
                 Event::LoginCompleted => {
                     log::debug!("Terminal login completed");
+                }
+                Event::CommandHistoryChanged => {
+                    // Command history panel will subscribe to this event
                 }
             }
         },

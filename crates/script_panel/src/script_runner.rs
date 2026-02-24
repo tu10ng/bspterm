@@ -8,6 +8,9 @@ use std::os::unix::io::AsRawFd;
 #[cfg(windows)]
 use std::os::windows::io::AsRawHandle;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 pub enum ScriptStatus {
     NotStarted,
     Running,
@@ -17,7 +20,7 @@ pub enum ScriptStatus {
 
 pub struct ScriptRunner {
     script_path: PathBuf,
-    socket_path: PathBuf,
+    connection_string: String,
     focused_terminal_id: Option<String>,
     process: Option<Child>,
     status: ScriptStatus,
@@ -26,12 +29,12 @@ pub struct ScriptRunner {
 impl ScriptRunner {
     pub fn new(
         script_path: PathBuf,
-        socket_path: PathBuf,
+        connection_string: String,
         focused_terminal_id: Option<String>,
     ) -> Self {
         Self {
             script_path,
-            socket_path,
+            connection_string,
             focused_terminal_id,
             process: None,
             status: ScriptStatus::NotStarted,
@@ -51,13 +54,19 @@ impl ScriptRunner {
         let mut command = Command::new("python3");
         command
             .arg(&self.script_path)
-            .env("BSPTERM_SOCKET", &self.socket_path)
+            .env("BSPTERM_SOCKET", &self.connection_string)
             .env("PYTHONPATH", bspterm_path.parent().unwrap_or(&PathBuf::from(".")))
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
         if let Some(terminal_id) = &self.focused_terminal_id {
             command.env("BSPTERM_CURRENT_TERMINAL", terminal_id);
+        }
+
+        #[cfg(windows)]
+        {
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            command.creation_flags(CREATE_NO_WINDOW);
         }
 
         let child = command.spawn()?;

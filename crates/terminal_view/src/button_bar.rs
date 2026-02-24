@@ -26,9 +26,9 @@ pub struct ButtonBarScriptRunner {
 }
 
 impl ButtonBarScriptRunner {
-    pub fn new(script_path: PathBuf, socket_path: PathBuf, terminal_id: Option<String>) -> Self {
+    pub fn new(script_path: PathBuf, connection_string: String, terminal_id: Option<String>) -> Self {
         Self {
-            runner: ScriptRunner::new(script_path, socket_path, terminal_id),
+            runner: ScriptRunner::new(script_path, connection_string, terminal_id),
         }
     }
 

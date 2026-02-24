@@ -56,24 +56,39 @@ class JsonRpcError(BsptermError):
         super().__init__(f"[{code}] {message}")
 
 
-def _get_socket_path() -> str:
-    """Get the socket path from environment or default location."""
-    if "BSPTERM_SOCKET" in os.environ:
-        return os.environ["BSPTERM_SOCKET"]
+def _get_connection_info() -> tuple:
+    """
+    Get connection info from environment or default location.
 
-    runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
-    if not runtime_dir:
-        runtime_dir = os.environ.get("TMPDIR", "/tmp")
+    Returns:
+        (connection_type, address) where:
+        - connection_type is "tcp" or "unix"
+        - address is (host, port) tuple for TCP or socket path string for Unix
+    """
+    socket_env = os.environ.get("BSPTERM_SOCKET", "")
 
-    ppid = os.getppid()
-    return os.path.join(runtime_dir, f"bspterm-{ppid}.sock")
+    if socket_env.startswith("tcp://"):
+        addr_str = socket_env[6:]
+        host, port_str = addr_str.rsplit(":", 1)
+        return ("tcp", (host, int(port_str)))
+    elif socket_env:
+        return ("unix", socket_env)
+    else:
+        runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
+        if not runtime_dir:
+            runtime_dir = os.environ.get("TMPDIR", "/tmp")
+        ppid = os.getppid()
+        return ("unix", os.path.join(runtime_dir, f"bspterm-{ppid}.sock"))
 
 
 class _RpcClient:
     """Low-level JSON-RPC client."""
 
-    def __init__(self, socket_path: Optional[str] = None):
-        self.socket_path = socket_path or _get_socket_path()
+    def __init__(self, connection_info: Optional[tuple] = None):
+        if connection_info is None:
+            connection_info = _get_connection_info()
+        self.connection_type = connection_info[0]
+        self.address = connection_info[1]
         self._socket: Optional[socket.socket] = None
         self._request_id = 0
 
@@ -82,12 +97,20 @@ class _RpcClient:
         if self._socket is not None:
             return
 
-        self._socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        try:
-            self._socket.connect(self.socket_path)
-        except OSError as e:
-            self._socket = None
-            raise ConnectionError(f"Failed to connect to {self.socket_path}: {e}")
+        if self.connection_type == "tcp":
+            self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                self._socket.connect(self.address)
+            except OSError as e:
+                self._socket = None
+                raise ConnectionError(f"Failed to connect to tcp://{self.address[0]}:{self.address[1]}: {e}")
+        else:
+            self._socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                self._socket.connect(self.address)
+            except OSError as e:
+                self._socket = None
+                raise ConnectionError(f"Failed to connect to {self.address}: {e}")
 
     def disconnect(self):
         """Disconnect from the server."""

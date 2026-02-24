@@ -675,6 +675,7 @@ fn main() {
         vim::init(cx);
         terminal_view::init(cx);
         terminal_scripting::init(cx);
+        terminal_outline::init(cx);
         script_panel::init(cx);
         lan_discovery::init(cx);
         lan_messaging::init(cx);

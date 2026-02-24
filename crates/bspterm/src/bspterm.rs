@@ -49,6 +49,7 @@ use onboarding::DOCS_URL;
 use onboarding::multibuffer_hint::MultibufferHint;
 pub use open_listener::*;
 use outline_panel::OutlinePanel;
+use terminal_outline::TerminalOutline;
 use paths::{
     local_debug_file_relative_path, local_settings_file_relative_path,
     local_tasks_file_relative_path,
@@ -670,6 +671,7 @@ fn initialize_panels(
         let remote_explorer = RemoteExplorer::load(workspace_handle.clone(), cx.clone());
         let rule_editor = rule_editor::RuleEditor::load(workspace_handle.clone(), cx.clone());
         let outline_panel = OutlinePanel::load(workspace_handle.clone(), cx.clone());
+        let terminal_outline = TerminalOutline::load(workspace_handle.clone(), cx.clone());
         let terminal_panel = TerminalPanel::load(workspace_handle.clone(), cx.clone());
         let editor_panel = EditorPanel::load(workspace_handle.clone(), cx.clone());
         let script_panel = script_panel::ScriptPanel::load(workspace_handle.clone(), cx.clone());
@@ -698,6 +700,7 @@ fn initialize_panels(
             add_panel_when_ready(remote_explorer, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(rule_editor, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(outline_panel, workspace_handle.clone(), cx.clone()),
+            add_panel_when_ready(terminal_outline, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(terminal_panel, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(editor_panel, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(script_panel, workspace_handle.clone(), cx.clone()),

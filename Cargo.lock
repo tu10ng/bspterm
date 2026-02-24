@@ -2640,6 +2640,7 @@ dependencies = [
  "telemetry_events",
  "tempfile",
  "terminal",
+ "terminal_outline",
  "terminal_scripting",
  "terminal_view",
  "theme",
@@ -18266,6 +18267,20 @@ dependencies = [
  "util_macros",
  "uuid",
  "windows 0.61.3",
+]
+
+[[package]]
+name = "terminal_outline"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bspterm_actions",
+ "gpui",
+ "i18n",
+ "terminal",
+ "terminal_view",
+ "ui",
+ "workspace",
 ]
 
 [[package]]
