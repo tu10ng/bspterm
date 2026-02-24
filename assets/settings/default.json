@@ -1809,6 +1809,24 @@
       "cmd-,",
       "ctrl-`"
     ],
+    // Session logging settings (similar to SecureCRT)
+    // Saves terminal output to files in real-time with timestamps.
+    "session_logging": {
+      // Whether session logging is enabled by default for new terminals.
+      "enabled": false,
+      // Directory where session logs are saved.
+      // Supports ~ expansion for home directory.
+      "log_directory": "~/.config/bspterm/session_logs",
+      // Pattern for log file naming.
+      // Supports: %Y, %m, %d, %H, %M, %S (strftime),
+      // ${session_name}, ${protocol}, ${host}, ${port}, ${username}
+      "filename_pattern": "${session_name}_%Y%m%d_%H%M%S.log",
+      // Format string for timestamps prepended to each line.
+      // Empty string disables timestamps.
+      "timestamp_format": "[%Y-%m-%d %H:%M:%S] ",
+      // Whether to include ANSI escape codes in the log.
+      "include_ansi_codes": false
+    },
   },
   "code_actions_on_format": {},
   // Settings related to running tasks.

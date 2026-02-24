@@ -6,6 +6,7 @@ pub mod connection;
 pub mod mappings;
 pub mod rule_engine;
 pub mod rule_store;
+pub mod session_logger;
 pub mod session_store;
 pub mod shortcut_bar_store;
 
@@ -43,6 +44,8 @@ pub use active_session_tracker::{
 };
 
 pub use command_history::{CommandHistory, TerminalCommand};
+
+pub use session_logger::{SessionLogger, SessionMetadata};
 
 pub use crate::connection::ssh::{SshAuthConfig, SshConfig};
 pub use crate::connection::telnet::TelnetConfig;
@@ -486,6 +489,7 @@ impl TerminalBuilder {
             last_cursor_line: 0,
             last_topmost_line: 0,
             command_history: CommandHistory::new(),
+            session_logger: None,
         };
 
         Ok(TerminalBuilder {
@@ -735,6 +739,7 @@ impl TerminalBuilder {
                 last_cursor_line: 0,
                 last_topmost_line: 0,
                 command_history: CommandHistory::new(),
+                session_logger: None,
             };
 
             if !activation_script.is_empty() && no_task {
@@ -810,6 +815,17 @@ impl TerminalBuilder {
     ) -> Task<Result<TerminalBuilder>> {
         let background_executor = cx.background_executor().clone();
         let tokio_handle = gpui_tokio::Tokio::handle(cx);
+
+        let session_logging_settings = TerminalSettings::get_global(cx).session_logging.clone();
+        log::debug!(
+            "SSH terminal session_logging settings: enabled={}",
+            session_logging_settings.enabled
+        );
+        let session_logger_metadata = session_logger::SessionMetadata::new_ssh(
+            ssh_config.host.clone(),
+            ssh_config.port,
+            ssh_config.username.clone(),
+        );
 
         let connection_info = ConnectionInfo::Ssh {
             host: ssh_config.host.clone(),
@@ -935,9 +951,11 @@ impl TerminalBuilder {
                 last_cursor_line: 0,
                 last_topmost_line: 0,
                 command_history: CommandHistory::new(),
+                session_logger: None,
             };
 
             terminal.init_rule_engine();
+            terminal.init_session_logger(session_logging_settings, session_logger_metadata);
 
             Ok(TerminalBuilder {
                 terminal,
@@ -985,6 +1003,17 @@ impl TerminalBuilder {
     ) -> Task<Result<TerminalBuilder>> {
         let background_executor = cx.background_executor().clone();
         let tokio_handle = gpui_tokio::Tokio::handle(cx);
+
+        let session_logging_settings = TerminalSettings::get_global(cx).session_logging.clone();
+        log::debug!(
+            "Telnet terminal session_logging settings: enabled={}",
+            session_logging_settings.enabled
+        );
+        let session_logger_metadata = session_logger::SessionMetadata::new_telnet(
+            telnet_config.host.clone(),
+            telnet_config.port,
+            telnet_config.username.clone(),
+        );
 
         let connection_info = ConnectionInfo::Telnet {
             host: telnet_config.host.clone(),
@@ -1101,9 +1130,11 @@ impl TerminalBuilder {
                 last_cursor_line: 0,
                 last_topmost_line: 0,
                 command_history: CommandHistory::new(),
+                session_logger: None,
             };
 
             terminal.init_rule_engine();
+            terminal.init_session_logger(session_logging_settings, session_logger_metadata);
 
             Ok(TerminalBuilder {
                 terminal,
@@ -1280,6 +1311,7 @@ impl TerminalBuilder {
             last_cursor_line: 0,
             last_topmost_line: 0,
             command_history: CommandHistory::new(),
+            session_logger: None,
         };
 
         terminal.init_rule_engine();
@@ -1456,6 +1488,8 @@ pub struct Terminal {
     last_topmost_line: i32,
     /// Command history extracted from terminal output
     command_history: CommandHistory,
+    /// Session logger for saving terminal output to files
+    session_logger: Option<session_logger::SessionLogger>,
 }
 
 struct CopyTemplate {
@@ -1575,6 +1609,10 @@ impl Terminal {
             AlacTermEvent::Wakeup => {
                 if let TerminalType::Connected { connection } = &self.terminal_type {
                     if let Some(data) = connection.read() {
+                        if let Some(ref mut logger) = self.session_logger {
+                            log::trace!("Logging {} bytes to session log", data.len());
+                            let _ = logger.log_output(&data, Local::now());
+                        }
                         self.process_ssh_input(&data);
                     }
                 }
@@ -3088,6 +3126,73 @@ impl Terminal {
             .and_then(|info| info.current.read().as_ref().map(|process| process.cwd.clone()))
     }
 
+    pub fn start_session_logging(&mut self, cx: &App) -> anyhow::Result<()> {
+        if self.session_logger.is_some() {
+            return Ok(());
+        }
+
+        let settings = TerminalSettings::get_global(cx).session_logging.clone();
+        let metadata = match &self.connection_info {
+            Some(ConnectionInfo::Ssh {
+                host,
+                port,
+                username,
+                ..
+            }) => session_logger::SessionMetadata::new_ssh(
+                host.clone(),
+                *port,
+                username.clone(),
+            ),
+            Some(ConnectionInfo::Telnet {
+                host,
+                port,
+                username,
+                ..
+            }) => session_logger::SessionMetadata::new_telnet(
+                host.clone(),
+                *port,
+                username.clone(),
+            ),
+            None => session_logger::SessionMetadata::new_local(),
+        };
+
+        let mut logger = session_logger::SessionLogger::new(settings, metadata);
+        logger.start()?;
+        self.session_logger = Some(logger);
+        Ok(())
+    }
+
+    pub fn stop_session_logging(&mut self) -> anyhow::Result<()> {
+        if let Some(ref mut logger) = self.session_logger {
+            logger.stop()?;
+        }
+        self.session_logger = None;
+        Ok(())
+    }
+
+    pub fn toggle_session_logging(&mut self, cx: &App) -> anyhow::Result<bool> {
+        if self.session_logger.is_some() {
+            self.stop_session_logging()?;
+            Ok(false)
+        } else {
+            self.start_session_logging(cx)?;
+            Ok(true)
+        }
+    }
+
+    pub fn is_session_logging_active(&self) -> bool {
+        self.session_logger
+            .as_ref()
+            .map(|l| l.is_active())
+            .unwrap_or(false)
+    }
+
+    pub fn session_log_file_path(&self) -> Option<PathBuf> {
+        self.session_logger
+            .as_ref()
+            .and_then(|l| l.current_file_path().map(|p| p.to_path_buf()))
+    }
+
     pub fn title(&self, truncate: bool) -> String {
         const MAX_CHARS: usize = 25;
         match &self.task {
@@ -3450,6 +3555,62 @@ impl Terminal {
         self.disconnection_reason = None;
         self.reset_rule_counts();
         self.check_rules(rule_store::TriggerEvent::Connected, cx);
+
+        // Initialize session logger if not already active
+        if self.session_logger.is_none() {
+            self.init_session_logger_from_settings(cx);
+        }
+    }
+
+    /// Initialize session logger from settings when a connection is established.
+    /// This is called from `set_connection()` for reconnections where the logger
+    /// wasn't initialized during terminal creation.
+    fn init_session_logger_from_settings(&mut self, cx: &App) {
+        use settings::Settings;
+
+        let settings = terminal_settings::TerminalSettings::get_global(cx)
+            .session_logging
+            .clone();
+        log::debug!(
+            "init_session_logger_from_settings called, enabled: {}",
+            settings.enabled
+        );
+
+        if !settings.enabled {
+            return;
+        }
+
+        let metadata = match &self.connection_info {
+            Some(ConnectionInfo::Ssh {
+                host,
+                port,
+                username,
+                ..
+            }) => session_logger::SessionMetadata::new_ssh(host.clone(), *port, username.clone()),
+            Some(ConnectionInfo::Telnet {
+                host,
+                port,
+                username,
+                ..
+            }) => {
+                session_logger::SessionMetadata::new_telnet(host.clone(), *port, username.clone())
+            }
+            None => session_logger::SessionMetadata::new_local(),
+        };
+
+        let mut logger = session_logger::SessionLogger::new(settings, metadata);
+        match logger.start() {
+            Ok(()) => {
+                log::info!(
+                    "Session logging started: {:?}",
+                    logger.current_file_path()
+                );
+                self.session_logger = Some(logger);
+            }
+            Err(e) => {
+                log::error!("Failed to start session logging: {}", e);
+            }
+        }
     }
 
     pub fn print_user_disconnection_message(&mut self, cx: &mut Context<Self>) {
@@ -3647,6 +3808,10 @@ unsafe fn append_text_to_term(term: &mut Term<ZedListener>, text_lines: &[&str])
 
 impl Drop for Terminal {
     fn drop(&mut self) {
+        if let Some(ref mut logger) = self.session_logger {
+            let _ = logger.stop();
+        }
+
         if let TerminalType::Connected { connection } =
             std::mem::replace(&mut self.terminal_type, TerminalType::DisplayOnly)
         {
@@ -3673,6 +3838,32 @@ impl Terminal {
                 .unwrap_or_else(|_| rule_store::RuleStore::with_defaults());
             let enabled_rules: Vec<_> = rules.enabled_rules().cloned().collect();
             self.rule_engine = Some(rule_engine::RuleEngine::new(connection_info, &enabled_rules));
+        }
+    }
+
+    fn init_session_logger(
+        &mut self,
+        session_logging_settings: terminal_settings::SessionLoggingSettings,
+        metadata: session_logger::SessionMetadata,
+    ) {
+        log::debug!(
+            "init_session_logger called, enabled: {}",
+            session_logging_settings.enabled
+        );
+        if session_logging_settings.enabled {
+            let mut logger = session_logger::SessionLogger::new(session_logging_settings, metadata);
+            match logger.start() {
+                Ok(()) => {
+                    log::info!(
+                        "Session logging started: {:?}",
+                        logger.current_file_path()
+                    );
+                    self.session_logger = Some(logger);
+                }
+                Err(e) => {
+                    log::error!("Failed to start session logging: {}", e);
+                }
+            }
         }
     }
 

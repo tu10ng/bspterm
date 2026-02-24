@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use alacritty_terminal::vte::ansi::{
     CursorShape as AlacCursorShape, CursorStyle as AlacCursorStyle,
 };
@@ -40,6 +42,27 @@ impl Default for GutterSettings {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub struct SessionLoggingSettings {
+    pub enabled: bool,
+    pub log_directory: PathBuf,
+    pub filename_pattern: String,
+    pub timestamp_format: String,
+    pub include_ansi_codes: bool,
+}
+
+impl Default for SessionLoggingSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            log_directory: paths::config_dir().join("session_logs"),
+            filename_pattern: "${session_name}_%Y%m%d_%H%M%S.log".to_string(),
+            timestamp_format: "[%Y-%m-%d %H:%M:%S] ".to_string(),
+            include_ansi_codes: false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, RegisterSetting)]
 pub struct TerminalSettings {
     pub shell: Shell,
@@ -67,6 +90,7 @@ pub struct TerminalSettings {
     pub toolbar: Toolbar,
     pub scrollbar: ScrollbarSettings,
     pub gutter: GutterSettings,
+    pub session_logging: SessionLoggingSettings,
     pub minimum_contrast: f32,
     pub path_hyperlink_regexes: Vec<String>,
     pub path_hyperlink_timeout_ms: u64,
@@ -150,6 +174,26 @@ impl settings::Settings for TerminalSettings {
                         .timestamp_format
                         .unwrap_or_else(|| "%H:%M:%S".to_string()),
                     relative_line_numbers: gutter_content.relative_line_numbers.unwrap_or(false),
+                }
+            },
+            session_logging: {
+                let logging_content = user_content.session_logging.unwrap_or_default();
+                let default = SessionLoggingSettings::default();
+                SessionLoggingSettings {
+                    enabled: logging_content.enabled.unwrap_or(default.enabled),
+                    log_directory: logging_content
+                        .log_directory
+                        .map(|s| PathBuf::from(s))
+                        .unwrap_or(default.log_directory),
+                    filename_pattern: logging_content
+                        .filename_pattern
+                        .unwrap_or(default.filename_pattern),
+                    timestamp_format: logging_content
+                        .timestamp_format
+                        .unwrap_or(default.timestamp_format),
+                    include_ansi_codes: logging_content
+                        .include_ansi_codes
+                        .unwrap_or(default.include_ansi_codes),
                 }
             },
             minimum_contrast: user_content.minimum_contrast.unwrap(),

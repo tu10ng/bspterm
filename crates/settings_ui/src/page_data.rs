@@ -6343,6 +6343,151 @@ fn terminal_page() -> SettingsPage {
         ]
     }
 
+    fn session_logging_section() -> [SettingsPageItem; 6] {
+        [
+            SettingsPageItem::SectionHeader("Session Logging"),
+            SettingsPageItem::SettingItem(SettingItem {
+                files: USER,
+                title: "Enable Session Logging",
+                description: "Automatically save terminal output to files for SSH/Telnet connections.",
+                field: Box::new(SettingField {
+                    json_path: Some("terminal.session_logging.enabled"),
+                    pick: |settings_content| {
+                        settings_content
+                            .terminal
+                            .as_ref()?
+                            .session_logging
+                            .as_ref()?
+                            .enabled
+                            .as_ref()
+                    },
+                    write: |settings_content, value| {
+                        settings_content
+                            .terminal
+                            .get_or_insert_default()
+                            .session_logging
+                            .get_or_insert_default()
+                            .enabled = value;
+                    },
+                }),
+                metadata: None,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                files: USER,
+                title: "Log Directory",
+                description: "Directory where session logs are saved. Supports ~ for home directory.",
+                field: Box::new(SettingField {
+                    json_path: Some("terminal.session_logging.log_directory"),
+                    pick: |settings_content| {
+                        settings_content
+                            .terminal
+                            .as_ref()?
+                            .session_logging
+                            .as_ref()?
+                            .log_directory
+                            .as_ref()
+                    },
+                    write: |settings_content, value| {
+                        settings_content
+                            .terminal
+                            .get_or_insert_default()
+                            .session_logging
+                            .get_or_insert_default()
+                            .log_directory = value;
+                    },
+                }),
+                metadata: Some(Box::new(SettingsFieldMetadata {
+                    placeholder: Some("~/.config/bspterm/session_logs"),
+                    ..Default::default()
+                })),
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                files: USER,
+                title: "Filename Pattern",
+                description: "Pattern for log filenames. Variables: ${session_name}, ${protocol}, ${host}, ${port}, ${username}, %Y, %m, %d, %H, %M, %S",
+                field: Box::new(SettingField {
+                    json_path: Some("terminal.session_logging.filename_pattern"),
+                    pick: |settings_content| {
+                        settings_content
+                            .terminal
+                            .as_ref()?
+                            .session_logging
+                            .as_ref()?
+                            .filename_pattern
+                            .as_ref()
+                    },
+                    write: |settings_content, value| {
+                        settings_content
+                            .terminal
+                            .get_or_insert_default()
+                            .session_logging
+                            .get_or_insert_default()
+                            .filename_pattern = value;
+                    },
+                }),
+                metadata: Some(Box::new(SettingsFieldMetadata {
+                    placeholder: Some("${session_name}_%Y%m%d_%H%M%S.log"),
+                    ..Default::default()
+                })),
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                files: USER,
+                title: "Timestamp Format",
+                description: "Format for timestamps prepended to each line. Leave empty to disable.",
+                field: Box::new(SettingField {
+                    json_path: Some("terminal.session_logging.timestamp_format"),
+                    pick: |settings_content| {
+                        settings_content
+                            .terminal
+                            .as_ref()?
+                            .session_logging
+                            .as_ref()?
+                            .timestamp_format
+                            .as_ref()
+                    },
+                    write: |settings_content, value| {
+                        settings_content
+                            .terminal
+                            .get_or_insert_default()
+                            .session_logging
+                            .get_or_insert_default()
+                            .timestamp_format = value;
+                    },
+                }),
+                metadata: Some(Box::new(SettingsFieldMetadata {
+                    placeholder: Some("[%Y-%m-%d %H:%M:%S] "),
+                    ..Default::default()
+                })),
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                files: USER,
+                title: "Include ANSI Codes",
+                description: "Include ANSI escape codes (colors) in the log file.",
+                field: Box::new(SettingField {
+                    json_path: Some("terminal.session_logging.include_ansi_codes"),
+                    pick: |settings_content| {
+                        settings_content
+                            .terminal
+                            .as_ref()?
+                            .session_logging
+                            .as_ref()?
+                            .include_ansi_codes
+                            .as_ref()
+                    },
+                    write: |settings_content, value| {
+                        settings_content
+                            .terminal
+                            .get_or_insert_default()
+                            .session_logging
+                            .get_or_insert_default()
+                            .include_ansi_codes = value;
+                    },
+                }),
+                metadata: None,
+            }),
+        ]
+    }
+
     SettingsPage {
         title: "Terminal",
         items: concat_sections![
@@ -6355,6 +6500,7 @@ fn terminal_page() -> SettingsPage {
             toolbar_section(),
             scrollbar_section(),
             remote_sessions_section(),
+            session_logging_section(),
         ],
     }
 }

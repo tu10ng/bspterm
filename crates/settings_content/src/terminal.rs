@@ -157,6 +157,8 @@ pub struct TerminalSettingsContent {
     pub scrollbar: Option<ScrollbarSettingsContent>,
     /// Gutter-related settings for line numbers and timestamps
     pub gutter: Option<TerminalGutterContent>,
+    /// Session logging settings (similar to SecureCRT)
+    pub session_logging: Option<SessionLoggingContent>,
     /// The minimum APCA perceptual contrast between foreground and background colors.
     ///
     /// APCA (Accessible Perceptual Contrast Algorithm) is more accurate than WCAG 2.x,
@@ -430,6 +432,40 @@ pub struct TerminalGutterContent {
     ///
     /// Default: false
     pub relative_line_numbers: Option<bool>,
+}
+
+// Session logging settings (similar to SecureCRT session logging)
+#[with_fallible_options]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema, MergeFrom, PartialEq, Eq)]
+pub struct SessionLoggingContent {
+    /// Whether session logging is enabled by default for new terminals.
+    ///
+    /// Default: false
+    pub enabled: Option<bool>,
+
+    /// Directory where session logs are saved.
+    /// Supports ~ expansion for home directory.
+    ///
+    /// Default: "~/.config/bspterm/session_logs"
+    pub log_directory: Option<String>,
+
+    /// Pattern for log file naming.
+    /// Supports: %Y, %m, %d, %H, %M, %S (strftime),
+    /// ${session_name}, ${protocol}, ${host}, ${port}, ${username}
+    ///
+    /// Default: "${session_name}_%Y%m%d_%H%M%S.log"
+    pub filename_pattern: Option<String>,
+
+    /// Format string for timestamps prepended to each line.
+    /// Empty string disables timestamps.
+    ///
+    /// Default: "[%Y-%m-%d %H:%M:%S] "
+    pub timestamp_format: Option<String>,
+
+    /// Whether to include ANSI escape codes in the log.
+    ///
+    /// Default: false
+    pub include_ansi_codes: Option<bool>,
 }
 
 #[derive(

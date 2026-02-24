@@ -43,6 +43,7 @@ use terminal::{
         index::Point as AlacPoint,
         term::{TermMode, point_to_viewport, search::RegexSearch},
     },
+    session_logger,
     terminal_settings::{CursorShape, TerminalSettings},
 };
 use terminal_element::TerminalElement;
@@ -180,6 +181,28 @@ pub fn init(cx: &mut App) {
     ButtonBarStoreEntity::init(cx);
     AbbreviationStoreEntity::init(cx);
     ShortcutBarStoreEntity::init(cx);
+
+    fn ensure_session_log_directory(cx: &App) {
+        let settings = TerminalSettings::get_global(cx);
+        if settings.session_logging.enabled {
+            match session_logger::expand_path(&settings.session_logging.log_directory) {
+                Ok(log_dir) => {
+                    if let Err(e) = std::fs::create_dir_all(&log_dir) {
+                        log::warn!("Failed to create session logs directory {:?}: {}", log_dir, e);
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to expand session logs directory path: {}", e);
+                }
+            }
+        }
+    }
+
+    ensure_session_log_directory(cx);
+    cx.observe_global::<SettingsStore>(|cx| {
+        ensure_session_log_directory(cx);
+    })
+    .detach();
 
     register_serializable_item::<TerminalView>(cx);
 
