@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 use alacritty_terminal::event::{Event as AlacTermEvent, WindowSize};
 use anyhow::Result;
@@ -23,7 +23,7 @@ pub enum ChannelCommand {
 /// Implements the TerminalConnection trait to allow transparent use
 /// by the Terminal struct.
 pub struct SshTerminalConnection {
-    session: Weak<SshSession>,
+    session: Arc<SshSession>,
     command_tx: UnboundedSender<ChannelCommand>,
     state: Arc<RwLock<ConnectionState>>,
     #[allow(dead_code)]
@@ -31,6 +31,7 @@ pub struct SshTerminalConnection {
     #[allow(dead_code)]
     initial_size: WindowSize,
     incoming_buffer: Arc<Mutex<Vec<u8>>>,
+    tokio_handle: tokio::runtime::Handle,
 }
 
 impl SshTerminalConnection {
@@ -60,21 +61,22 @@ impl SshTerminalConnection {
             state.clone(),
             config.initial_command.clone(),
             incoming_buffer.clone(),
-            tokio_handle,
+            tokio_handle.clone(),
         );
 
         Ok(Self {
-            session: Arc::downgrade(&session),
+            session,
             command_tx,
             state,
             channel_task: Mutex::new(Some(channel_task)),
             initial_size,
             incoming_buffer,
+            tokio_handle,
         })
     }
 
-    pub fn session(&self) -> Option<Arc<SshSession>> {
-        self.session.upgrade()
+    pub fn session(&self) -> Arc<SshSession> {
+        self.session.clone()
     }
 }
 
@@ -94,6 +96,14 @@ impl TerminalConnection for SshTerminalConnection {
     fn shutdown(&self) -> Result<()> {
         *self.state.write() = ConnectionState::Disconnected;
         self.command_tx.unbounded_send(ChannelCommand::Close).ok();
+
+        // Close the SSH session in a background task to properly disconnect
+        // the russh handle and stop keepalive packets
+        let session = self.session.clone();
+        self.tokio_handle.spawn(async move {
+            session.close().await;
+        });
+
         Ok(())
     }
 
@@ -118,6 +128,13 @@ impl TerminalConnection for SshTerminalConnection {
 impl Drop for SshTerminalConnection {
     fn drop(&mut self) {
         self.command_tx.unbounded_send(ChannelCommand::Close).ok();
+
+        // Close the SSH session to properly disconnect the russh handle
+        // and stop keepalive packets
+        let session = self.session.clone();
+        self.tokio_handle.spawn(async move {
+            session.close().await;
+        });
     }
 }
 
