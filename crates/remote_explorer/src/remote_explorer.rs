@@ -330,7 +330,9 @@ impl RemoteExplorer {
                     ProtocolConfig::Telnet(telnet) => (telnet.host.clone(), telnet.port),
                 };
 
-                self.ping_status.insert(id, PingStatus::Checking);
+                // Only show Checking status on first check, preserve existing status on re-check
+                // This prevents flickering between Checking (gray) and Unreachable (red)
+                self.ping_status.entry(id).or_insert(PingStatus::Checking);
 
                 let task = cx.spawn(async move |this, cx| {
                     let executor = cx.background_executor().clone();
