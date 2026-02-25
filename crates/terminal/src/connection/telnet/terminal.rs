@@ -9,7 +9,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::task::JoinHandle;
 
-use super::protocol::{TelnetNegotiator, escape_data_for_send};
+use super::protocol::{TelnetNegotiator, escape_data_for_send, IAC, NOP};
 use super::session::TelnetSession;
 use super::TelnetConfig;
 use crate::connection::{ConnectionState, ProcessInfoProvider, TerminalConnection};
@@ -55,6 +55,7 @@ impl TelnetTerminalConnection {
             config.terminal_type.clone(),
             initial_size,
             incoming_buffer.clone(),
+            config.keepalive_interval,
             tokio_handle,
         );
 
@@ -125,6 +126,7 @@ fn spawn_channel_task(
     terminal_type: String,
     initial_size: WindowSize,
     incoming_buffer: Arc<Mutex<Vec<u8>>>,
+    keepalive_interval: Option<std::time::Duration>,
     tokio_handle: tokio::runtime::Handle,
 ) -> JoinHandle<()> {
     tokio_handle.spawn(async move {
@@ -132,16 +134,25 @@ fn spawn_channel_task(
         use std::time::{Duration, Instant};
 
         const DEBOUNCE_DELAY: Duration = Duration::from_millis(10);
+        let keepalive_duration = keepalive_interval.unwrap_or(Duration::from_secs(30));
 
         let mut negotiator = TelnetNegotiator::new(terminal_type);
         let mut read_buf = [0u8; 4096];
         let mut sent_initial_naws = false;
         let mut pending_wakeup_deadline: Option<Instant> = None;
+        let mut last_activity = Instant::now();
 
         loop {
             let timeout_duration = pending_wakeup_deadline
                 .map(|deadline| deadline.saturating_duration_since(Instant::now()))
                 .unwrap_or(Duration::MAX);
+
+            let time_since_activity = last_activity.elapsed();
+            let keepalive_timeout = if time_since_activity >= keepalive_duration {
+                Duration::ZERO
+            } else {
+                keepalive_duration - time_since_activity
+            };
 
             tokio::select! {
                 biased;
@@ -149,6 +160,14 @@ fn spawn_channel_task(
                 _ = tokio::time::sleep(timeout_duration), if pending_wakeup_deadline.is_some() => {
                     event_tx.unbounded_send(AlacTermEvent::Wakeup).ok();
                     pending_wakeup_deadline = None;
+                }
+                _ = tokio::time::sleep(keepalive_timeout), if keepalive_interval.is_some() => {
+                    if let Err(error) = write_half.write_all(&[IAC, NOP]).await {
+                        log::warn!("Failed to send Telnet keepalive: {}", error);
+                        *state.write() = ConnectionState::Error(error.to_string());
+                        break;
+                    }
+                    last_activity = Instant::now();
                 }
                 command = command_rx.next() => {
                     match command {
@@ -159,6 +178,7 @@ fn spawn_channel_task(
                                 *state.write() = ConnectionState::Error(error.to_string());
                                 break;
                             }
+                            last_activity = Instant::now();
                         }
                         Some(TelnetChannelCommand::Resize(size)) => {
                             let naws_packet = negotiator.build_naws(size);
@@ -167,6 +187,7 @@ fn spawn_channel_task(
                                     log::warn!("Failed to send NAWS: {}", error);
                                 }
                             }
+                            last_activity = Instant::now();
                         }
                         Some(TelnetChannelCommand::Close) | None => {
                             *state.write() = ConnectionState::Disconnected;
@@ -185,6 +206,7 @@ fn spawn_channel_task(
                             break;
                         }
                         Ok(n) => {
+                            last_activity = Instant::now();
                             let process_result = negotiator.process_incoming(&read_buf[..n]);
 
                             // Send any protocol responses

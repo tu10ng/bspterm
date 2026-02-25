@@ -1,7 +1,8 @@
 use alacritty_terminal::event::WindowSize;
 
 // Telnet protocol command bytes (RFC 854)
-const IAC: u8 = 255;  // Interpret As Command
+pub const IAC: u8 = 255;  // Interpret As Command
+pub const NOP: u8 = 241;  // No Operation (used for keep-alive)
 const DONT: u8 = 254;
 const DO: u8 = 253;
 const WONT: u8 = 252;

@@ -2,7 +2,7 @@ mod protocol;
 mod session;
 mod terminal;
 
-pub use protocol::{TelnetNegotiator, escape_data_for_send};
+pub use protocol::{TelnetNegotiator, escape_data_for_send, IAC, NOP};
 pub use session::TelnetSession;
 pub use terminal::TelnetTerminalConnection;
 
@@ -15,6 +15,7 @@ pub struct TelnetConfig {
     pub encoding: Option<String>,
     pub terminal_type: String,
     pub connection_timeout: Option<std::time::Duration>,
+    pub keepalive_interval: Option<std::time::Duration>,
 }
 
 impl TelnetConfig {
@@ -27,6 +28,7 @@ impl TelnetConfig {
             encoding: None,
             terminal_type: "xterm-256color".to_string(),
             connection_timeout: None,
+            keepalive_interval: Some(std::time::Duration::from_secs(30)),
         }
     }
 
@@ -52,6 +54,11 @@ impl TelnetConfig {
 
     pub fn with_connection_timeout(mut self, timeout: std::time::Duration) -> Self {
         self.connection_timeout = Some(timeout);
+        self
+    }
+
+    pub fn with_keepalive_interval(mut self, interval: std::time::Duration) -> Self {
+        self.keepalive_interval = Some(interval);
         self
     }
 }
