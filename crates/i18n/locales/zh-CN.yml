@@ -133,6 +133,36 @@ common:
   name: "名称"
   enabled: "已启用"
   disabled: "已禁用"
+  clear: "清除"
+  enter_to_confirm: "回车确认"
+
+# Protocol names
+protocol:
+  telnet: "Telnet"
+  ssh: "SSH"
+
+# Settings
+settings:
+  search_placeholder: "搜索设置…"
+  no_results: "无结果"
+  no_results_match: "没有匹配的设置 \"{}\""
+  reset_to_default: "重置为默认"
+  copy_link: "复制链接"
+  modified_in: "在 {} 中修改"
+
+# Credential Presets
+credential_presets:
+  title: "凭据预设"
+  description: "保存用户名/密码组合，方便快速连接远程会话。"
+  saved_presets: "已保存的预设"
+  no_presets: "暂无保存的凭据预设"
+  preset_name: "预设名称"
+  username: "用户名"
+  password: "密码"
+  add_new_preset: "添加新预设"
+  add_preset: "添加预设"
+  user_label: "用户: {}"
+  delete_preset: "删除预设"
 
 # Remote Explorer Panel
 remote_explorer:

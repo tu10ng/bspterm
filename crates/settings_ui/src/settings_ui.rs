@@ -6,6 +6,7 @@ use anyhow::{Context as _, Result};
 use editor::{Editor, EditorEvent};
 use futures::{StreamExt, channel::mpsc};
 use fuzzy::StringMatchCandidate;
+use i18n::t;
 use gpui::{
     Action, App, AsyncApp, ClipboardItem, DEFAULT_ADDITIONAL_WINDOW_SIZE, Div, Entity, FocusHandle,
     Focusable, Global, KeyContext, ListState, ReadGlobal as _, ScrollHandle, Stateful,
@@ -1166,7 +1167,7 @@ fn render_settings_item(
                                     IconButton::new("reset-to-default-btn", IconName::Undo)
                                         .icon_color(Color::Muted)
                                         .icon_size(IconSize::Small)
-                                        .tooltip(Tooltip::text("Reset to Default"))
+                                        .tooltip(Tooltip::text(t("settings.reset_to_default")))
                                         .on_click({
                                             move |_, window, cx| {
                                                 reset_to_default(window, cx);
@@ -1180,10 +1181,13 @@ fn render_settings_item(
                             |this, file_set_in| {
                                 this.child(
                                     Label::new(format!(
-                                        "—  Modified in {}",
-                                        settings_window
-                                            .display_name(&file_set_in)
-                                            .expect("File name should exist")
+                                        "—  {}",
+                                        t("settings.modified_in").replace(
+                                            "{}",
+                                            &settings_window
+                                                .display_name(&file_set_in)
+                                                .expect("File name should exist")
+                                        )
                                     ))
                                     .color(Color::Muted)
                                     .size(LabelSize::Small),
@@ -1244,7 +1248,7 @@ fn render_settings_item_link(
                 .icon_color(link_icon_color)
                 .icon_size(IconSize::Small)
                 .shape(IconButtonShape::Square)
-                .tooltip(Tooltip::text("Copy Link"))
+                .tooltip(Tooltip::text(t("settings.copy_link")))
                 .when_some(json_path, |this, path| {
                     this.on_click(cx.listener(move |_, _, _, cx| {
                         let link = format!("zed://settings/{}", path);
@@ -1466,7 +1470,7 @@ impl SettingsWindow {
         let current_file = SettingsUiFile::User;
         let search_bar = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
-            editor.set_placeholder_text("Search settings…", window, cx);
+            editor.set_placeholder_text(&t("settings.search_placeholder"), window, cx);
             editor
         });
         cx.subscribe(&search_bar, |this, _, event: &EditorEvent, cx| {
@@ -2894,9 +2898,9 @@ impl SettingsWindow {
             .items_center()
             .justify_center()
             .gap_1()
-            .child(Label::new("No Results"))
+            .child(Label::new(t("settings.no_results")))
             .child(
-                Label::new(format!("No settings match \"{}\"", search_query))
+                Label::new(t("settings.no_results_match").replace("{}", &search_query))
                     .size(LabelSize::Small)
                     .color(Color::Muted),
             )

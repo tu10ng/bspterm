@@ -11,6 +11,7 @@ pub use telnet_section::*;
 use std::collections::HashMap;
 
 use gpui::{App, Entity, IntoElement, ParentElement, Styled, WeakEntity, Window};
+use i18n::t;
 use terminal::{SessionConfig, SessionGroup, SessionStoreEntity};
 use ui::{prelude::*, Color, Disclosure, Label, LabelSize, h_flex, v_flex};
 use workspace::{Pane, Workspace};
@@ -80,7 +81,7 @@ impl QuickAddArea {
                     .hover(|style| style.bg(theme.colors().ghost_element_hover))
                     .child(Disclosure::new("quick-add-disclosure", expanded))
                     .child(
-                        Label::new("Quick Add")
+                        Label::new(t("remote_explorer.quick_add"))
                             .size(LabelSize::Small)
                             .color(Color::Muted),
                     ),

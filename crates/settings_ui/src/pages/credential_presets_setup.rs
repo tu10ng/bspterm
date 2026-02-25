@@ -1,4 +1,5 @@
 use gpui::{AnyElement, ScrollHandle, Window, prelude::*};
+use i18n::t;
 use terminal::session_store::{CredentialPreset, SessionStoreEntity, SessionStoreEvent};
 use ui::{prelude::*, Button, ButtonStyle, Divider, IconButton, Label, LabelSize, Tooltip, h_flex, v_flex};
 
@@ -42,13 +43,11 @@ pub(crate) fn render_credential_presets_page(
         .child(
             v_flex()
                 .gap_1()
-                .child(Label::new("Credential Presets").size(LabelSize::Large))
+                .child(Label::new(t("credential_presets.title")).size(LabelSize::Large))
                 .child(
-                    Label::new(
-                        "Save username/password combinations for quick access when connecting to remote sessions.",
-                    )
-                    .size(LabelSize::Small)
-                    .color(Color::Muted),
+                    Label::new(t("credential_presets.description"))
+                        .size(LabelSize::Small)
+                        .color(Color::Muted),
                 ),
         )
         .child(render_add_preset_section(settings_window, window, cx))
@@ -57,7 +56,7 @@ pub(crate) fn render_credential_presets_page(
                 v_flex()
                     .mt_4()
                     .gap_2()
-                    .child(Label::new("Saved Presets"))
+                    .child(Label::new(t("credential_presets.saved_presets")))
                     .children(
                         presets.iter().enumerate().flat_map(|(i, preset)| {
                             let mut elements = vec![render_preset_item(preset, window, cx)];
@@ -79,7 +78,7 @@ pub(crate) fn render_credential_presets_page(
                     .border_dashed()
                     .border_color(cx.theme().colors().border_variant)
                     .child(
-                        Label::new("No credential presets saved yet")
+                        Label::new(t("credential_presets.no_presets"))
                             .size(LabelSize::Small)
                             .color(Color::Muted),
                     ),
@@ -95,19 +94,19 @@ fn render_add_preset_section(
 ) -> AnyElement {
     let name_editor = window.use_keyed_state("credential-preset-name", cx, |window, cx| {
         let mut editor = editor::Editor::single_line(window, cx);
-        editor.set_placeholder_text("Preset name", window, cx);
+        editor.set_placeholder_text(&t("credential_presets.preset_name"), window, cx);
         editor
     });
 
     let username_editor = window.use_keyed_state("credential-preset-username", cx, |window, cx| {
         let mut editor = editor::Editor::single_line(window, cx);
-        editor.set_placeholder_text("Username", window, cx);
+        editor.set_placeholder_text(&t("credential_presets.username"), window, cx);
         editor
     });
 
     let password_editor = window.use_keyed_state("credential-preset-password", cx, |window, cx| {
         let mut editor = editor::Editor::single_line(window, cx);
-        editor.set_placeholder_text("Password", window, cx);
+        editor.set_placeholder_text(&t("credential_presets.password"), window, cx);
         editor
     });
 
@@ -124,7 +123,7 @@ fn render_add_preset_section(
         .border_1()
         .border_color(theme_colors.border)
         .bg(theme_colors.surface_background.opacity(0.3))
-        .child(Label::new("Add New Preset").size(LabelSize::Small))
+        .child(Label::new(t("credential_presets.add_new_preset")).size(LabelSize::Small))
         .child(
             h_flex()
                 .w_full()
@@ -165,7 +164,7 @@ fn render_add_preset_section(
         )
         .child(
             h_flex().w_full().justify_end().child(
-                Button::new("add-credential-preset", "Add Preset")
+                Button::new("add-credential-preset", t("credential_presets.add_preset"))
                     .style(ButtonStyle::Filled)
                     .size(ButtonSize::Compact)
                     .on_click(cx.listener(move |_, _, window, cx| {
@@ -217,7 +216,7 @@ fn render_preset_item(
                 .gap_0p5()
                 .child(Label::new(preset_name))
                 .child(
-                    Label::new(format!("User: {}", username))
+                    Label::new(t("credential_presets.user_label").replace("{}", &username))
                         .size(LabelSize::Small)
                         .color(Color::Muted),
                 ),
@@ -229,7 +228,7 @@ fn render_preset_item(
                     IconButton::new(format!("delete-{}", preset_id), IconName::Trash)
                         .icon_size(IconSize::Small)
                         .icon_color(Color::Muted)
-                        .tooltip(Tooltip::text("Delete Preset"))
+                        .tooltip(Tooltip::text(t("credential_presets.delete_preset")))
                         .on_click(cx.listener(move |_, _, _, cx| {
                             if let Some(session_store) = SessionStoreEntity::try_global(cx) {
                                 session_store.update(cx, |store, cx| {

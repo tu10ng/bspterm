@@ -193,8 +193,8 @@ impl MultiConnectionModal {
             .iter()
             .map(|entry| {
                 let protocol_label = match entry.protocol {
-                    ConnectionProtocol::Telnet => "Telnet",
-                    ConnectionProtocol::Ssh => "SSH",
+                    ConnectionProtocol::Telnet => t("protocol.telnet"),
+                    ConnectionProtocol::Ssh => t("protocol.ssh"),
                 };
 
                 h_flex()

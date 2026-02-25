@@ -133,6 +133,36 @@ common:
   name: "Name"
   enabled: "Enabled"
   disabled: "Disabled"
+  clear: "Clear"
+  enter_to_confirm: "Enter to Confirm"
+
+# Protocol names
+protocol:
+  telnet: "Telnet"
+  ssh: "SSH"
+
+# Settings
+settings:
+  search_placeholder: "Search settings…"
+  no_results: "No Results"
+  no_results_match: "No settings match \"{}\""
+  reset_to_default: "Reset to Default"
+  copy_link: "Copy Link"
+  modified_in: "Modified in {}"
+
+# Credential Presets
+credential_presets:
+  title: "Credential Presets"
+  description: "Save username/password combinations for quick access when connecting to remote sessions."
+  saved_presets: "Saved Presets"
+  no_presets: "No credential presets saved yet"
+  preset_name: "Preset name"
+  username: "Username"
+  password: "Password"
+  add_new_preset: "Add New Preset"
+  add_preset: "Add Preset"
+  user_label: "User: {}"
+  delete_preset: "Delete Preset"
 
 # Remote Explorer Panel
 remote_explorer:
