@@ -24,7 +24,10 @@ use gpui::{App, AppContext as _, Context, Entity, UpdateGlobal as _};
 use gpui_tokio::Tokio;
 use http_client::{Url, read_proxy_from_env};
 use language::LanguageRegistry;
+#[cfg(not(target_os = "windows"))]
 use net::async_net::{UnixListener, UnixStream};
+#[cfg(target_os = "windows")]
+use smol::net::{TcpListener, TcpStream};
 use node_runtime::{NodeBinaryOptions, NodeRuntime};
 use paths::logs_dir;
 use project::{project_settings::ProjectSettings, trusted_worktrees};
@@ -274,18 +277,58 @@ fn handle_crash_files_requests(project: &Entity<HeadlessProject>, client: &AnyPr
     );
 }
 
+#[cfg(not(target_os = "windows"))]
 struct ServerListeners {
     stdin: UnixListener,
     stdout: UnixListener,
     stderr: UnixListener,
 }
 
+#[cfg(not(target_os = "windows"))]
 impl ServerListeners {
     pub fn new(stdin_path: PathBuf, stdout_path: PathBuf, stderr_path: PathBuf) -> Result<Self> {
         Ok(Self {
             stdin: UnixListener::bind(stdin_path).context("failed to bind stdin socket")?,
             stdout: UnixListener::bind(stdout_path).context("failed to bind stdout socket")?,
             stderr: UnixListener::bind(stderr_path).context("failed to bind stderr socket")?,
+        })
+    }
+}
+
+#[cfg(target_os = "windows")]
+struct ServerListeners {
+    stdin: TcpListener,
+    stdout: TcpListener,
+    stderr: TcpListener,
+}
+
+#[cfg(target_os = "windows")]
+impl ServerListeners {
+    pub fn new(stdin_path: PathBuf, stdout_path: PathBuf, stderr_path: PathBuf) -> Result<Self> {
+        // On Windows, we use TCP sockets. The paths are used to store the port numbers.
+        let stdin_listener = std::net::TcpListener::bind("127.0.0.1:0")
+            .context("failed to bind stdin TCP socket")?;
+        let stdout_listener = std::net::TcpListener::bind("127.0.0.1:0")
+            .context("failed to bind stdout TCP socket")?;
+        let stderr_listener = std::net::TcpListener::bind("127.0.0.1:0")
+            .context("failed to bind stderr TCP socket")?;
+
+        // Store the port numbers in the socket path files for the proxy to read
+        std::fs::write(&stdin_path, stdin_listener.local_addr()?.port().to_string())
+            .context("failed to write stdin port")?;
+        std::fs::write(&stdout_path, stdout_listener.local_addr()?.port().to_string())
+            .context("failed to write stdout port")?;
+        std::fs::write(&stderr_path, stderr_listener.local_addr()?.port().to_string())
+            .context("failed to write stderr port")?;
+
+        stdin_listener.set_nonblocking(true)?;
+        stdout_listener.set_nonblocking(true)?;
+        stderr_listener.set_nonblocking(true)?;
+
+        Ok(Self {
+            stdin: TcpListener::from(smol::Async::new(stdin_listener)?),
+            stdout: TcpListener::from(smol::Async::new(stdout_listener)?),
+            stderr: TcpListener::from(smol::Async::new(stderr_listener)?),
         })
     }
 }
@@ -751,6 +794,7 @@ pub(crate) fn execute_proxy(
         }
     };
 
+    #[cfg(not(target_os = "windows"))]
     let stdin_task = smol::spawn(async move {
         let stdin = smol::Unblock::new(std::io::stdin());
         let stream = UnixStream::connect(&server_paths.stdin_socket)
@@ -764,6 +808,21 @@ pub(crate) fn execute_proxy(
         handle_io(stdin, stream, "stdin").await
     });
 
+    #[cfg(target_os = "windows")]
+    let stdin_task = smol::spawn(async move {
+        let stdin = smol::Unblock::new(std::io::stdin());
+        let port: u16 = std::fs::read_to_string(&server_paths.stdin_socket)
+            .with_context(|| format!("Failed to read stdin port from {:?}", server_paths.stdin_socket))?
+            .trim()
+            .parse()
+            .context("Failed to parse stdin port")?;
+        let stream = TcpStream::connect(("127.0.0.1", port))
+            .await
+            .with_context(|| format!("Failed to connect to stdin TCP port {}", port))?;
+        handle_io(stdin, stream, "stdin").await
+    });
+
+    #[cfg(not(target_os = "windows"))]
     let stdout_task: smol::Task<Result<()>> = smol::spawn(async move {
         let stdout = smol::Unblock::new(std::io::stdout());
         let stream = UnixStream::connect(&server_paths.stdout_socket)
@@ -777,6 +836,21 @@ pub(crate) fn execute_proxy(
         handle_io(stream, stdout, "stdout").await
     });
 
+    #[cfg(target_os = "windows")]
+    let stdout_task: smol::Task<Result<()>> = smol::spawn(async move {
+        let stdout = smol::Unblock::new(std::io::stdout());
+        let port: u16 = std::fs::read_to_string(&server_paths.stdout_socket)
+            .with_context(|| format!("Failed to read stdout port from {:?}", server_paths.stdout_socket))?
+            .trim()
+            .parse()
+            .context("Failed to parse stdout port")?;
+        let stream = TcpStream::connect(("127.0.0.1", port))
+            .await
+            .with_context(|| format!("Failed to connect to stdout TCP port {}", port))?;
+        handle_io(stream, stdout, "stdout").await
+    });
+
+    #[cfg(not(target_os = "windows"))]
     let stderr_task: smol::Task<Result<()>> = smol::spawn(async move {
         let mut stderr = smol::Unblock::new(std::io::stderr());
         let mut stream = UnixStream::connect(&server_paths.stderr_socket)
@@ -787,6 +861,37 @@ pub(crate) fn execute_proxy(
                     server_paths.stderr_socket.display()
                 )
             })?;
+        let mut stderr_buffer = vec![0; 2048];
+        loop {
+            match stream
+                .read(&mut stderr_buffer)
+                .await
+                .context("reading stderr")?
+            {
+                0 => {
+                    let error =
+                        std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "stderr closed");
+                    Err(anyhow!(error))?;
+                }
+                n => {
+                    stderr.write_all(&stderr_buffer[..n]).await?;
+                    stderr.flush().await?;
+                }
+            }
+        }
+    });
+
+    #[cfg(target_os = "windows")]
+    let stderr_task: smol::Task<Result<()>> = smol::spawn(async move {
+        let mut stderr = smol::Unblock::new(std::io::stderr());
+        let port: u16 = std::fs::read_to_string(&server_paths.stderr_socket)
+            .with_context(|| format!("Failed to read stderr port from {:?}", server_paths.stderr_socket))?
+            .trim()
+            .parse()
+            .context("Failed to parse stderr port")?;
+        let mut stream = TcpStream::connect(("127.0.0.1", port))
+            .await
+            .with_context(|| format!("Failed to connect to stderr TCP port {}", port))?;
         let mut stderr_buffer = vec![0; 2048];
         loop {
             match stream

@@ -2,7 +2,10 @@ mod encrypted_password;
 
 pub use encrypted_password::{EncryptedPassword, IKnowWhatIAmDoingAndIHaveReadTheDocs};
 
+#[cfg(not(target_os = "windows"))]
 use net::async_net::UnixListener;
+#[cfg(target_os = "windows")]
+use smol::net::TcpListener;
 use smol::lock::Mutex;
 use util::fs::make_file_executable;
 
@@ -191,6 +194,7 @@ pub struct PasswordProxy {
 }
 
 impl PasswordProxy {
+    #[cfg(not(target_os = "windows"))]
     pub async fn new(
         mut get_password: impl FnMut(String) -> Task<ControlFlow<(), Result<EncryptedPassword>>>
         + 'static
@@ -204,12 +208,7 @@ impl PasswordProxy {
         let current_exec =
             std::env::current_exe().context("Failed to determine current zed executable path.")?;
 
-        // TODO: inferred from the use of powershell.exe in askpass_helper_script
-        let shell_kind = if cfg!(windows) {
-            ShellKind::PowerShell
-        } else {
-            ShellKind::Posix
-        };
+        let shell_kind = ShellKind::Posix;
         let askpass_program = ASKPASS_PROGRAM.get_or_init(|| current_exec);
         // Create an askpass script that communicates back to this process.
         let askpass_script = generate_askpass_script(shell_kind, askpass_program, &askpass_socket)?;
@@ -259,8 +258,84 @@ impl PasswordProxy {
             .with_context(|| {
                 format!("marking askpass script executable at {askpass_script_path:?}")
             })?;
+
+        Ok(Self {
+            _task,
+            askpass_script_path,
+        })
+    }
+
+    #[cfg(target_os = "windows")]
+    pub async fn new(
+        mut get_password: impl FnMut(String) -> Task<ControlFlow<(), Result<EncryptedPassword>>>
+        + 'static
+        + Send
+        + Sync,
+        executor: BackgroundExecutor,
+    ) -> Result<Self> {
+        let temp_dir = tempfile::Builder::new().prefix("zed-askpass").tempdir()?;
+        let askpass_script_path = temp_dir.path().join(ASKPASS_SCRIPT_NAME);
+        let current_exec =
+            std::env::current_exe().context("Failed to determine current zed executable path.")?;
+
+        // Bind TCP listener synchronously to get the port
+        let std_listener = std::net::TcpListener::bind("127.0.0.1:0")
+            .context("Failed to bind TCP socket for askpass")?;
+        let local_addr = std_listener
+            .local_addr()
+            .context("Failed to get local address for askpass")?;
+        std_listener
+            .set_nonblocking(true)
+            .context("Failed to set non-blocking mode for askpass")?;
+
+        let shell_kind = ShellKind::PowerShell;
+        let askpass_program = ASKPASS_PROGRAM.get_or_init(|| current_exec);
+        // Create an askpass script that communicates back to this process via TCP.
+        let askpass_script =
+            generate_askpass_script(shell_kind, askpass_program, &local_addr.to_string())?;
+
+        let _task = executor.spawn(async move {
+            maybe!(async move {
+                let listener =
+                    TcpListener::from(smol::Async::new(std_listener)?);
+
+                while let Ok((mut stream, _)) = listener.accept().await {
+                    let mut buffer = Vec::new();
+                    let mut reader = BufReader::new(&mut stream);
+                    if reader.read_until(b'\0', &mut buffer).await.is_err() {
+                        buffer.clear();
+                    }
+                    let prompt = String::from_utf8_lossy(&buffer).into_owned();
+                    let password = get_password(prompt).await;
+                    match password {
+                        ControlFlow::Continue(password) => {
+                            if let Ok(password) = password
+                                && let Ok(decrypted) =
+                                    password.decrypt(IKnowWhatIAmDoingAndIHaveReadTheDocs)
+                            {
+                                stream.write_all(decrypted.as_bytes()).await.log_err();
+                            }
+                        }
+                        ControlFlow::Break(()) => {
+                            // note: we expect the caller to drop this task when it's done.
+                            // We need to keep the stream open until the caller is done to avoid
+                            // spurious errors from ssh.
+                            std::future::pending::<()>().await;
+                            drop(stream);
+                        }
+                    }
+                }
+                drop(temp_dir);
+                Result::<_, anyhow::Error>::Ok(())
+            })
+            .await
+            .log_err();
+        });
+
+        fs::write(&askpass_script_path, askpass_script)
+            .await
+            .with_context(|| format!("creating askpass script at {askpass_script_path:?}"))?;
         // todo(shell): There might be no powershell on the system
-        #[cfg(target_os = "windows")]
         let askpass_helper = format!(
             "powershell.exe -ExecutionPolicy Bypass -File \"{}\"",
             askpass_script_path.display()
@@ -268,9 +343,6 @@ impl PasswordProxy {
 
         Ok(Self {
             _task,
-            #[cfg(not(target_os = "windows"))]
-            askpass_script_path,
-            #[cfg(target_os = "windows")]
             askpass_helper,
         })
     }
@@ -288,6 +360,7 @@ impl PasswordProxy {
 }
 /// The main function for when Zed is running in netcat mode for use in askpass.
 /// Called from both the remote server binary and the zed binary in their respective main functions.
+#[cfg(not(target_os = "windows"))]
 pub fn main(socket: &str) {
     use net::UnixStream;
     use std::io::{self, Read, Write};
@@ -307,10 +380,6 @@ pub fn main(socket: &str) {
         exit(1);
     }
 
-    #[cfg(target_os = "windows")]
-    while buffer.last().is_some_and(|&b| b == b'\n' || b == b'\r') {
-        buffer.pop();
-    }
     if buffer.last() != Some(&b'\0') {
         buffer.push(b'\0');
     }
@@ -323,6 +392,52 @@ pub fn main(socket: &str) {
     let mut response = Vec::new();
     if let Err(err) = stream.read_to_end(&mut response) {
         eprintln!("Error reading from socket: {}", err);
+        exit(1);
+    }
+
+    if let Err(err) = io::stdout().write_all(&response) {
+        eprintln!("Error writing to stdout: {}", err);
+        exit(1);
+    }
+}
+
+/// The main function for when Zed is running in netcat mode for use in askpass.
+/// Called from both the remote server binary and the zed binary in their respective main functions.
+#[cfg(target_os = "windows")]
+pub fn main(address: &str) {
+    use std::io::{self, Read, Write};
+    use std::net::TcpStream;
+    use std::process::exit;
+
+    let mut stream = match TcpStream::connect(address) {
+        Ok(stream) => stream,
+        Err(err) => {
+            eprintln!("Error connecting to address {}: {}", address, err);
+            exit(1);
+        }
+    };
+
+    let mut buffer = Vec::new();
+    if let Err(err) = io::stdin().read_to_end(&mut buffer) {
+        eprintln!("Error reading from stdin: {}", err);
+        exit(1);
+    }
+
+    while buffer.last().is_some_and(|&b| b == b'\n' || b == b'\r') {
+        buffer.pop();
+    }
+    if buffer.last() != Some(&b'\0') {
+        buffer.push(b'\0');
+    }
+
+    if let Err(err) = stream.write_all(&buffer) {
+        eprintln!("Error writing to stream: {}", err);
+        exit(1);
+    }
+
+    let mut response = Vec::new();
+    if let Err(err) = stream.read_to_end(&mut response) {
+        eprintln!("Error reading from stream: {}", err);
         exit(1);
     }
 
@@ -368,7 +483,7 @@ fn generate_askpass_script(
 fn generate_askpass_script(
     shell_kind: ShellKind,
     askpass_program: &std::path::Path,
-    askpass_socket: &std::path::Path,
+    askpass_address: &str,
 ) -> Result<String> {
     let askpass_program = shell_kind.prepend_command_prefix(
         askpass_program
@@ -378,13 +493,10 @@ fn generate_askpass_script(
     let askpass_program = shell_kind
         .try_quote_prefix_aware(&askpass_program)
         .context("Failed to shell-escape Askpass program path")?;
-    let askpass_socket = askpass_socket
-        .try_shell_safe(shell_kind)
-        .context("Failed to shell-escape Askpass socket path")?;
     Ok(format!(
         r#"
         $ErrorActionPreference = 'Stop';
-        ($args -join [char]0) | {askpass_program} --askpass={askpass_socket} 2> $null
+        ($args -join [char]0) | {askpass_program} --askpass={askpass_address} 2> $null
         "#,
     ))
 }

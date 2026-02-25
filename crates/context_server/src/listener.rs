@@ -8,7 +8,10 @@ use futures::{
     select_biased,
 };
 use gpui::{App, AppContext, AsyncApp, Task};
+#[cfg(not(target_os = "windows"))]
 use net::async_net::{UnixListener, UnixStream};
+#[cfg(target_os = "windows")]
+use smol::net::{TcpListener, TcpStream};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde_json::{json, value::RawValue};
@@ -31,7 +34,10 @@ use crate::{
 };
 
 pub struct McpServer {
+    #[cfg(not(target_os = "windows"))]
     socket_path: PathBuf,
+    #[cfg(target_os = "windows")]
+    tcp_address: std::net::SocketAddr,
     tools: Rc<RefCell<HashMap<&'static str, RegisteredTool>>>,
     handlers: Rc<RefCell<HashMap<&'static str, RequestHandler>>>,
     _server_task: Task<()>,
@@ -51,6 +57,7 @@ type ToolHandler = Box<
 type RequestHandler = Box<dyn Fn(RequestId, Option<Box<RawValue>>, &App) -> Task<String>>;
 
 impl McpServer {
+    #[cfg(not(target_os = "windows"))]
     pub fn new(cx: &AsyncApp) -> Task<Result<Self>> {
         let task = cx.background_spawn(async move {
             let temp_dir = tempfile::Builder::new().prefix("zed-mcp").tempdir()?;
@@ -76,6 +83,41 @@ impl McpServer {
             });
             Ok(Self {
                 socket_path,
+                _server_task: server_task,
+                tools,
+                handlers,
+            })
+        })
+    }
+
+    #[cfg(target_os = "windows")]
+    pub fn new(cx: &AsyncApp) -> Task<Result<Self>> {
+        cx.spawn(async move |cx| {
+            // Bind TCP listener synchronously to get the port
+            let std_listener = std::net::TcpListener::bind("127.0.0.1:0")
+                .context("Failed to bind TCP socket for MCP server")?;
+            let tcp_address = std_listener
+                .local_addr()
+                .context("Failed to get local address for MCP server")?;
+            std_listener
+                .set_nonblocking(true)
+                .context("Failed to set non-blocking mode for MCP server")?;
+
+            let listener = TcpListener::from(smol::Async::new(std_listener)?);
+
+            let tools = Rc::new(RefCell::new(HashMap::default()));
+            let handlers = Rc::new(RefCell::new(HashMap::default()));
+            let server_task = cx.spawn({
+                let tools = tools.clone();
+                let handlers = handlers.clone();
+                async move |cx| {
+                    while let Ok((stream, _)) = listener.accept().await {
+                        Self::serve_connection(stream, tools.clone(), handlers.clone(), cx);
+                    }
+                }
+            });
+            Ok(Self {
+                tcp_address,
                 _server_task: server_task,
                 tools,
                 handlers,
@@ -191,10 +233,17 @@ impl McpServer {
         );
     }
 
+    #[cfg(not(target_os = "windows"))]
     pub fn socket_path(&self) -> &Path {
         &self.socket_path
     }
 
+    #[cfg(target_os = "windows")]
+    pub fn tcp_address(&self) -> std::net::SocketAddr {
+        self.tcp_address
+    }
+
+    #[cfg(not(target_os = "windows"))]
     fn serve_connection(
         stream: UnixStream,
         tools: Rc<RefCell<HashMap<&'static str, RegisteredTool>>>,
@@ -202,6 +251,31 @@ impl McpServer {
         cx: &mut AsyncApp,
     ) {
         let (read, write) = smol::io::split(stream);
+        Self::serve_connection_inner(read, write, tools, handlers, cx);
+    }
+
+    #[cfg(target_os = "windows")]
+    fn serve_connection(
+        stream: TcpStream,
+        tools: Rc<RefCell<HashMap<&'static str, RegisteredTool>>>,
+        handlers: Rc<RefCell<HashMap<&'static str, RequestHandler>>>,
+        cx: &mut AsyncApp,
+    ) {
+        let (read, write) = smol::io::split(stream);
+        Self::serve_connection_inner(read, write, tools, handlers, cx);
+    }
+
+    fn serve_connection_inner<R, W>(
+        read: R,
+        write: W,
+        tools: Rc<RefCell<HashMap<&'static str, RegisteredTool>>>,
+        handlers: Rc<RefCell<HashMap<&'static str, RequestHandler>>>,
+        cx: &mut AsyncApp,
+    )
+    where
+        R: futures::AsyncRead + Unpin + Send + 'static,
+        W: futures::AsyncWrite + Unpin + Send + 'static,
+    {
         let (incoming_tx, mut incoming_rx) = unbounded();
         let (outgoing_tx, outgoing_rx) = unbounded();
 

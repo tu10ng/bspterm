@@ -4,7 +4,6 @@ use std::sync::Arc;
 use alacritty_terminal::event::{Event as AlacTermEvent, WindowSize};
 use anyhow::Result;
 use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
-use futures::FutureExt;
 use parking_lot::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 
@@ -149,6 +148,9 @@ fn spawn_channel_task(
 ) -> JoinHandle<()> {
     tokio_handle.spawn(async move {
         use futures::StreamExt;
+        use std::time::{Duration, Instant};
+
+        const DEBOUNCE_DELAY: Duration = Duration::from_millis(10);
 
         if let Some(command) = initial_command {
             let command_with_newline = format!("{}\n", command);
@@ -157,8 +159,20 @@ fn spawn_channel_task(
             }
         }
 
+        let mut pending_wakeup_deadline: Option<Instant> = None;
+
         loop {
-            futures::select_biased! {
+            let timeout_duration = pending_wakeup_deadline
+                .map(|deadline| deadline.saturating_duration_since(Instant::now()))
+                .unwrap_or(Duration::MAX);
+
+            tokio::select! {
+                biased;
+
+                _ = tokio::time::sleep(timeout_duration), if pending_wakeup_deadline.is_some() => {
+                    event_tx.unbounded_send(AlacTermEvent::Wakeup).ok();
+                    pending_wakeup_deadline = None;
+                }
                 command = command_rx.next() => {
                     match command {
                         Some(ChannelCommand::Write(data)) => {
@@ -180,17 +194,24 @@ fn spawn_channel_task(
                         }
                     }
                 }
-                data = channel.channel.wait().fuse() => {
+                data = channel.channel.wait() => {
                     match data {
                         Some(russh::ChannelMsg::Data { data }) => {
                             incoming_buffer.lock().extend_from_slice(&data);
-                            event_tx.unbounded_send(AlacTermEvent::Wakeup).ok();
+                            if pending_wakeup_deadline.is_none() {
+                                pending_wakeup_deadline = Some(Instant::now() + DEBOUNCE_DELAY);
+                            }
                         }
                         Some(russh::ChannelMsg::ExtendedData { data, .. }) => {
                             incoming_buffer.lock().extend_from_slice(&data);
-                            event_tx.unbounded_send(AlacTermEvent::Wakeup).ok();
+                            if pending_wakeup_deadline.is_none() {
+                                pending_wakeup_deadline = Some(Instant::now() + DEBOUNCE_DELAY);
+                            }
                         }
                         Some(russh::ChannelMsg::Eof) => {
+                            if pending_wakeup_deadline.is_some() {
+                                event_tx.unbounded_send(AlacTermEvent::Wakeup).ok();
+                            }
                             *state.write() = ConnectionState::Disconnected;
                             event_tx.unbounded_send(AlacTermEvent::Exit).ok();
                             break;
@@ -200,6 +221,9 @@ fn spawn_channel_task(
                             event_tx.unbounded_send(AlacTermEvent::ChildExit(exit_status as i32)).ok();
                         }
                         Some(russh::ChannelMsg::Close) => {
+                            if pending_wakeup_deadline.is_some() {
+                                event_tx.unbounded_send(AlacTermEvent::Wakeup).ok();
+                            }
                             *state.write() = ConnectionState::Disconnected;
                             event_tx.unbounded_send(AlacTermEvent::Exit).ok();
                             break;

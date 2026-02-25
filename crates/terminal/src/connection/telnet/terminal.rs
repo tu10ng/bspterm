@@ -4,7 +4,6 @@ use std::sync::Arc;
 use alacritty_terminal::event::{Event as AlacTermEvent, WindowSize};
 use anyhow::Result;
 use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
-use futures::FutureExt;
 use parking_lot::{Mutex, RwLock};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
@@ -130,13 +129,27 @@ fn spawn_channel_task(
 ) -> JoinHandle<()> {
     tokio_handle.spawn(async move {
         use futures::StreamExt;
+        use std::time::{Duration, Instant};
+
+        const DEBOUNCE_DELAY: Duration = Duration::from_millis(10);
 
         let mut negotiator = TelnetNegotiator::new(terminal_type);
         let mut read_buf = [0u8; 4096];
         let mut sent_initial_naws = false;
+        let mut pending_wakeup_deadline: Option<Instant> = None;
 
         loop {
-            futures::select_biased! {
+            let timeout_duration = pending_wakeup_deadline
+                .map(|deadline| deadline.saturating_duration_since(Instant::now()))
+                .unwrap_or(Duration::MAX);
+
+            tokio::select! {
+                biased;
+
+                _ = tokio::time::sleep(timeout_duration), if pending_wakeup_deadline.is_some() => {
+                    event_tx.unbounded_send(AlacTermEvent::Wakeup).ok();
+                    pending_wakeup_deadline = None;
+                }
                 command = command_rx.next() => {
                     match command {
                         Some(TelnetChannelCommand::Write(data)) => {
@@ -161,10 +174,12 @@ fn spawn_channel_task(
                         }
                     }
                 }
-                result = read_half.read(&mut read_buf).fuse() => {
+                result = read_half.read(&mut read_buf) => {
                     match result {
                         Ok(0) => {
-                            // Connection closed
+                            if pending_wakeup_deadline.is_some() {
+                                event_tx.unbounded_send(AlacTermEvent::Wakeup).ok();
+                            }
                             *state.write() = ConnectionState::Disconnected;
                             event_tx.unbounded_send(AlacTermEvent::Exit).ok();
                             break;
@@ -192,10 +207,12 @@ fn spawn_channel_task(
                                 }
                             }
 
-                            // Buffer terminal data
+                            // Buffer terminal data and set debounce deadline
                             if !process_result.data.is_empty() {
                                 incoming_buffer.lock().extend_from_slice(&process_result.data);
-                                event_tx.unbounded_send(AlacTermEvent::Wakeup).ok();
+                                if pending_wakeup_deadline.is_none() {
+                                    pending_wakeup_deadline = Some(Instant::now() + DEBOUNCE_DELAY);
+                                }
                             }
                         }
                         Err(error) => {
