@@ -5,7 +5,6 @@ mod session_edit_modal;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::ops::Range;
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -39,71 +38,6 @@ pub use quick_add::*;
 pub use session_edit_modal::SessionEditModal;
 
 const REMOTE_EXPLORER_PANEL_KEY: &str = "RemoteExplorerPanel";
-
-/// Ping command configuration for different platforms.
-/// Different systems use different flags:
-/// - Linux: `-c 1 -W 1` (W is seconds)
-/// - Windows: `-n 1 -w 1000` (w is milliseconds)
-/// - macOS: `-c 1 -W 1000` (W is milliseconds, different from Linux!)
-#[derive(Clone, Copy)]
-struct PingConfig {
-    count_flag: &'static str,
-    timeout_flag: &'static str,
-    timeout_value: &'static str,
-}
-
-/// Cached ping configuration. None means not yet detected, Some(None) means
-/// ping is not available, Some(Some(config)) means ping is available with this config.
-static PING_CONFIG: OnceLock<Option<PingConfig>> = OnceLock::new();
-
-async fn detect_ping_config_async() -> Option<PingConfig> {
-    use std::process::Stdio;
-
-    let candidates = [
-        // Linux style: -c count, -W timeout_seconds
-        PingConfig {
-            count_flag: "-c",
-            timeout_flag: "-W",
-            timeout_value: "1",
-        },
-        // Windows style: -n count, -w timeout_ms
-        PingConfig {
-            count_flag: "-n",
-            timeout_flag: "-w",
-            timeout_value: "1000",
-        },
-    ];
-
-    for config in candidates {
-        let result = smol::process::Command::new("ping")
-            .args([
-                config.count_flag,
-                "1",
-                config.timeout_flag,
-                config.timeout_value,
-                "127.0.0.1",
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .await;
-
-        if result.map(|s| s.success()).unwrap_or(false) {
-            return Some(config);
-        }
-    }
-
-    None
-}
-
-async fn get_or_init_ping_config() -> Option<PingConfig> {
-    if let Some(config) = PING_CONFIG.get() {
-        return *config;
-    }
-
-    let detected = detect_ping_config_async().await;
-    *PING_CONFIG.get_or_init(|| detected)
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum PingStatus {
@@ -402,10 +336,9 @@ impl RemoteExplorer {
 
                 let task = cx.spawn(async move |this, cx| {
                     let executor = cx.background_executor().clone();
-                    let executor_for_spawn = executor.clone();
                     let reachable = executor
                         .spawn(async move {
-                            Self::check_reachability(&host, port, &executor_for_spawn).await
+                            util::reachability::check_reachability(&host, port).await
                         })
                         .await;
 
@@ -426,53 +359,6 @@ impl RemoteExplorer {
             }
         }
         cx.notify();
-    }
-
-    async fn check_reachability(
-        host: &str,
-        port: u16,
-        executor: &gpui::BackgroundExecutor,
-    ) -> bool {
-        use futures::{FutureExt as _, select_biased};
-
-        let timeout = Duration::from_secs(3);
-
-        if let Some(config) = get_or_init_ping_config().await {
-            // Use ICMP ping to avoid being identified as brute-force login attempts
-            let ping_future = Self::ping_host(host, &config);
-            select_biased! {
-                result = ping_future.fuse() => result,
-                _ = executor.timer(timeout).fuse() => false,
-            }
-        } else {
-            // Fallback: use TCP connection if ping is not available
-            use smol::net::TcpStream;
-            let addr = format!("{}:{}", host, port);
-            let connect_future = async { TcpStream::connect(&addr).await.is_ok() };
-            select_biased! {
-                result = connect_future.fuse() => result,
-                _ = executor.timer(timeout).fuse() => false,
-            }
-        }
-    }
-
-    async fn ping_host(host: &str, config: &PingConfig) -> bool {
-        use std::process::Stdio;
-
-        let output = smol::process::Command::new("ping")
-            .args([
-                config.count_flag,
-                "1",
-                config.timeout_flag,
-                config.timeout_value,
-                host,
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .await;
-
-        output.map(|status| status.success()).unwrap_or(false)
     }
 
     fn toggle_expanded(&mut self, id: Uuid, _window: &mut Window, cx: &mut Context<Self>) {

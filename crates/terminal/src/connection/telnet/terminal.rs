@@ -188,6 +188,9 @@ fn spawn_channel_task(
         use std::time::{Duration, Instant};
 
         const DEBOUNCE_DELAY: Duration = Duration::from_millis(10);
+        const PING_CHECK_INTERVAL: Duration = Duration::from_secs(10);
+        const MAX_PING_FAILURES: u32 = 2;
+
         let keepalive_duration = keepalive_interval.unwrap_or(Duration::from_secs(30));
 
         log::info!("[TELNET] Connected to {}", stats.target_addr);
@@ -197,6 +200,14 @@ fn spawn_channel_task(
         let mut sent_initial_naws = false;
         let mut pending_wakeup_deadline: Option<Instant> = None;
         let mut last_activity = Instant::now();
+        let mut last_data_received = Instant::now();
+        let mut consecutive_ping_failures: u32 = 0;
+        let host = stats
+            .target_addr
+            .split(':')
+            .next()
+            .unwrap_or(&stats.target_addr)
+            .to_string();
 
         loop {
             let timeout_duration = pending_wakeup_deadline
@@ -266,6 +277,37 @@ fn spawn_channel_task(
                         }
                     }
                 }
+                _ = tokio::time::sleep(PING_CHECK_INTERVAL) => {
+                    if last_data_received.elapsed() > PING_CHECK_INTERVAL {
+                        let host_clone = host.clone();
+                        let reachable = tokio::task::spawn_blocking(move || {
+                            smol::block_on(util::reachability::ping_check(&host_clone))
+                        })
+                        .await
+                        .ok()
+                        .flatten()
+                        .unwrap_or(true);
+
+                        if !reachable {
+                            consecutive_ping_failures += 1;
+                            log::warn!(
+                                "[TELNET] Ping failed for {} ({}/{})",
+                                stats.target_addr,
+                                consecutive_ping_failures,
+                                MAX_PING_FAILURES
+                            );
+                            if consecutive_ping_failures >= MAX_PING_FAILURES {
+                                stats.log_disconnect("host unreachable (ping timeout)");
+                                *state.write() = ConnectionState::Error("Host unreachable".to_string());
+                                let _ = write_half.shutdown().await;
+                                event_tx.unbounded_send(AlacTermEvent::Exit).ok();
+                                break;
+                            }
+                        } else {
+                            consecutive_ping_failures = 0;
+                        }
+                    }
+                }
                 result = read_half.read(&mut read_buf) => {
                     match result {
                         Ok(0) => {
@@ -280,6 +322,8 @@ fn spawn_channel_task(
                         }
                         Ok(n) => {
                             last_activity = Instant::now();
+                            last_data_received = Instant::now();
+                            consecutive_ping_failures = 0;
                             let process_result = negotiator.process_incoming(&read_buf[..n]);
 
                             // Send any protocol responses

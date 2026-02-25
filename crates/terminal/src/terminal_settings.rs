@@ -97,6 +97,10 @@ pub struct TerminalSettings {
     pub send_keybindings_to_shell: bool,
     pub keybindings_to_skip_shell: Vec<String>,
     pub connection_timeout_secs: u64,
+    pub auto_reconnect: bool,
+    pub notify_on_reconnect: bool,
+    pub recently_active_timeout_secs: u64,
+    pub ping_timeout_secs: u64,
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -210,6 +214,10 @@ impl settings::Settings for TerminalSettings {
             send_keybindings_to_shell: user_content.send_keybindings_to_shell.unwrap(),
             keybindings_to_skip_shell: user_content.keybindings_to_skip_shell.unwrap(),
             connection_timeout_secs: user_content.connection_timeout_secs.unwrap_or(3),
+            auto_reconnect: user_content.auto_reconnect.unwrap_or(true),
+            notify_on_reconnect: user_content.notify_on_reconnect.unwrap_or(true),
+            recently_active_timeout_secs: user_content.recently_active_timeout_secs.unwrap_or(60),
+            ping_timeout_secs: user_content.ping_timeout_secs.unwrap_or(10),
         }
     }
 }

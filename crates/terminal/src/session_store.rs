@@ -493,6 +493,17 @@ impl SessionStore {
         None
     }
 
+    /// Find the parent group of a session or nested group.
+    /// Returns None if the node is at the root level or not found.
+    pub fn find_parent_group(&self, id: Uuid) -> Option<&SessionGroup> {
+        if let Some((Some(parent_id), _)) = self.find_node_location(id) {
+            if let Some(SessionNode::Group(group)) = self.find_node(parent_id) {
+                return Some(group);
+            }
+        }
+        None
+    }
+
     /// Check if ancestor_id is an ancestor of node_id.
     /// Returns true if node_id is contained within ancestor_id (directly or nested).
     pub fn is_ancestor_of(&self, ancestor_id: Uuid, node_id: Uuid) -> bool {

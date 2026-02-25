@@ -65,6 +65,7 @@ use workspace::{
         BreadcrumbText, Item, ItemEvent, SerializableItem, TabContentParams, TabTooltipContent,
     },
     notifications::NotificationId,
+    reconnection_notifier::{GlobalReconnectionNotifier, ReconnectedTerminal},
     register_serializable_item,
     searchable::{
         Direction, SearchEvent, SearchOptions, SearchToken, SearchableItem, SearchableItemHandle,
@@ -264,6 +265,8 @@ pub struct TerminalView {
     _subscriptions: Vec<Subscription>,
     _terminal_subscriptions: Vec<Subscription>,
     timestamp_tick_task: Option<Task<()>>,
+    /// Background task for auto-reconnect loop.
+    auto_reconnect_task: Option<Task<()>>,
 }
 
 #[derive(Default, Clone)]
@@ -468,6 +471,7 @@ impl TerminalView {
             _subscriptions: subscriptions,
             _terminal_subscriptions: terminal_subscriptions,
             timestamp_tick_task,
+            auto_reconnect_task: None,
         }
     }
 
@@ -2387,6 +2391,211 @@ print(output)
         }
     }
 
+    /// Start the auto-reconnect loop that checks host reachability periodically.
+    fn start_auto_reconnect_loop(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Cancel any existing auto-reconnect task
+        self.auto_reconnect_task.take();
+
+        let terminal = self.terminal.clone();
+
+        // Get connection info for reachability check
+        let connection_info = terminal.read(cx).connection_info().cloned();
+        let Some(connection_info) = connection_info else {
+            return;
+        };
+
+        let (host, port) = match &connection_info {
+            terminal::ConnectionInfo::Ssh { host, port, .. } => (host.clone(), *port),
+            terminal::ConnectionInfo::Telnet { host, port, .. } => (host.clone(), *port),
+        };
+
+        log::info!(
+            "[AUTO-RECONNECT] Starting auto-reconnect loop for {}:{}",
+            host,
+            port
+        );
+
+        // Print auto-reconnect message
+        terminal.update(cx, |terminal, cx| {
+            terminal.write_output(
+                b"\x1b[33m[Auto-reconnect enabled - checking host reachability...]\x1b[0m\r\n",
+                cx,
+            );
+        });
+
+        // Get ping timeout from settings
+        let ping_timeout_secs = TerminalSettings::get_global(cx).ping_timeout_secs;
+
+        self.auto_reconnect_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let executor = cx.background_executor().clone();
+
+            loop {
+                // Wait 5 seconds between checks
+                executor.timer(Duration::from_secs(5)).await;
+
+                // Check if we should stop the loop
+                let still_disconnected = this
+                    .update(&mut cx.clone(), |this, cx| {
+                        // Continue only if terminal is still disconnected
+                        this.terminal.read(cx).is_disconnected()
+                    })
+                    .unwrap_or(false);
+
+                if !still_disconnected {
+                    log::debug!("[AUTO-RECONNECT] Stopping loop - terminal is no longer disconnected");
+                    break;
+                }
+
+                // Check reachability with configurable timeout
+                let host_for_check = host.clone();
+                let port_for_log = port;
+                let reachable = executor
+                    .spawn(async move {
+                        util::reachability::check_reachability_with_timeout(
+                            &host_for_check,
+                            port_for_log,
+                            ping_timeout_secs,
+                        )
+                        .await
+                    })
+                    .await;
+
+                log::debug!(
+                    "[AUTO-RECONNECT] Reachability check for {}:{}: {}",
+                    host,
+                    port,
+                    reachable
+                );
+
+                if !reachable {
+                    continue;
+                }
+
+                log::info!("[AUTO-RECONNECT] Host {}:{} is reachable, attempting reconnection", host, port);
+
+                // Host is reachable, attempt reconnection
+                let reconnect_result = this.update(&mut cx.clone(), |this, cx| {
+                    // Print connecting message
+                    this.terminal.update(cx, |terminal, cx| {
+                        terminal.write_output(b"\x1b[36mHost reachable, reconnecting...\x1b[0m\r\n", cx);
+                    });
+                    this.terminal.update(cx, |terminal, cx| terminal.reconnect(cx))
+                });
+
+                let Ok(reconnect_task) = reconnect_result else {
+                    log::warn!("[AUTO-RECONNECT] Failed to get reconnect task");
+                    break;
+                };
+
+                match reconnect_task.await {
+                    Ok(connection) => {
+                        let _ = this.update_in(&mut cx.clone(), |this, window, cx| {
+                            // Check if window is focused to determine notification behavior
+                            let window_active = window.is_window_active();
+                            let notify_on_reconnect = TerminalSettings::get_global(cx).notify_on_reconnect;
+
+                            log::info!(
+                                "[AUTO-RECONNECT] Reconnected to {}. window_active={}, notify_on_reconnect={}",
+                                host,
+                                window_active,
+                                notify_on_reconnect
+                            );
+
+                            this.terminal.update(cx, |terminal, cx| {
+                                terminal.set_connection(connection, cx);
+                                terminal.write_output(b"\x1b[32mConnected\x1b[0m\r\n", cx);
+
+                                // Set reconnected flag if window was unfocused
+                                if !window_active {
+                                    terminal.set_reconnected_while_unfocused(true);
+                                }
+                            });
+
+                            // Clear auto-reconnect task
+                            this.auto_reconnect_task = None;
+
+                            // Send notification if window was unfocused
+                            if !window_active {
+                                if notify_on_reconnect {
+                                    log::info!("[AUTO-RECONNECT] Queuing reconnection notification for {}", host);
+
+                                    let (group_id, group_name) = this.get_session_group_info(cx);
+
+                                    if let Some(notifier) = GlobalReconnectionNotifier::try_global(cx) {
+                                        notifier.update(cx, |notifier, cx| {
+                                            notifier.notify_reconnected(
+                                                ReconnectedTerminal {
+                                                    terminal_id: this.terminal.entity_id(),
+                                                    host: host.clone(),
+                                                    group_id,
+                                                    group_name,
+                                                },
+                                                cx,
+                                            );
+                                        });
+                                    } else {
+                                        log::warn!("[AUTO-RECONNECT] GlobalReconnectionNotifier not available");
+                                    }
+                                } else {
+                                    log::debug!("[AUTO-RECONNECT] Skipping notification (notify_on_reconnect disabled)");
+                                }
+                            } else {
+                                log::debug!("[AUTO-RECONNECT] Skipping notification (window is active)");
+                            }
+
+                            cx.notify();
+                        });
+
+                        break;
+                    }
+                    Err(err) => {
+                        let _ = this.update(&mut cx.clone(), |this, cx| {
+                            this.terminal.update(cx, |terminal, cx| {
+                                let message = format!(
+                                    "\x1b[31mReconnection failed: {}\x1b[0m\r\n\x1b[33mRetrying in 5 seconds...\x1b[0m\r\n",
+                                    err
+                                );
+                                terminal.write_output(message.as_bytes(), cx);
+                            });
+                            cx.notify();
+                        });
+                        // Continue loop to retry
+                    }
+                }
+            }
+        }));
+    }
+
+    /// Stop the auto-reconnect loop if running.
+    #[allow(dead_code)]
+    fn stop_auto_reconnect_loop(&mut self) {
+        self.auto_reconnect_task.take();
+    }
+
+    /// Get the session group info for notification grouping.
+    fn get_session_group_info(&self, cx: &App) -> (Option<uuid::Uuid>, Option<String>) {
+        let connection_info = self.terminal.read(cx).connection_info();
+
+        // Extract session_id from connection info
+        let session_id = match connection_info {
+            Some(terminal::ConnectionInfo::Ssh { session_id, .. }) => *session_id,
+            Some(terminal::ConnectionInfo::Telnet { session_id, .. }) => *session_id,
+            None => None,
+        };
+
+        // Look up the session in the session store to get the group info
+        if let Some(session_id) = session_id {
+            if let Some(session_store) = cx.try_global::<terminal::GlobalSessionStore>() {
+                let store = session_store.0.read(cx);
+                if let Some(parent_group) = store.store().find_parent_group(session_id) {
+                    return (Some(parent_group.id), Some(parent_group.name.clone()));
+                }
+            }
+        }
+
+        (None, None)
+    }
+
     fn rerun_button(task: &TaskState) -> Option<IconButton> {
         if !task.spawned_task.show_rerun {
             return None;
@@ -2536,6 +2745,22 @@ fn subscribe_for_terminal_events(
                 }
                 Event::CommandHistoryChanged => {
                     // Command history panel will subscribe to this event
+                }
+                Event::Disconnected { was_recently_active } => {
+                    let settings = TerminalSettings::get_global(cx);
+                    log::info!(
+                        "[DISCONNECT] Terminal disconnected. auto_reconnect={}, was_recently_active={}",
+                        settings.auto_reconnect,
+                        was_recently_active
+                    );
+
+                    if settings.auto_reconnect && *was_recently_active {
+                        log::info!("[DISCONNECT] Starting auto-reconnect loop");
+                        terminal_view.start_auto_reconnect_loop(window, cx);
+                    } else {
+                        log::info!("[DISCONNECT] Auto-reconnect NOT triggered (conditions not met)");
+                    }
+                    cx.emit(ItemEvent::UpdateTab);
                 }
             }
         },

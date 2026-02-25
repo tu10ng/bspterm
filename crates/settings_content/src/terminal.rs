@@ -189,6 +189,25 @@ pub struct TerminalSettingsContent {
     ///
     /// Default: 3
     pub connection_timeout_secs: Option<u64>,
+    /// Auto-reconnect terminals that were active within 10 seconds of disconnect.
+    /// When enabled, the terminal will automatically attempt to reconnect when
+    /// the host becomes reachable again.
+    ///
+    /// Default: true
+    pub auto_reconnect: Option<bool>,
+    /// Show desktop notification when terminal reconnects while window is unfocused.
+    ///
+    /// Default: true
+    pub notify_on_reconnect: Option<bool>,
+    /// Timeout in seconds for considering terminal "recently active" for auto-reconnect.
+    /// If user sent input within this time before disconnect, auto-reconnect will trigger.
+    ///
+    /// Default: 60
+    pub recently_active_timeout_secs: Option<u64>,
+    /// Timeout in seconds for ping/reachability checks during auto-reconnect.
+    ///
+    /// Default: 10
+    pub ping_timeout_secs: Option<u64>,
 }
 
 /// Shell configuration to open the terminal with.

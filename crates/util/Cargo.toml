@@ -56,8 +56,13 @@ nix = { workspace = true, features = ["user"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 mach2.workspace = true
 
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+ashpd.workspace = true
+uuid = { workspace = true, features = ["v4"] }
+
 [target.'cfg(windows)'.dependencies]
 tendril = "0.4.3"
+windows.workspace = true
 
 [dev-dependencies]
 git2.workspace = true

@@ -19899,6 +19899,7 @@ name = "util"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ashpd",
  "async-fs",
  "async_zip",
  "collections",
@@ -19932,8 +19933,10 @@ dependencies = [
  "unicase",
  "url",
  "util_macros",
+ "uuid",
  "walkdir",
  "which 6.0.3",
+ "windows 0.61.3",
 ]
 
 [[package]]

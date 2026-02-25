@@ -876,6 +876,10 @@ impl VsCodeSettings {
             keybindings_to_skip_shell: None,
             connection_timeout_secs: None,
             session_logging: None,
+            auto_reconnect: None,
+            notify_on_reconnect: None,
+            recently_active_timeout_secs: None,
+            ping_timeout_secs: None,
         })
     }
 

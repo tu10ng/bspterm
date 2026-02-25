@@ -193,6 +193,8 @@ pub enum Event {
     Open(MaybeNavigationTarget),
     LoginCompleted,
     CommandHistoryChanged,
+    /// Remote terminal disconnected. Carries whether terminal was recently active.
+    Disconnected { was_recently_active: bool },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -490,6 +492,8 @@ impl TerminalBuilder {
             last_topmost_line: 0,
             command_history: CommandHistory::new(),
             session_logger: None,
+            last_user_input_time: None,
+            reconnected_while_unfocused: false,
         };
 
         Ok(TerminalBuilder {
@@ -740,6 +744,8 @@ impl TerminalBuilder {
                 last_topmost_line: 0,
                 command_history: CommandHistory::new(),
                 session_logger: None,
+                last_user_input_time: None,
+                reconnected_while_unfocused: false,
             };
 
             if !activation_script.is_empty() && no_task {
@@ -952,6 +958,8 @@ impl TerminalBuilder {
                 last_topmost_line: 0,
                 command_history: CommandHistory::new(),
                 session_logger: None,
+                last_user_input_time: None,
+                reconnected_while_unfocused: false,
             };
 
             terminal.init_rule_engine();
@@ -1131,6 +1139,8 @@ impl TerminalBuilder {
                 last_topmost_line: 0,
                 command_history: CommandHistory::new(),
                 session_logger: None,
+                last_user_input_time: None,
+                reconnected_while_unfocused: false,
             };
 
             terminal.init_rule_engine();
@@ -1312,6 +1322,8 @@ impl TerminalBuilder {
             last_topmost_line: 0,
             command_history: CommandHistory::new(),
             session_logger: None,
+            last_user_input_time: None,
+            reconnected_while_unfocused: false,
         };
 
         terminal.init_rule_engine();
@@ -1490,6 +1502,12 @@ pub struct Terminal {
     command_history: CommandHistory,
     /// Session logger for saving terminal output to files
     session_logger: Option<session_logger::SessionLogger>,
+    /// Timestamp of the last user input (command/keystroke sent to terminal).
+    /// Used to determine if terminal was "recently active" for auto-reconnect.
+    last_user_input_time: Option<Instant>,
+    /// Flag set when terminal auto-reconnected while window was unfocused.
+    /// Used to show visual indicator on the tab.
+    reconnected_while_unfocused: bool,
 }
 
 struct CopyTemplate {
@@ -1590,6 +1608,9 @@ impl Terminal {
             }
             AlacTermEvent::Exit => {
                 if self.is_remote_terminal {
+                    let settings = TerminalSettings::get_global(cx);
+                    let was_recently_active =
+                        self.was_recently_active(settings.recently_active_timeout_secs);
                     if let TerminalType::Connected { connection } =
                         std::mem::replace(&mut self.terminal_type, TerminalType::Disconnected)
                     {
@@ -1600,6 +1621,7 @@ impl Terminal {
                     }
                     self.check_rules(rule_store::TriggerEvent::Disconnected, cx);
                     self.print_disconnection_message(cx);
+                    cx.emit(Event::Disconnected { was_recently_active });
                 }
                 self.register_task_finished(Some(9), cx);
             }
@@ -2171,6 +2193,11 @@ impl Terminal {
         self.events
             .push_back(InternalEvent::Scroll(AlacScroll::Bottom));
         self.events.push_back(InternalEvent::SetSelection(None));
+
+        // Track last user input time for auto-reconnect
+        self.last_user_input_time = Some(Instant::now());
+        // Clear reconnected indicator when user sends input
+        self.reconnected_while_unfocused = false;
 
         self.write_to_pty(input);
     }
@@ -3387,6 +3414,30 @@ impl Terminal {
 
     pub fn is_disconnected(&self) -> bool {
         matches!(self.terminal_type, TerminalType::Disconnected)
+    }
+
+    /// Check if the terminal was recently active (user sent command within specified timeout).
+    /// Used to determine if auto-reconnect should be triggered on disconnect.
+    pub fn was_recently_active(&self, timeout_secs: u64) -> bool {
+        self.last_user_input_time
+            .map(|t| t.elapsed() < Duration::from_secs(timeout_secs))
+            .unwrap_or(false)
+    }
+
+    /// Check if the terminal was reconnected while the window was unfocused.
+    /// Used to show a visual indicator on the terminal tab.
+    pub fn reconnected_while_unfocused(&self) -> bool {
+        self.reconnected_while_unfocused
+    }
+
+    /// Set the reconnected_while_unfocused flag.
+    pub fn set_reconnected_while_unfocused(&mut self, value: bool) {
+        self.reconnected_while_unfocused = value;
+    }
+
+    /// Clear the reconnected indicator (called when user focuses the terminal).
+    pub fn clear_reconnected_indicator(&mut self) {
+        self.reconnected_while_unfocused = false;
     }
 
     pub fn is_initial_connecting(&self) -> bool {

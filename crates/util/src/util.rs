@@ -1,10 +1,12 @@
 pub mod arc_cow;
 pub mod archive;
 pub mod command;
+pub mod desktop_notification;
 pub mod fs;
 pub mod markdown;
 pub mod paths;
 pub mod process;
+pub mod reachability;
 pub mod redact;
 pub mod rel_path;
 pub mod schemars;

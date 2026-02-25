@@ -61,6 +61,7 @@ impl SshTerminalConnection {
             config.initial_command.clone(),
             incoming_buffer.clone(),
             tokio_handle.clone(),
+            config.host.clone(),
         );
 
         Ok(Self {
@@ -145,12 +146,15 @@ fn spawn_channel_task(
     initial_command: Option<String>,
     incoming_buffer: Arc<Mutex<Vec<u8>>>,
     tokio_handle: tokio::runtime::Handle,
+    host: String,
 ) -> JoinHandle<()> {
     tokio_handle.spawn(async move {
         use futures::StreamExt;
         use std::time::{Duration, Instant};
 
         const DEBOUNCE_DELAY: Duration = Duration::from_millis(10);
+        const PING_CHECK_INTERVAL: Duration = Duration::from_secs(10);
+        const MAX_PING_FAILURES: u32 = 2;
 
         if let Some(command) = initial_command {
             let command_with_newline = format!("{}\n", command);
@@ -160,6 +164,8 @@ fn spawn_channel_task(
         }
 
         let mut pending_wakeup_deadline: Option<Instant> = None;
+        let mut last_data_received = Instant::now();
+        let mut consecutive_ping_failures: u32 = 0;
 
         loop {
             let timeout_duration = pending_wakeup_deadline
@@ -194,15 +200,49 @@ fn spawn_channel_task(
                         }
                     }
                 }
+                _ = tokio::time::sleep(PING_CHECK_INTERVAL) => {
+                    if last_data_received.elapsed() > PING_CHECK_INTERVAL {
+                        let host_clone = host.clone();
+                        let reachable = tokio::task::spawn_blocking(move || {
+                            smol::block_on(util::reachability::ping_check(&host_clone))
+                        })
+                        .await
+                        .ok()
+                        .flatten()
+                        .unwrap_or(true);
+
+                        if !reachable {
+                            consecutive_ping_failures += 1;
+                            log::warn!(
+                                "[SSH] Ping failed for {} ({}/{})",
+                                host,
+                                consecutive_ping_failures,
+                                MAX_PING_FAILURES
+                            );
+                            if consecutive_ping_failures >= MAX_PING_FAILURES {
+                                log::info!("[SSH] Host unreachable (ping timeout)");
+                                *state.write() = ConnectionState::Error("Host unreachable".to_string());
+                                event_tx.unbounded_send(AlacTermEvent::Exit).ok();
+                                break;
+                            }
+                        } else {
+                            consecutive_ping_failures = 0;
+                        }
+                    }
+                }
                 data = channel.channel.wait() => {
                     match data {
                         Some(russh::ChannelMsg::Data { data }) => {
+                            last_data_received = Instant::now();
+                            consecutive_ping_failures = 0;
                             incoming_buffer.lock().extend_from_slice(&data);
                             if pending_wakeup_deadline.is_none() {
                                 pending_wakeup_deadline = Some(Instant::now() + DEBOUNCE_DELAY);
                             }
                         }
                         Some(russh::ChannelMsg::ExtendedData { data, .. }) => {
+                            last_data_received = Instant::now();
+                            consecutive_ping_failures = 0;
                             incoming_buffer.lock().extend_from_slice(&data);
                             if pending_wakeup_deadline.is_none() {
                                 pending_wakeup_deadline = Some(Instant::now() + DEBOUNCE_DELAY);

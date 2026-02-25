@@ -820,6 +820,8 @@ features = [
     "Win32_UI_Shell_PropertiesSystem",
     "Win32_UI_WindowsAndMessaging",
     "Win32_Media",
+    "Data_Xml_Dom",
+    "UI_Notifications",
 ]
 
 [patch.crates-io]
