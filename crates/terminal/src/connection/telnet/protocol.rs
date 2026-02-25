@@ -16,6 +16,16 @@ const OPT_SUPPRESS_GO_AHEAD: u8 = 3;
 const OPT_TERMINAL_TYPE: u8 = 24;
 const OPT_NAWS: u8 = 31;  // Negotiate About Window Size
 
+fn option_name(option: u8) -> &'static str {
+    match option {
+        OPT_ECHO => "ECHO",
+        OPT_SUPPRESS_GO_AHEAD => "SUPPRESS_GO_AHEAD",
+        OPT_TERMINAL_TYPE => "TERMINAL_TYPE",
+        OPT_NAWS => "NAWS",
+        _ => "UNKNOWN",
+    }
+}
+
 // Subnegotiation commands
 const SB_IS: u8 = 0;
 const SB_SEND: u8 = 1;
@@ -142,11 +152,16 @@ impl TelnetNegotiator {
     fn handle_will(&mut self, option: u8) -> Vec<u8> {
         match option {
             OPT_ECHO | OPT_SUPPRESS_GO_AHEAD => {
-                // Accept these options from the server
+                log::debug!("[TELNET] <- IAC WILL {}", option_name(option));
+                log::debug!("[TELNET] -> IAC DO {}", option_name(option));
                 vec![IAC, DO, option]
             }
             _ => {
-                // Refuse unknown options
+                log::debug!(
+                    "[TELNET] <- IAC WILL {} (refusing)",
+                    option_name(option)
+                );
+                log::debug!("[TELNET] -> IAC DONT {}", option_name(option));
                 vec![IAC, DONT, option]
             }
         }
@@ -155,15 +170,22 @@ impl TelnetNegotiator {
     fn handle_do(&mut self, option: u8) -> Vec<u8> {
         match option {
             OPT_TERMINAL_TYPE => {
-                // We will send terminal type
+                log::debug!("[TELNET] <- IAC DO {}", option_name(option));
+                log::debug!("[TELNET] -> IAC WILL {}", option_name(option));
                 vec![IAC, WILL, option]
             }
             OPT_NAWS => {
+                log::debug!("[TELNET] <- IAC DO {}", option_name(option));
+                log::debug!("[TELNET] -> IAC WILL {}", option_name(option));
                 self.naws_enabled = true;
                 vec![IAC, WILL, option]
             }
             _ => {
-                // Refuse unknown options
+                log::debug!(
+                    "[TELNET] <- IAC DO {} (refusing)",
+                    option_name(option)
+                );
+                log::debug!("[TELNET] -> IAC WONT {}", option_name(option));
                 vec![IAC, WONT, option]
             }
         }
@@ -173,14 +195,23 @@ impl TelnetNegotiator {
         match self.sb_option {
             OPT_TERMINAL_TYPE => {
                 if !self.sb_data.is_empty() && self.sb_data[0] == SB_SEND {
-                    // Server wants our terminal type
+                    log::debug!("[TELNET] <- IAC SB TERMINAL_TYPE SEND");
+                    log::debug!(
+                        "[TELNET] -> IAC SB TERMINAL_TYPE IS \"{}\"",
+                        self.terminal_type
+                    );
                     let mut response = vec![IAC, SB, OPT_TERMINAL_TYPE, SB_IS];
                     response.extend(self.terminal_type.as_bytes());
                     response.extend([IAC, SE]);
                     return response;
                 }
             }
-            _ => {}
+            _ => {
+                log::debug!(
+                    "[TELNET] <- IAC SB {} (unhandled subnegotiation)",
+                    option_name(self.sb_option)
+                );
+            }
         }
         Vec::new()
     }

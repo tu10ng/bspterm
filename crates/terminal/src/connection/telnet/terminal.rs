@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use alacritty_terminal::event::{Event as AlacTermEvent, WindowSize};
 use anyhow::Result;
@@ -13,6 +14,51 @@ use super::protocol::{TelnetNegotiator, escape_data_for_send, IAC, NOP};
 use super::session::TelnetSession;
 use super::TelnetConfig;
 use crate::connection::{ConnectionState, ProcessInfoProvider, TerminalConnection};
+
+struct TelnetConnectionStats {
+    keepalive_count: AtomicU64,
+    naws_count: AtomicU64,
+    connect_time: std::time::Instant,
+    target_addr: String,
+}
+
+impl TelnetConnectionStats {
+    fn new(target_addr: String) -> Self {
+        Self {
+            keepalive_count: AtomicU64::new(0),
+            naws_count: AtomicU64::new(0),
+            connect_time: std::time::Instant::now(),
+            target_addr,
+        }
+    }
+
+    fn log_disconnect(&self, reason: &str) {
+        let duration = self.connect_time.elapsed();
+        let keepalives = self.keepalive_count.load(Ordering::Relaxed);
+        let naws_changes = self.naws_count.load(Ordering::Relaxed);
+        log::info!(
+            "[TELNET] Disconnected from {} ({}). Stats: keepalives={}, naws_changes={}, duration={}",
+            self.target_addr,
+            reason,
+            keepalives,
+            naws_changes,
+            format_duration(duration)
+        );
+    }
+}
+
+fn format_duration(duration: std::time::Duration) -> String {
+    let secs = duration.as_secs();
+    if secs < 60 {
+        format!("{}s", secs)
+    } else if secs < 3600 {
+        format!("{}m{}s", secs / 60, secs % 60)
+    } else {
+        let hours = secs / 3600;
+        let minutes = (secs % 3600) / 60;
+        format!("{}h{}m", hours, minutes)
+    }
+}
 
 pub enum TelnetChannelCommand {
     Write(Vec<u8>),
@@ -28,6 +74,8 @@ pub struct TelnetTerminalConnection {
     #[allow(dead_code)]
     initial_size: WindowSize,
     incoming_buffer: Arc<Mutex<Vec<u8>>>,
+    #[allow(dead_code)]
+    stats: Arc<TelnetConnectionStats>,
 }
 
 impl TelnetTerminalConnection {
@@ -46,6 +94,9 @@ impl TelnetTerminalConnection {
 
         let incoming_buffer = Arc::new(Mutex::new(Vec::new()));
 
+        let target_addr = format!("{}:{}", config.host, config.port);
+        let stats = Arc::new(TelnetConnectionStats::new(target_addr));
+
         let channel_task = spawn_channel_task(
             read_half,
             write_half,
@@ -56,6 +107,7 @@ impl TelnetTerminalConnection {
             initial_size,
             incoming_buffer.clone(),
             config.keepalive_interval,
+            stats.clone(),
             tokio_handle,
         );
 
@@ -65,6 +117,7 @@ impl TelnetTerminalConnection {
             channel_task: Mutex::new(Some(channel_task)),
             initial_size,
             incoming_buffer,
+            stats,
         })
     }
 }
@@ -127,6 +180,7 @@ fn spawn_channel_task(
     initial_size: WindowSize,
     incoming_buffer: Arc<Mutex<Vec<u8>>>,
     keepalive_interval: Option<std::time::Duration>,
+    stats: Arc<TelnetConnectionStats>,
     tokio_handle: tokio::runtime::Handle,
 ) -> JoinHandle<()> {
     tokio_handle.spawn(async move {
@@ -135,6 +189,8 @@ fn spawn_channel_task(
 
         const DEBOUNCE_DELAY: Duration = Duration::from_millis(10);
         let keepalive_duration = keepalive_interval.unwrap_or(Duration::from_secs(30));
+
+        log::info!("[TELNET] Connected to {}", stats.target_addr);
 
         let mut negotiator = TelnetNegotiator::new(terminal_type);
         let mut read_buf = [0u8; 4096];
@@ -163,11 +219,14 @@ fn spawn_channel_task(
                 }
                 _ = tokio::time::sleep(keepalive_timeout), if keepalive_interval.is_some() => {
                     if let Err(error) = write_half.write_all(&[IAC, NOP]).await {
-                        log::warn!("Failed to send Telnet keepalive: {}", error);
+                        log::warn!("[TELNET] Failed to send keepalive to {}: {}", stats.target_addr, error);
+                        stats.log_disconnect(&format!("keepalive failed: {}", error));
                         *state.write() = ConnectionState::Error(error.to_string());
                         let _ = write_half.shutdown().await;
                         break;
                     }
+                    let count = stats.keepalive_count.fetch_add(1, Ordering::Relaxed) + 1;
+                    log::debug!("[TELNET] Keepalive #{} sent to {}", count, stats.target_addr);
                     last_activity = Instant::now();
                 }
                 command = command_rx.next() => {
@@ -175,7 +234,8 @@ fn spawn_channel_task(
                         Some(TelnetChannelCommand::Write(data)) => {
                             let escaped = escape_data_for_send(&data);
                             if let Err(error) = write_half.write_all(&escaped).await {
-                                log::error!("Failed to write to Telnet connection: {}", error);
+                                log::error!("[TELNET] Failed to write to {}: {}", stats.target_addr, error);
+                                stats.log_disconnect(&format!("write failed: {}", error));
                                 *state.write() = ConnectionState::Error(error.to_string());
                                 let _ = write_half.shutdown().await;
                                 break;
@@ -185,13 +245,21 @@ fn spawn_channel_task(
                         Some(TelnetChannelCommand::Resize(size)) => {
                             let naws_packet = negotiator.build_naws(size);
                             if !naws_packet.is_empty() {
+                                stats.naws_count.fetch_add(1, Ordering::Relaxed);
+                                log::debug!(
+                                    "[TELNET] NAWS: {}x{} to {}",
+                                    size.num_cols,
+                                    size.num_lines,
+                                    stats.target_addr
+                                );
                                 if let Err(error) = write_half.write_all(&naws_packet).await {
-                                    log::warn!("Failed to send NAWS: {}", error);
+                                    log::warn!("[TELNET] Failed to send NAWS to {}: {}", stats.target_addr, error);
                                 }
                             }
                             last_activity = Instant::now();
                         }
                         Some(TelnetChannelCommand::Close) | None => {
+                            stats.log_disconnect("user closed");
                             *state.write() = ConnectionState::Disconnected;
                             let _ = write_half.shutdown().await;
                             break;
@@ -204,6 +272,7 @@ fn spawn_channel_task(
                             if pending_wakeup_deadline.is_some() {
                                 event_tx.unbounded_send(AlacTermEvent::Wakeup).ok();
                             }
+                            stats.log_disconnect("remote closed");
                             *state.write() = ConnectionState::Disconnected;
                             let _ = write_half.shutdown().await;
                             event_tx.unbounded_send(AlacTermEvent::Exit).ok();
@@ -216,7 +285,8 @@ fn spawn_channel_task(
                             // Send any protocol responses
                             if !process_result.responses.is_empty() {
                                 if let Err(error) = write_half.write_all(&process_result.responses).await {
-                                    log::error!("Failed to send Telnet responses: {}", error);
+                                    log::error!("[TELNET] Failed to send protocol responses to {}: {}", stats.target_addr, error);
+                                    stats.log_disconnect(&format!("protocol response failed: {}", error));
                                     *state.write() = ConnectionState::Error(error.to_string());
                                     let _ = write_half.shutdown().await;
                                     break;
@@ -226,8 +296,14 @@ fn spawn_channel_task(
                                 if !sent_initial_naws && negotiator.is_naws_enabled() {
                                     let naws_packet = negotiator.build_naws(initial_size);
                                     if !naws_packet.is_empty() {
+                                        log::debug!(
+                                            "[TELNET] Initial NAWS: {}x{} to {}",
+                                            initial_size.num_cols,
+                                            initial_size.num_lines,
+                                            stats.target_addr
+                                        );
                                         if let Err(error) = write_half.write_all(&naws_packet).await {
-                                            log::warn!("Failed to send initial NAWS: {}", error);
+                                            log::warn!("[TELNET] Failed to send initial NAWS to {}: {}", stats.target_addr, error);
                                         }
                                         sent_initial_naws = true;
                                     }
@@ -243,7 +319,8 @@ fn spawn_channel_task(
                             }
                         }
                         Err(error) => {
-                            log::error!("Telnet read error: {}", error);
+                            log::error!("[TELNET] Read error from {}: {}", stats.target_addr, error);
+                            stats.log_disconnect(&format!("read error: {}", error));
                             *state.write() = ConnectionState::Error(error.to_string());
                             let _ = write_half.shutdown().await;
                             event_tx.unbounded_send(AlacTermEvent::Exit).ok();

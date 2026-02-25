@@ -21,15 +21,29 @@ impl TelnetSession {
 
         let addr = format!("{}:{}", config.host, config.port);
 
+        log::debug!(
+            "[TELNET] Connecting to {} (timeout={}s)",
+            addr,
+            connection_timeout.as_secs()
+        );
+
         let stream = timeout(connection_timeout, TcpStream::connect(&addr))
             .await
             .map_err(|_| {
+                log::warn!(
+                    "[TELNET] Connection to {} timed out after {}s",
+                    addr,
+                    connection_timeout.as_secs()
+                );
                 anyhow::anyhow!(
                     "Telnet connection timed out after {} seconds",
                     connection_timeout.as_secs()
                 )
             })?
-            .with_context(|| format!("failed to connect to {}", addr))?;
+            .with_context(|| {
+                log::warn!("[TELNET] Failed to connect to {}", addr);
+                format!("failed to connect to {}", addr)
+            })?;
 
         stream.set_nodelay(true).ok();
 
@@ -38,6 +52,8 @@ impl TelnetSession {
         let session = Self {
             state: RwLock::new(ConnectionState::Connected),
         };
+
+        log::debug!("[TELNET] TCP connection established to {}", addr);
 
         Ok((session, read_half, write_half))
     }
