@@ -165,6 +165,7 @@ fn spawn_channel_task(
                     if let Err(error) = write_half.write_all(&[IAC, NOP]).await {
                         log::warn!("Failed to send Telnet keepalive: {}", error);
                         *state.write() = ConnectionState::Error(error.to_string());
+                        let _ = write_half.shutdown().await;
                         break;
                     }
                     last_activity = Instant::now();
@@ -176,6 +177,7 @@ fn spawn_channel_task(
                             if let Err(error) = write_half.write_all(&escaped).await {
                                 log::error!("Failed to write to Telnet connection: {}", error);
                                 *state.write() = ConnectionState::Error(error.to_string());
+                                let _ = write_half.shutdown().await;
                                 break;
                             }
                             last_activity = Instant::now();
@@ -191,6 +193,7 @@ fn spawn_channel_task(
                         }
                         Some(TelnetChannelCommand::Close) | None => {
                             *state.write() = ConnectionState::Disconnected;
+                            let _ = write_half.shutdown().await;
                             break;
                         }
                     }
@@ -202,6 +205,7 @@ fn spawn_channel_task(
                                 event_tx.unbounded_send(AlacTermEvent::Wakeup).ok();
                             }
                             *state.write() = ConnectionState::Disconnected;
+                            let _ = write_half.shutdown().await;
                             event_tx.unbounded_send(AlacTermEvent::Exit).ok();
                             break;
                         }
@@ -214,6 +218,7 @@ fn spawn_channel_task(
                                 if let Err(error) = write_half.write_all(&process_result.responses).await {
                                     log::error!("Failed to send Telnet responses: {}", error);
                                     *state.write() = ConnectionState::Error(error.to_string());
+                                    let _ = write_half.shutdown().await;
                                     break;
                                 }
 
@@ -240,6 +245,7 @@ fn spawn_channel_task(
                         Err(error) => {
                             log::error!("Telnet read error: {}", error);
                             *state.write() = ConnectionState::Error(error.to_string());
+                            let _ = write_half.shutdown().await;
                             event_tx.unbounded_send(AlacTermEvent::Exit).ok();
                             break;
                         }
