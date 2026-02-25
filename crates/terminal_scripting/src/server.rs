@@ -119,7 +119,13 @@ impl ScriptingServer {
 
         let server_task = cx.spawn({
             async move |cx: &mut AsyncApp| {
-                let listener = TcpListener::from(smol::Async::new(std_listener)?);
+                let listener = match smol::Async::new(std_listener) {
+                    Ok(async_listener) => TcpListener::from(async_listener),
+                    Err(e) => {
+                        log::error!("Failed to create async TCP listener: {}", e);
+                        return;
+                    }
+                };
                 if let Err(e) = Self::run_server_tcp_with_listener(listener, shutdown_rx, cx).await
                 {
                     log::error!("Scripting server error: {}", e);

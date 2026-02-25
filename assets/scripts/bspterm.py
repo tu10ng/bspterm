@@ -2,8 +2,11 @@
 BSPTerm - BSPTerm Python Terminal Automation Library
 
 This module provides a Python client for automating terminal sessions
-in BSPTerm. It communicates with the application via a Unix socket
-using JSON-RPC 2.0 protocol.
+in BSPTerm. It communicates with the application via IPC:
+- Unix/Linux/macOS: Unix domain socket
+- Windows: TCP socket (localhost)
+
+The protocol uses JSON-RPC 2.0.
 
 Usage:
     from bspterm import current_terminal, Session, SSH, Telnet
@@ -22,6 +25,7 @@ Usage:
 import json
 import os
 import socket
+import sys
 import time
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
@@ -74,11 +78,17 @@ def _get_connection_info() -> tuple:
     elif socket_env:
         return ("unix", socket_env)
     else:
-        runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
-        if not runtime_dir:
-            runtime_dir = os.environ.get("TMPDIR", "/tmp")
-        ppid = os.getppid()
-        return ("unix", os.path.join(runtime_dir, f"bspterm-{ppid}.sock"))
+        if sys.platform == "win32":
+            raise ConnectionError(
+                "BSPTERM_SOCKET environment variable not set. "
+                "On Windows, scripts must be launched from BSPTerm's Script Panel."
+            )
+        else:
+            runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
+            if not runtime_dir:
+                runtime_dir = os.environ.get("TMPDIR", "/tmp")
+            ppid = os.getppid()
+            return ("unix", os.path.join(runtime_dir, f"bspterm-{ppid}.sock"))
 
 
 class _RpcClient:
@@ -105,6 +115,11 @@ class _RpcClient:
                 self._socket = None
                 raise ConnectionError(f"Failed to connect to tcp://{self.address[0]}:{self.address[1]}: {e}")
         else:
+            if not hasattr(socket, 'AF_UNIX'):
+                raise ConnectionError(
+                    "Unix sockets are not supported on this platform. "
+                    "Use tcp:// connection or run from BSPTerm's Script Panel."
+                )
             self._socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             try:
                 self._socket.connect(self.address)
