@@ -1,4 +1,6 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
+#[cfg(not(target_os = "windows"))]
+use anyhow::Context;
 use futures::FutureExt;
 use gpui::{App, AsyncApp, Global, Task};
 #[cfg(not(target_os = "windows"))]
@@ -117,7 +119,7 @@ impl ScriptingServer {
 
         let server_task = cx.spawn({
             async move |cx: &mut AsyncApp| {
-                let listener = TcpListener::from(std_listener);
+                let listener = TcpListener::from(smol::Async::new(std_listener)?);
                 if let Err(e) = Self::run_server_tcp_with_listener(listener, shutdown_rx, cx).await
                 {
                     log::error!("Scripting server error: {}", e);
