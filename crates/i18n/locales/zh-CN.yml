@@ -110,6 +110,10 @@ menu:
   minimize: "最小化"
   zoom: "缩放"
 
+  # Configuration Menu
+  configuration: "配置"
+  import_default_config: "导入默认配置"
+
   # Help Menu
   view_release_notes_locally: "本地查看发行说明"
   view_telemetry: "查看遥测数据"
@@ -117,6 +121,12 @@ menu:
   show_welcome: "显示欢迎页"
   file_bug_report: "报告问题..."
   request_feature: "请求功能..."
+
+# Configuration Import
+config:
+  select_config_zip: "选择配置文件 (*.zip)"
+  import_success: "配置导入成功"
+  import_failed: "配置导入失败"
 
 # Common
 common:

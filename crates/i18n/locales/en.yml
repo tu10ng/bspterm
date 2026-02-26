@@ -110,6 +110,10 @@ menu:
   minimize: "Minimize"
   zoom: "Zoom"
 
+  # Configuration Menu
+  configuration: "Configuration"
+  import_default_config: "Import Default Config"
+
   # Help Menu
   view_release_notes_locally: "View Release Notes Locally"
   view_telemetry: "View Telemetry"
@@ -117,6 +121,12 @@ menu:
   show_welcome: "Show Welcome"
   file_bug_report: "File Bug Report..."
   request_feature: "Request Feature..."
+
+# Configuration Import
+config:
+  select_config_zip: "Select config file (*.zip)"
+  import_success: "Configuration imported successfully"
+  import_failed: "Failed to import configuration"
 
 # Common
 common:

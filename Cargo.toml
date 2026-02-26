@@ -769,6 +769,7 @@ which = "6.0.0"
 windows-core = "0.61"
 yawc = "0.2.5"
 zeroize = "1.8"
+zip = { version = "2.1", default-features = false, features = ["deflate"] }
 zstd = "0.11"
 
 

@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+
+# Creates default_config.zip containing default configuration files
+# Usage: bundle-default-config [output_dir]
+
+output_dir="${1:-target/release}"
+zip_name="default_config.zip"
+
+# Create temp directory for zip contents
+temp_dir=$(mktemp -d)
+trap "rm -rf $temp_dir" EXIT
+
+# Create config.json (manifest)
+cat > "$temp_dir/config.json" << 'EOF'
+{
+  "version": 1,
+  "description": "Bspterm Default Configuration"
+}
+EOF
+
+# Copy terminal rules
+cp assets/settings/default_terminal_rules.json "$temp_dir/terminal_rules.json"
+
+# Create button_bar.json
+cat > "$temp_dir/button_bar.json" << 'EOF'
+{
+  "version": 1,
+  "buttons": [
+    {
+      "label": "ne5000e_mpu_collector",
+      "script_path": "ne5000e_mpu_collector.py",
+      "tooltip": "Collect MPU IP addresses from NE5000E router",
+      "enabled": true
+    }
+  ],
+  "show_button_bar": true
+}
+EOF
+
+# Create abbreviations.json
+cat > "$temp_dir/abbreviations.json" << 'EOF'
+{
+  "version": 1,
+  "abbreviations": [],
+  "expansion_enabled": true,
+  "show_abbr_bar": true
+}
+EOF
+
+# Copy scripts
+mkdir -p "$temp_dir/scripts"
+cp assets/scripts/ne5000e_mpu_collector.py "$temp_dir/scripts/"
+
+# Ensure output directory exists
+mkdir -p "$output_dir"
+
+# Create zip archive
+cd "$temp_dir"
+zip -r "$zip_name" .
+mv "$zip_name" "$output_dir/"
+
+echo "Created $output_dir/$zip_name"

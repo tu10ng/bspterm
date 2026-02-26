@@ -262,6 +262,12 @@ pub fn app_menus(cx: &mut App) -> Vec<Menu> {
             ],
         },
         Menu {
+            name: t("menu.configuration"),
+            items: vec![
+                MenuItem::action(t("menu.import_default_config"), bspterm_actions::ImportDefaultConfig),
+            ],
+        },
+        Menu {
             name: t("menu.help"),
             items: vec![
                 MenuItem::action(

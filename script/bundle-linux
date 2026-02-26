@@ -179,6 +179,9 @@ chmod +x "${bspterm_dir}/share/applications/bspterm$suffix.desktop"
 # Copy generated licenses so they'll end up in archive too
 cp "assets/licenses.md" "${bspterm_dir}/licenses.md"
 
+# Bundle default configuration zip
+script/bundle-default-config "${temp_dir}"
+
 # Create archive out of everything that's in the temp directory
 arch=$(uname -m)
 archive="bspterm-linux-${arch}.tar.gz"
@@ -186,6 +189,6 @@ archive="bspterm-linux-${arch}.tar.gz"
 rm -rf "${archive}"
 remove_match="bspterm(-[a-zA-Z0-9]+)?-linux-$(uname -m)\.tar\.gz"
 ls "${target_dir}/release" | grep -E ${remove_match} | xargs -d "\n" -I {} rm -f "${target_dir}/release/{}" || true
-tar -czvf "${target_dir}/release/$archive" -C ${temp_dir} "bspterm$suffix.app"
+tar -czvf "${target_dir}/release/$archive" -C ${temp_dir} "bspterm$suffix.app" "default_config.zip"
 
 gzip -f --stdout --best "${target_dir}/${remote_server_triple}/release/remote_server" > "${target_dir}/bspterm-remote-server-linux-${arch}.gz"

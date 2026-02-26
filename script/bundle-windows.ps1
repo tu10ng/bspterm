@@ -246,6 +246,11 @@ function CollectFiles {
     }
 }
 
+function BundleDefaultConfig {
+    Write-Output "Creating default_config.zip"
+    & "$PSScriptRoot\bundle-default-config.ps1" -OutputDir $innoDir
+}
+
 function BuildInstaller {
     $issFilePath = "$innoDir\zed.iss"
     switch ($channel) {
@@ -376,6 +381,7 @@ ZipZedAndItsFriendsDebug
 DownloadAMDGpuServices
 DownloadConpty
 CollectFiles
+BundleDefaultConfig
 BuildInstaller
 
 if($env:CI) {

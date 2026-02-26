@@ -19,8 +19,8 @@ The script will:
 import re
 from bspterm import current_terminal, Pane, Session, toast
 
-SSH_USERNAME = "admin"
-SSH_PASSWORD = "Admin@123"
+SSH_USERNAME = "root"
+SSH_PASSWORD = "root"
 
 
 def main():

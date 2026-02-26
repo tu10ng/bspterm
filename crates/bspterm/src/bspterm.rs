@@ -1,4 +1,5 @@
 mod app_menus;
+mod config_import;
 pub mod edit_prediction_registry;
 #[cfg(target_os = "macos")]
 pub(crate) mod mac_only_instance;
@@ -287,6 +288,34 @@ pub fn init(cx: &mut App) {
         with_active_or_new_workspace(cx, |workspace, window, cx| {
             about(workspace, window, cx);
         });
+    })
+    .on_action(|_: &bspterm_actions::ImportDefaultConfig, cx| {
+        let paths_receiver = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some(i18n::t("config.select_config_zip")),
+        });
+
+        cx.spawn(async move |cx| {
+            let paths = match paths_receiver.await {
+                Ok(Ok(Some(paths))) => paths,
+                _ => return,
+            };
+
+            if let Some(path) = paths.first() {
+                let _ = cx.update(|cx| {
+                    match config_import::import_config_from_zip(path, cx) {
+                        Ok(result) => {
+                            log::info!("Config imported: {}", result.summary());
+                        }
+                        Err(e) => {
+                            log::error!("Failed to import config: {}", e);
+                        }
+                    }
+                });
+            }
+        }).detach();
     });
 }
 

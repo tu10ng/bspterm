@@ -24,13 +24,6 @@ const SCRIPT_PANEL_KEY: &str = "ScriptPanel";
 
 const BSPTERM_PY: &[u8] = include_bytes!("../../../assets/scripts/bspterm.py");
 
-const DEFAULT_SCRIPTS: &[(&str, &[u8])] = &[
-    (
-        "ne5000e_mpu_collector.py",
-        include_bytes!("../../../assets/scripts/ne5000e_mpu_collector.py"),
-    ),
-];
-
 fn scripts_dir() -> PathBuf {
     paths::config_dir().join("scripts")
 }
@@ -43,20 +36,13 @@ fn ensure_default_scripts() {
         return;
     }
 
+    // Only install bspterm.py library file (Python SDK that must stay in sync with app version)
+    // User scripts are no longer auto-installed; use "Import Default Config" menu instead
     let bspterm_path = scripts_dir.join("bspterm.py");
     if let Err(e) = std::fs::write(&bspterm_path, BSPTERM_PY) {
         log::error!("Failed to write bspterm.py: {}", e);
     } else {
         log::info!("Installed bspterm.py to {:?}", bspterm_path);
-    }
-
-    for (name, content) in DEFAULT_SCRIPTS {
-        let script_path = scripts_dir.join(name);
-        if let Err(e) = std::fs::write(&script_path, content) {
-            log::error!("Failed to write {}: {}", name, e);
-        } else {
-            log::info!("Installed {} to {:?}", name, script_path);
-        }
     }
 }
 
