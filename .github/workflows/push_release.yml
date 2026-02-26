@@ -21,13 +21,18 @@ jobs:
         run: ./script/linux
 
       - name: Build release
-        run: cargo build --release --package bspterm --package cli
+        run: cargo build --release --package bspterm --package cli --package discovery_server
 
       - name: Package
         run: |
           mkdir -p release-artifacts
           tar -czvf release-artifacts/bspterm-linux-x86_64.tar.gz \
             -C target/release bspterm cli
+          mkdir -p /tmp/discovery_server_pkg
+          cp target/release/discovery_server /tmp/discovery_server_pkg/
+          cp crates/discovery_server/settings.example.json /tmp/discovery_server_pkg/
+          tar -czvf release-artifacts/discovery_server-linux-x86_64.tar.gz \
+            -C /tmp/discovery_server_pkg discovery_server settings.example.json
 
       - uses: actions/upload-artifact@v4
         with:
@@ -44,7 +49,7 @@ jobs:
 
       - name: Build release
         shell: pwsh
-        run: cargo build --release --package bspterm --package cli
+        run: cargo build --release --package bspterm --package cli --package discovery_server
 
       - name: Package
         shell: pwsh
@@ -52,6 +57,8 @@ jobs:
           New-Item -ItemType Directory -Path release-artifacts -Force
           Compress-Archive -Path target/release/bspterm.exe, target/release/cli.exe `
             -DestinationPath release-artifacts/bspterm-windows-x86_64.zip
+          Compress-Archive -Path target/release/discovery_server.exe, crates/discovery_server/settings.example.json `
+            -DestinationPath release-artifacts/discovery_server-windows-x86_64.zip
 
       - uses: actions/upload-artifact@v4
         with:

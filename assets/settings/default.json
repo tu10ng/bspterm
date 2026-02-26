@@ -1386,6 +1386,15 @@
       "max_severity": null,
     },
   },
+  // Central discovery service configuration.
+  // When configured, LAN discovery uses HTTP instead of UDP broadcast,
+  // enabling cross-subnet user discovery.
+  "discovery": {
+    // URL of the central discovery server.
+    // Example: "http://10.0.0.1:53720"
+    // When set to null, UDP broadcast is used (same subnet only).
+    "server_url": null,
+  },
   // Files or globs of files that will be excluded by Zed entirely. They will be skipped during file
   // scans, file searches, and not be displayed in the project file tree. Takes precedence over `file_scan_inclusions`.
   "file_scan_exclusions": [

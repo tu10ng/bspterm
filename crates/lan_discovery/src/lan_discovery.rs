@@ -1,13 +1,17 @@
 mod broadcast;
+mod central;
 mod discovery;
 
 pub use broadcast::{ActiveSessionInfo, SessionProtocol, UserPresenceBroadcast};
 pub use discovery::{
-    DiscoveredUser, GlobalLanDiscovery, LanDiscoveryEntity, LanDiscoveryEvent,
+    DiscoveredUser, DiscoverySettings, GlobalLanDiscovery, LanDiscoveryEntity, LanDiscoveryEvent,
 };
 
-use gpui::App;
+use std::sync::Arc;
 
-pub fn init(cx: &mut App) {
-    LanDiscoveryEntity::init(cx);
+use gpui::App;
+use http_client::HttpClient;
+
+pub fn init(cx: &mut App, http_client: Arc<dyn HttpClient>) {
+    LanDiscoveryEntity::init(cx, http_client);
 }

@@ -57,6 +57,7 @@ members = [
     "crates/denoise",
     "crates/dev_container",
     "crates/diagnostics",
+    "crates/discovery_server",
     "crates/docs_preprocessor",
     "crates/edit_prediction",
     "crates/edit_prediction_types",
@@ -316,6 +317,7 @@ deepseek = { path = "crates/deepseek" }
 derive_refineable = { path = "crates/refineable/derive_refineable" }
 dev_container = { path = "crates/dev_container" }
 diagnostics = { path = "crates/diagnostics" }
+discovery_server = { path = "crates/discovery_server" }
 editor = { path = "crates/editor" }
 editor_panel = { path = "crates/editor_panel" }
 encoding_selector = { path = "crates/encoding_selector" }

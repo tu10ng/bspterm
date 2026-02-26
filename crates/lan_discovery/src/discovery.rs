@@ -6,13 +6,16 @@ use std::time::{Duration, Instant};
 use futures::channel::mpsc;
 use futures::StreamExt;
 use gpui::{App, AppContext as _, Context, Entity, EventEmitter, Global, Task};
+use http_client::HttpClient;
 use local_user::LocalUserStoreEntity;
+use settings::{RegisterSetting, Settings, SettingsContent};
 use uuid::Uuid;
 
 use crate::broadcast::{
     ActiveSessionInfo, UserPresenceBroadcast, BROADCAST_INTERVAL_SECS, LAN_DISCOVERY_PORT,
     USER_TIMEOUT_SECS,
 };
+use crate::central::{CentralDiscoveryClient, UserInfo, UserRegistration};
 
 /// A discovered user on the LAN.
 #[derive(Clone, Debug)]
@@ -37,9 +40,26 @@ impl DiscoveredUser {
         }
     }
 
+    pub fn from_user_info(info: &UserInfo) -> Self {
+        Self {
+            employee_id: info.employee_id.clone(),
+            name: info.name.clone(),
+            instance_id: info.instance_id,
+            ip_addresses: info.ip_addresses.clone(),
+            active_sessions: info.active_sessions.clone(),
+            last_seen: Instant::now(),
+        }
+    }
+
     pub fn update_from_broadcast(&mut self, broadcast: &UserPresenceBroadcast) {
         self.ip_addresses = broadcast.ip_addresses.clone();
         self.active_sessions = broadcast.active_sessions.clone();
+        self.last_seen = Instant::now();
+    }
+
+    pub fn update_from_user_info(&mut self, info: &UserInfo) {
+        self.ip_addresses = info.ip_addresses.clone();
+        self.active_sessions = info.active_sessions.clone();
         self.last_seen = Instant::now();
     }
 
@@ -65,36 +85,44 @@ pub enum LanDiscoveryEvent {
 pub struct GlobalLanDiscovery(pub Entity<LanDiscoveryEntity>);
 impl Global for GlobalLanDiscovery {}
 
+/// Discovery mode.
+enum DiscoveryMode {
+    Udp,
+    Central(Arc<CentralDiscoveryClient>),
+}
+
 /// GPUI Entity for LAN discovery.
 pub struct LanDiscoveryEntity {
     instance_id: Uuid,
     users: HashMap<Uuid, DiscoveredUser>,
     active_sessions: Vec<ActiveSessionInfo>,
-    _broadcast_task: Option<Task<()>>,
-    _listener_task: Option<Task<()>>,
+    _register_task: Option<Task<()>>,
+    _poll_task: Option<Task<()>>,
     _cleanup_task: Option<Task<()>>,
+    _listener_thread_handle: Option<()>,
 }
 
 impl EventEmitter<LanDiscoveryEvent> for LanDiscoveryEntity {}
 
 impl LanDiscoveryEntity {
     /// Initialize global LAN discovery on app startup.
-    pub fn init(cx: &mut App) {
+    pub fn init(cx: &mut App, http_client: Arc<dyn HttpClient>) {
         let instance_id = Uuid::new_v4();
 
         let entity = cx.new(|_| Self {
             instance_id,
             users: HashMap::new(),
             active_sessions: Vec::new(),
-            _broadcast_task: None,
-            _listener_task: None,
+            _register_task: None,
+            _poll_task: None,
             _cleanup_task: None,
+            _listener_thread_handle: None,
         });
 
         cx.set_global(GlobalLanDiscovery(entity.clone()));
 
         entity.update(cx, |this, cx| {
-            this.start(cx);
+            this.start(http_client, cx);
         });
     }
 
@@ -166,7 +194,26 @@ impl LanDiscoveryEntity {
         &self.active_sessions
     }
 
-    fn start(&mut self, cx: &mut Context<Self>) {
+    fn start(&mut self, http_client: Arc<dyn HttpClient>, cx: &mut Context<Self>) {
+        let server_url = DiscoverySettings::get_global(cx).server_url.clone();
+
+        let mode = if let Some(url) = server_url {
+            log::info!("LAN discovery using central server: {}", url);
+            DiscoveryMode::Central(Arc::new(CentralDiscoveryClient::new(url, http_client)))
+        } else {
+            log::info!("LAN discovery using UDP broadcast");
+            DiscoveryMode::Udp
+        };
+
+        match mode {
+            DiscoveryMode::Udp => self.start_udp(cx),
+            DiscoveryMode::Central(client) => self.start_central(client, cx),
+        }
+
+        self.start_cleanup(cx);
+    }
+
+    fn start_udp(&mut self, cx: &mut Context<Self>) {
         let socket = match UdpSocket::bind(SocketAddrV4::new(
             Ipv4Addr::UNSPECIFIED,
             LAN_DISCOVERY_PORT,
@@ -186,15 +233,14 @@ impl LanDiscoveryEntity {
             }
         };
 
-        self.start_broadcaster(socket.clone(), cx);
-        self.start_listener(socket, cx);
-        self.start_cleanup(cx);
+        self.start_udp_broadcaster(socket.clone(), cx);
+        self.start_udp_listener(socket, cx);
     }
 
-    fn start_broadcaster(&mut self, socket: Arc<UdpSocket>, cx: &mut Context<Self>) {
+    fn start_udp_broadcaster(&mut self, socket: Arc<UdpSocket>, cx: &mut Context<Self>) {
         let instance_id = self.instance_id;
 
-        self._broadcast_task = Some(cx.spawn(async move |this, cx| {
+        self._register_task = Some(cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor()
                     .timer(Duration::from_secs(BROADCAST_INTERVAL_SECS))
@@ -234,7 +280,7 @@ impl LanDiscoveryEntity {
         }));
     }
 
-    fn start_listener(&mut self, socket: Arc<UdpSocket>, cx: &mut Context<Self>) {
+    fn start_udp_listener(&mut self, socket: Arc<UdpSocket>, cx: &mut Context<Self>) {
         let instance_id = self.instance_id;
         let (tx, mut rx) = mpsc::unbounded::<UserPresenceBroadcast>();
 
@@ -263,7 +309,9 @@ impl LanDiscoveryEntity {
             }
         });
 
-        self._listener_task = Some(cx.spawn(async move |this, cx| {
+        self._listener_thread_handle = Some(());
+
+        self._poll_task = Some(cx.spawn(async move |this, cx| {
             while let Some(broadcast) = rx.next().await {
                 let _ = cx.update(|cx| {
                     if let Some(entity) = this.upgrade() {
@@ -272,6 +320,81 @@ impl LanDiscoveryEntity {
                         });
                     }
                 });
+            }
+        }));
+    }
+
+    fn start_central(&mut self, client: Arc<CentralDiscoveryClient>, cx: &mut Context<Self>) {
+        self.start_central_register(client.clone(), cx);
+        self.start_central_poll(client, cx);
+    }
+
+    fn start_central_register(
+        &mut self,
+        client: Arc<CentralDiscoveryClient>,
+        cx: &mut Context<Self>,
+    ) {
+        let instance_id = self.instance_id;
+
+        self._register_task = Some(cx.spawn(async move |this, cx| {
+            loop {
+                let registration: Option<UserRegistration> = cx.update(|cx| {
+                    let user_store = LocalUserStoreEntity::try_global(cx)?;
+                    let user_store = user_store.read(cx);
+                    let profile = user_store.profile()?;
+
+                    let active_sessions = this
+                        .upgrade()
+                        .map(|entity| entity.read(cx).active_sessions.clone())
+                        .unwrap_or_default();
+
+                    let ip_addresses = user_store.ip_addresses();
+
+                    Some(UserRegistration {
+                        employee_id: profile.employee_id.clone(),
+                        name: profile.name.clone(),
+                        instance_id,
+                        ip_addresses,
+                        active_sessions,
+                    })
+                });
+
+                if let Some(reg) = registration {
+                    if let Err(e) = client.register(&reg).await {
+                        log::trace!("Failed to register with discovery server: {}", e);
+                    }
+                }
+
+                cx.background_executor()
+                    .timer(Duration::from_secs(BROADCAST_INTERVAL_SECS))
+                    .await;
+            }
+        }));
+    }
+
+    fn start_central_poll(&mut self, client: Arc<CentralDiscoveryClient>, cx: &mut Context<Self>) {
+        let instance_id = self.instance_id;
+
+        self._poll_task = Some(cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_secs(BROADCAST_INTERVAL_SECS))
+                    .await;
+
+                match client.get_users(instance_id).await {
+                    Ok(users) => {
+                        let _ = cx.update(|cx| {
+                            if let Some(entity) = this.upgrade() {
+                                entity.update(cx, |this, cx| {
+                                    this.handle_central_users(users, cx);
+                                });
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        log::trace!("Failed to poll discovery server: {}", e);
+                    }
+                }
             }
         }));
     }
@@ -309,6 +432,37 @@ impl LanDiscoveryEntity {
         cx.notify();
     }
 
+    fn handle_central_users(&mut self, users: Vec<UserInfo>, cx: &mut Context<Self>) {
+        let current_ids: std::collections::HashSet<Uuid> =
+            users.iter().map(|u| u.instance_id).collect();
+
+        for info in users {
+            let instance_id = info.instance_id;
+            if let Some(user) = self.users.get_mut(&instance_id) {
+                user.update_from_user_info(&info);
+                cx.emit(LanDiscoveryEvent::UserUpdated(instance_id));
+            } else {
+                let user = DiscoveredUser::from_user_info(&info);
+                self.users.insert(instance_id, user);
+                cx.emit(LanDiscoveryEvent::UserDiscovered(instance_id));
+            }
+        }
+
+        let offline: Vec<Uuid> = self
+            .users
+            .keys()
+            .filter(|id| !current_ids.contains(id))
+            .copied()
+            .collect();
+
+        for id in offline {
+            self.users.remove(&id);
+            cx.emit(LanDiscoveryEvent::UserOffline(id));
+        }
+
+        cx.notify();
+    }
+
     fn cleanup_expired_users(&mut self, cx: &mut Context<Self>) {
         let expired: Vec<Uuid> = self
             .users
@@ -324,6 +478,20 @@ impl LanDiscoveryEntity {
 
         if !self.users.is_empty() {
             cx.notify();
+        }
+    }
+}
+
+#[derive(Clone, Debug, RegisterSetting)]
+pub struct DiscoverySettings {
+    pub server_url: Option<String>,
+}
+
+impl Settings for DiscoverySettings {
+    fn from_settings(content: &SettingsContent) -> Self {
+        let discovery = content.discovery.clone().unwrap_or_default();
+        Self {
+            server_url: discovery.server_url,
         }
     }
 }

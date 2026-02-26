@@ -1,0 +1,5 @@
+{
+  "discovery": {
+    "server_url": "http://YOUR_SERVER_IP:53720"
+  }
+}

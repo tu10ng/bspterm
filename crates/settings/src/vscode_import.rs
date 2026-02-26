@@ -182,6 +182,7 @@ impl VsCodeSettings {
             debugger: None,
             diagnostics: None,
             disable_ai: None,
+            discovery: None,
             editor: self.editor_settings_content(),
             extension: ExtensionSettingsContent::default(),
             file_finder: None,

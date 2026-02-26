@@ -133,6 +133,10 @@ pub struct SettingsContent {
     /// Configuration for Diagnostics-related features.
     pub diagnostics: Option<DiagnosticsSettingsContent>,
 
+    /// Configuration for central discovery service.
+    /// When configured, enables cross-subnet user discovery.
+    pub discovery: Option<DiscoverySettingsContent>,
+
     /// Configuration for Git-related features
     pub git: Option<GitSettings>,
 
@@ -1115,6 +1119,20 @@ pub struct ReplSettingsContent {
     ///
     /// Default: 0
     pub output_max_width_columns: Option<usize>,
+}
+
+/// Settings for central discovery service.
+/// When configured, LAN discovery uses a central HTTP server instead of UDP broadcast,
+/// allowing user discovery across different subnets.
+#[with_fallible_options]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema, MergeFrom)]
+pub struct DiscoverySettingsContent {
+    /// URL of the central discovery server.
+    /// When set, LAN discovery will use HTTP communication instead of UDP broadcast.
+    /// Example: "http://10.0.0.1:53720"
+    ///
+    /// Default: null (disabled, uses UDP broadcast)
+    pub server_url: Option<String>,
 }
 
 /// Settings for configuring the which-key popup behaviour.

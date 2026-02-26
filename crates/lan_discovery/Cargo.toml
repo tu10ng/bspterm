@@ -16,9 +16,12 @@ doctest = false
 anyhow.workspace = true
 futures.workspace = true
 gpui.workspace = true
+http_client.workspace = true
 local_user.workspace = true
 log.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+settings.workspace = true
+settings_content.workspace = true
 smol.workspace = true
 uuid = { workspace = true, features = ["v4", "serde"] }

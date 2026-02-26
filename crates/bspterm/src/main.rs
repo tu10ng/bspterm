@@ -677,7 +677,7 @@ fn main() {
         terminal_scripting::init(cx);
         terminal_outline::init(cx);
         script_panel::init(cx);
-        lan_discovery::init(cx);
+        lan_discovery::init(cx, cx.http_client());
         lan_messaging::init(cx);
         user_info_panel::init(cx);
         terminal::ActiveSessionTrackerEntity::init(cx);
