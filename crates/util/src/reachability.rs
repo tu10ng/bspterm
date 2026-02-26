@@ -49,7 +49,7 @@ pub async fn detect_ping_config_async() -> Option<PingConfig> {
             PingStyle::LinuxBsd => "1",
             PingStyle::Windows => "1000",
         };
-        let result = smol::process::Command::new("ping")
+        let result = crate::command::new_smol_command("ping")
             .args([
                 config.count_flag,
                 "1",
@@ -95,7 +95,7 @@ pub async fn ping_host_with_timeout(host: &str, config: &PingConfig, timeout_sec
         timeout_secs
     );
 
-    let output = smol::process::Command::new("ping")
+    let output = crate::command::new_smol_command("ping")
         .args([
             config.count_flag,
             "1",
