@@ -2806,17 +2806,42 @@ impl Pane {
                 move |pane: &mut Self, event: &ClickEvent, window, cx| {
                     if event.click_count() > 1 {
                         pane.unpreview_item_if_preview(item_id);
-                        let extra_actions = item_handle.tab_extra_context_menu_actions(window, cx);
-                        if let Some((_, action)) = extra_actions
-                            .into_iter()
-                            .find(|(label, _)| label.as_ref() == "Rename")
-                        {
-                            // Dispatch action directly through the focus handle to avoid
-                            // relay_action's intermediate focus step which can interfere
-                            // with inline editors.
-                            let focus_handle = item_handle.item_focus_handle(cx);
-                            focus_handle.dispatch_action(&*action, window, cx);
-                            return;
+
+                        // Check if item has custom double-click behavior
+                        if let Some(action_label) = item_handle.tab_double_click_action_label(cx) {
+                            // Item specifies custom action
+                            if action_label.is_empty() {
+                                // Empty string = close action
+                                pane.close_item_by_id(item_id, SaveIntent::Close, window, cx)
+                                    .detach_and_log_err(cx);
+                                return;
+                            }
+
+                            let extra_actions =
+                                item_handle.tab_extra_context_menu_actions(window, cx);
+                            if let Some((_, action)) = extra_actions
+                                .into_iter()
+                                .find(|(l, _)| l.as_ref() == action_label.as_ref())
+                            {
+                                let focus_handle = item_handle.item_focus_handle(cx);
+                                focus_handle.dispatch_action(&*action, window, cx);
+                                return;
+                            }
+                        } else {
+                            // Default behavior for non-terminal items: try "Rename"
+                            let extra_actions =
+                                item_handle.tab_extra_context_menu_actions(window, cx);
+                            if let Some((_, action)) = extra_actions
+                                .into_iter()
+                                .find(|(label, _)| label.as_ref() == "Rename")
+                            {
+                                // Dispatch action directly through the focus handle to avoid
+                                // relay_action's intermediate focus step which can interfere
+                                // with inline editors.
+                                let focus_handle = item_handle.item_focus_handle(cx);
+                                focus_handle.dispatch_action(&*action, window, cx);
+                                return;
+                            }
                         }
                     }
                     pane.activate_item(ix, true, true, window, cx)

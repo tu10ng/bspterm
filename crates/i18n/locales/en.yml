@@ -337,6 +337,7 @@ terminal:
   reconnect: "Reconnect"
   disconnect: "Disconnect"
   rename: "Rename"
+  duplicate_connection: "Duplicate Connection"
   clear: "Clear"
   clear_scrollback: "Clear Scrollback"
   export_all_output: "Export All Output"

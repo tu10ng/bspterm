@@ -9,6 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 pub use settings::AlternateScroll;
+pub use settings::TabDoubleClickAction;
 
 use settings::{
     IntoGpui, PathHyperlinkRegex, RegisterSetting, ShowScrollbar, TerminalBlink,
@@ -101,6 +102,7 @@ pub struct TerminalSettings {
     pub notify_on_reconnect: bool,
     pub recently_active_timeout_secs: u64,
     pub ping_timeout_secs: u64,
+    pub tab_double_click_action: TabDoubleClickAction,
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -218,6 +220,9 @@ impl settings::Settings for TerminalSettings {
             notify_on_reconnect: user_content.notify_on_reconnect.unwrap_or(true),
             recently_active_timeout_secs: user_content.recently_active_timeout_secs.unwrap_or(60),
             ping_timeout_secs: user_content.ping_timeout_secs.unwrap_or(10),
+            tab_double_click_action: user_content
+                .tab_double_click_action
+                .unwrap_or(TabDoubleClickAction::Duplicate),
         }
     }
 }

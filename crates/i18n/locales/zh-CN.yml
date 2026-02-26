@@ -337,6 +337,7 @@ terminal:
   reconnect: "重连"
   disconnect: "断开连接"
   rename: "重命名"
+  duplicate_connection: "复制连接"
   clear: "清屏"
   clear_scrollback: "清除回滚缓冲区"
   export_all_output: "导出全部回显"

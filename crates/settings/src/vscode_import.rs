@@ -881,6 +881,7 @@ impl VsCodeSettings {
             notify_on_reconnect: None,
             recently_active_timeout_secs: None,
             ping_timeout_secs: None,
+            tab_double_click_action: None,
         })
     }
 

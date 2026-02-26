@@ -156,6 +156,8 @@ actions!(
         ReconnectTerminal,
         /// Disconnects a connected SSH/Telnet terminal.
         DisconnectTerminal,
+        /// Duplicates the current terminal connection (opens a new terminal with the same configuration).
+        DuplicateTerminal,
         /// Adds a new button to the button bar.
         AddButtonBarButton,
         /// Opens the script file for a button bar button in the editor.
@@ -2391,6 +2393,44 @@ print(output)
         }
     }
 
+    fn duplicate_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let terminal = self.terminal.read(cx);
+        if terminal.task().is_some() {
+            return;
+        }
+
+        let Ok(terminal_task) = self.project.update(cx, |project, cx| {
+            let cwd = project
+                .active_project_directory(cx)
+                .map(|it| it.to_path_buf());
+            project.clone_terminal(&self.terminal, cx, cwd)
+        }) else {
+            return;
+        };
+
+        let workspace = self.workspace.clone();
+        let workspace_id = self.workspace_id;
+        let project = self.project.clone();
+
+        cx.spawn_in(window, async move |_, cx| {
+            let terminal = terminal_task.await?;
+            workspace.update_in(cx, |workspace, window, cx| {
+                let view = cx.new(|cx| {
+                    TerminalView::new(
+                        terminal,
+                        workspace.weak_handle(),
+                        workspace_id,
+                        project,
+                        window,
+                        cx,
+                    )
+                });
+                workspace.add_item_to_active_pane(Box::new(view), None, true, window, cx);
+            })
+        })
+        .detach_and_log_err(cx);
+    }
+
     /// Start the auto-reconnect loop that checks host reachability periodically.
     fn start_auto_reconnect_loop(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Cancel any existing auto-reconnect task
@@ -3067,6 +3107,9 @@ impl Render for TerminalView {
             .on_action(cx.listener(|this, _: &DisconnectTerminal, window, cx| {
                 this.disconnect_terminal(window, cx);
             }))
+            .on_action(cx.listener(|this, _: &DuplicateTerminal, window, cx| {
+                this.duplicate_terminal(window, cx);
+            }))
             .on_action(cx.listener(Self::toggle_button_bar))
             .on_action(cx.listener(Self::configure_button_bar))
             .on_action(cx.listener(Self::add_button_bar_button))
@@ -3362,6 +3405,7 @@ impl Item for TerminalView {
         }
 
         if terminal.task().is_none() {
+            actions.push((t("terminal.duplicate_connection"), Box::new(DuplicateTerminal) as Box<dyn gpui::Action>));
             actions.push((t("terminal.rename"), Box::new(RenameTerminal) as Box<dyn gpui::Action>));
         }
 
@@ -3378,6 +3422,22 @@ impl Item for TerminalView {
             hide_close_all: true,
             hide_read_only_toggle: true,
         }
+    }
+
+    fn tab_double_click_action_label(&self, cx: &App) -> Option<SharedString> {
+        use terminal::terminal_settings::{TabDoubleClickAction, TerminalSettings};
+
+        let terminal = self.terminal.read(cx);
+        if terminal.task().is_some() {
+            return None;
+        }
+
+        let settings = TerminalSettings::get_global(cx);
+        Some(match settings.tab_double_click_action {
+            TabDoubleClickAction::Duplicate => t("terminal.duplicate_connection"),
+            TabDoubleClickAction::Close => SharedString::default(),
+            TabDoubleClickAction::Rename => t("terminal.rename"),
+        })
     }
 
     fn buffer_kind(&self, _: &App) -> workspace::item::ItemBufferKind {

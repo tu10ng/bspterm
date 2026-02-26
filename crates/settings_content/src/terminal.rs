@@ -208,6 +208,10 @@ pub struct TerminalSettingsContent {
     ///
     /// Default: 10
     pub ping_timeout_secs: Option<u64>,
+    /// The action to perform when double-clicking a terminal tab.
+    ///
+    /// Default: duplicate
+    pub tab_double_click_action: Option<TabDoubleClickAction>,
 }
 
 /// Shell configuration to open the terminal with.
@@ -585,6 +589,32 @@ pub enum ActivateScript {
     Nushell,
     PowerShell,
     Pyenv,
+}
+
+/// The action to perform when double-clicking a terminal tab.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    JsonSchema,
+    MergeFrom,
+    strum::VariantArray,
+    strum::VariantNames,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum TabDoubleClickAction {
+    /// Duplicate the terminal connection (opens a new terminal with the same configuration).
+    #[default]
+    Duplicate,
+    /// Close the terminal tab.
+    Close,
+    /// Rename the terminal tab.
+    Rename,
 }
 
 #[cfg(test)]

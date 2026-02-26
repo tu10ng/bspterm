@@ -396,6 +396,15 @@ pub trait Item: Focusable + EventEmitter<Self::Event> + Render + Sized {
     fn tab_context_menu_options(&self, _cx: &App) -> TabContextMenuOptions {
         TabContextMenuOptions::default()
     }
+
+    /// Returns the action label to dispatch on tab double-click.
+    /// - Returns `Some(label)` where label matches a label from `tab_extra_context_menu_actions`
+    ///   to dispatch that action on double-click.
+    /// - Returns `Some("")` (empty string) to trigger close action.
+    /// - Returns `None` to use default behavior (looks for "Rename" action).
+    fn tab_double_click_action_label(&self, _cx: &App) -> Option<SharedString> {
+        None
+    }
 }
 
 pub trait SerializableItem: Item {
@@ -573,6 +582,7 @@ pub trait ItemHandle: 'static + Send {
         cx: &mut App,
     ) -> Vec<(SharedString, Box<dyn Action>)>;
     fn tab_context_menu_options(&self, cx: &App) -> TabContextMenuOptions;
+    fn tab_double_click_action_label(&self, cx: &App) -> Option<SharedString>;
     fn can_autosave(&self, cx: &App) -> bool {
         let is_deleted = self.project_entry_ids(cx).is_empty();
         self.is_dirty(cx) && !self.has_conflict(cx) && self.can_save(cx) && !is_deleted
@@ -1138,6 +1148,10 @@ impl<T: Item> ItemHandle for Entity<T> {
 
     fn tab_context_menu_options(&self, cx: &App) -> TabContextMenuOptions {
         self.read(cx).tab_context_menu_options(cx)
+    }
+
+    fn tab_double_click_action_label(&self, cx: &App) -> Option<SharedString> {
+        self.read(cx).tab_double_click_action_label(cx)
     }
 }
 

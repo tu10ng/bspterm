@@ -6059,9 +6059,31 @@ fn terminal_page() -> SettingsPage {
         ]
     }
 
-    fn behavior_settings_section() -> [SettingsPageItem; 6] {
+    fn behavior_settings_section() -> [SettingsPageItem; 7] {
         [
             SettingsPageItem::SectionHeader("Behavior Settings"),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Tab Double Click Action",
+                description: "The action to perform when double-clicking a terminal tab.",
+                field: Box::new(SettingField {
+                    json_path: Some("terminal.tab_double_click_action"),
+                    pick: |settings_content| {
+                        settings_content
+                            .terminal
+                            .as_ref()?
+                            .tab_double_click_action
+                            .as_ref()
+                    },
+                    write: |settings_content, value| {
+                        settings_content
+                            .terminal
+                            .get_or_insert_default()
+                            .tab_double_click_action = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
             SettingsPageItem::SettingItem(SettingItem {
                 title: "Option As Meta",
                 description: "Whether the option key behaves as the meta key.",
