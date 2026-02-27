@@ -6,6 +6,22 @@ use ui::{prelude::*, Color, Icon, IconName, IconSize, Label, LabelSize, h_flex, 
 const SESSION_ENV_PREFIX_TELNET: &str = "环境";
 const SESSION_ENV_PREFIX_SSH: &str = "后台";
 
+const COMMON_USERNAMES: &[&str] = &[
+    "root", "admin", "administrator", "user", "test", "guest",
+    "huawei", "cisco", "zte", "nokia", "juniper",
+    "oracle", "mysql", "postgres",
+    "ubuntu", "centos", "debian",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TokenType {
+    Ip,
+    Port,
+    Username,
+    Password,
+    Label,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ConnectionProtocol {
     Ssh,
@@ -152,23 +168,40 @@ pub fn parse_connection_text(input: &str) -> Vec<ParsedConnection> {
 
     let mut connections = Vec::new();
 
-    let entries: Vec<&str> = if input.contains('\n') {
-        input.lines().collect()
+    if input.contains('\n') {
+        let lines: Vec<&str> = input.lines().collect();
+
+        if is_multiline_single_connection(&lines) {
+            if let Some(conn) = parse_multiline_connection(&lines) {
+                connections.push(conn);
+                return connections;
+            }
+        }
+
+        for entry in lines {
+            let entry = entry.trim();
+            if entry.is_empty() {
+                continue;
+            }
+
+            if let Some(connection) = parse_single_entry(entry) {
+                connections.push(connection);
+            }
+        }
     } else if input.contains(',') {
-        input.split(',').collect()
-    } else {
-        vec![input]
-    };
+        let entries: Vec<&str> = input.split(',').collect();
+        for entry in entries {
+            let entry = entry.trim();
+            if entry.is_empty() {
+                continue;
+            }
 
-    for entry in entries {
-        let entry = entry.trim();
-        if entry.is_empty() {
-            continue;
+            if let Some(connection) = parse_single_entry(entry) {
+                connections.push(connection);
+            }
         }
-
-        if let Some(connection) = parse_single_entry(entry) {
-            connections.push(connection);
-        }
+    } else if let Some(connection) = parse_single_entry(input) {
+        connections.push(connection);
     }
 
     connections
@@ -266,11 +299,17 @@ fn parse_single_entry(entry: &str) -> Option<ParsedConnection> {
     let name = trimmed[..host_port_end].trim().to_string();
 
     let remaining = trimmed[host_port_end..].trim();
-    let (username, password, custom_port) = parse_credentials_flexible(remaining);
+    let (username, password, custom_port, label) = parse_credentials_flexible(remaining);
 
     if let Some(p) = custom_port {
         port = p;
     }
+
+    let final_name = if let Some(extra_label) = label {
+        format!("{} {}", name, extra_label)
+    } else {
+        name
+    };
 
     let protocol = if port == 22 {
         ConnectionProtocol::Ssh
@@ -279,7 +318,7 @@ fn parse_single_entry(entry: &str) -> Option<ParsedConnection> {
     };
 
     Some(ParsedConnection {
-        name: Some(name),
+        name: Some(final_name),
         host: host.to_string(),
         port,
         protocol,
@@ -341,38 +380,73 @@ fn find_ipv4_position(input: &str) -> Option<(usize, usize)> {
     None
 }
 
-fn parse_credentials_flexible(input: &str) -> (Option<String>, Option<String>, Option<u16>) {
+fn parse_credentials_flexible(input: &str) -> (Option<String>, Option<String>, Option<u16>, Option<String>) {
     let input = input.trim();
     if input.is_empty() {
-        return (None, None, None);
+        return (None, None, None, None);
     }
 
     if input.contains('\t') {
         let parts: Vec<&str> = input.split('\t').collect();
         let username = parts.first().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
         let password = parts.get(1).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-        return (username, password, None);
+        return (username, password, None, None);
     }
 
     if let Some((user, pass)) = input.split_once('/') {
         let user = user.trim();
         let pass = pass.trim();
         if !user.is_empty() {
-            return (Some(user.to_string()), if pass.is_empty() { None } else { Some(pass.to_string()) }, None);
+            return (Some(user.to_string()), if pass.is_empty() { None } else { Some(pass.to_string()) }, None, None);
         }
     }
 
     let parts: Vec<&str> = input.split_whitespace().collect();
-    match parts.len() {
-        0 => (None, None, None),
-        1 => (Some(parts[0].to_string()), None, None),
-        2 => (Some(parts[0].to_string()), Some(parts[1].to_string()), None),
-        3 => {
-            let port = parts[2].parse::<u16>().ok();
-            (Some(parts[0].to_string()), Some(parts[1].to_string()), port)
-        }
-        _ => (Some(parts[0].to_string()), Some(parts[1].to_string()), None),
+    if parts.is_empty() {
+        return (None, None, None, None);
     }
+
+    let mut username: Option<String> = None;
+    let mut password: Option<String> = None;
+    let mut port: Option<u16> = None;
+    let mut labels: Vec<String> = Vec::new();
+
+    for part in parts {
+        let token_type = classify_token(part);
+        match token_type {
+            TokenType::Username => {
+                if username.is_none() {
+                    username = Some(part.to_string());
+                } else if password.is_none() {
+                    password = Some(part.to_string());
+                } else {
+                    labels.push(part.to_string());
+                }
+            }
+            TokenType::Password => {
+                if password.is_none() {
+                    password = Some(part.to_string());
+                }
+            }
+            TokenType::Port => {
+                if port.is_none() {
+                    port = part.parse().ok();
+                }
+            }
+            TokenType::Label => {
+                labels.push(part.to_string());
+            }
+            TokenType::Ip => {}
+        }
+    }
+
+    let label = if labels.is_empty() {
+        None
+    } else {
+        Some(labels.join(" "))
+    };
+
+    (username, password, port, label)
 }
 
 fn is_valid_ipv4(s: &str) -> bool {
@@ -392,6 +466,148 @@ fn is_valid_hostname(s: &str) -> bool {
     }
 
     s.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '.')
+}
+
+fn is_common_username(s: &str) -> bool {
+    let lower = s.to_lowercase();
+    COMMON_USERNAMES.iter().any(|u| *u == lower)
+}
+
+fn starts_with_common_username(s: &str) -> bool {
+    let lower = s.to_lowercase();
+    COMMON_USERNAMES.iter().any(|u| lower.starts_with(*u))
+}
+
+fn is_likely_username(s: &str) -> bool {
+    if is_likely_password(s) {
+        return false;
+    }
+    if is_common_username(s) {
+        return true;
+    }
+    if starts_with_common_username(s) && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return true;
+    }
+    if s.len() < 3 || s.len() > 20 {
+        return false;
+    }
+    s.chars().all(|c| c.is_ascii_alphabetic() || c == '_' || c == '-')
+}
+
+fn is_likely_password(s: &str) -> bool {
+    let special_chars = "@!#$%^&*()_+-=[]{}|;':\",./<>?~`";
+    if s.chars().any(|c| special_chars.contains(c)) {
+        return true;
+    }
+    if s.len() >= 8 {
+        let has_upper = s.chars().any(|c| c.is_ascii_uppercase());
+        let has_lower = s.chars().any(|c| c.is_ascii_lowercase());
+        let has_digit = s.chars().any(|c| c.is_ascii_digit());
+        if (has_upper && has_lower) || (has_upper && has_digit) || (has_lower && has_digit) {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_likely_label(s: &str) -> bool {
+    if !s.is_ascii() {
+        return true;
+    }
+    let has_alpha = s.chars().any(|c| c.is_ascii_alphabetic());
+    let has_digit = s.chars().any(|c| c.is_ascii_digit());
+    if has_alpha && has_digit && !is_valid_ipv4(s) && !is_common_username(s) {
+        return true;
+    }
+    false
+}
+
+fn classify_token(token: &str) -> TokenType {
+    if is_valid_ipv4(token) {
+        return TokenType::Ip;
+    }
+    if token.chars().all(|c| c.is_ascii_digit()) && !token.is_empty() {
+        if token.parse::<u16>().is_ok() {
+            return TokenType::Port;
+        }
+    }
+    if is_likely_password(token) {
+        return TokenType::Password;
+    }
+    if is_likely_username(token) {
+        return TokenType::Username;
+    }
+    if is_likely_label(token) {
+        return TokenType::Label;
+    }
+    TokenType::Username
+}
+
+fn is_multiline_single_connection(lines: &[&str]) -> bool {
+    if lines.len() < 2 || lines.len() > 4 {
+        return false;
+    }
+
+    let first_line = lines[0].trim();
+    if find_ipv4_position(first_line).is_none() {
+        return false;
+    }
+
+    for line in &lines[1..] {
+        let trimmed = line.trim();
+        if find_ipv4_position(trimmed).is_some() {
+            return false;
+        }
+    }
+
+    true
+}
+
+fn parse_multiline_connection(lines: &[&str]) -> Option<ParsedConnection> {
+    let first_line = lines[0].trim();
+    let mut conn = parse_single_entry(first_line)?;
+
+    let mut username: Option<String> = None;
+    let mut password: Option<String> = None;
+
+    for line in &lines[1..] {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let token_type = classify_token(trimmed);
+        match token_type {
+            TokenType::Username => {
+                if username.is_none() {
+                    username = Some(trimmed.to_string());
+                } else if password.is_none() {
+                    password = Some(trimmed.to_string());
+                }
+            }
+            TokenType::Password => {
+                if password.is_none() {
+                    password = Some(trimmed.to_string());
+                }
+            }
+            _ => {
+                if username.is_none() {
+                    username = Some(trimmed.to_string());
+                } else if password.is_none() {
+                    password = Some(trimmed.to_string());
+                }
+            }
+        }
+    }
+
+    if username.is_some() {
+        conn.username = username;
+    }
+    if password.is_some() {
+        conn.password = password;
+    }
+
+    Some(conn)
 }
 
 #[cfg(test)]
@@ -629,11 +845,84 @@ mod tests {
 
     #[test]
     fn test_parse_credentials_flexible() {
-        assert_eq!(parse_credentials_flexible(""), (None, None, None));
-        assert_eq!(parse_credentials_flexible("user/pass"), (Some("user".to_string()), Some("pass".to_string()), None));
-        assert_eq!(parse_credentials_flexible("user\tpass"), (Some("user".to_string()), Some("pass".to_string()), None));
-        assert_eq!(parse_credentials_flexible("user pass"), (Some("user".to_string()), Some("pass".to_string()), None));
-        assert_eq!(parse_credentials_flexible("user"), (Some("user".to_string()), None, None));
-        assert_eq!(parse_credentials_flexible("user pass 2323"), (Some("user".to_string()), Some("pass".to_string()), Some(2323)));
+        assert_eq!(parse_credentials_flexible(""), (None, None, None, None));
+        assert_eq!(parse_credentials_flexible("user/pass"), (Some("user".to_string()), Some("pass".to_string()), None, None));
+        assert_eq!(parse_credentials_flexible("user\tpass"), (Some("user".to_string()), Some("pass".to_string()), None, None));
+        assert_eq!(parse_credentials_flexible("user pass"), (Some("user".to_string()), Some("pass".to_string()), None, None));
+        assert_eq!(parse_credentials_flexible("user"), (Some("user".to_string()), None, None, None));
+        assert_eq!(parse_credentials_flexible("user pass 2323"), (Some("user".to_string()), Some("pass".to_string()), Some(2323), None));
+    }
+
+    #[test]
+    fn test_multiline_ip_name_user_pass() {
+        let input = "6.6.62.23 slot23\nhuawei\nRouter@202508";
+        let result = parse_connection_text(input);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].host, "6.6.62.23");
+        assert!(result[0].name.as_ref().unwrap().contains("slot23"));
+        assert_eq!(result[0].username, Some("huawei".to_string()));
+        assert_eq!(result[0].password, Some("Router@202508".to_string()));
+    }
+
+    #[test]
+    fn test_smart_credential_detection() {
+        let input = "6.6.62.23 root123 Root@123 slot23";
+        let result = parse_connection_text(input);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].host, "6.6.62.23");
+        assert_eq!(result[0].username, Some("root123".to_string()));
+        assert_eq!(result[0].password, Some("Root@123".to_string()));
+        assert!(result[0].name.as_ref().unwrap().contains("slot23"));
+    }
+
+    #[test]
+    fn test_chinese_prefix_with_credentials() {
+        let input = "管理网口192.168.1.1 huawei Admin@123";
+        let result = parse_connection_text(input);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].name.as_ref().unwrap().contains("管理网口"));
+        assert_eq!(result[0].host, "192.168.1.1");
+        assert_eq!(result[0].username, Some("huawei".to_string()));
+        assert_eq!(result[0].password, Some("Admin@123".to_string()));
+    }
+
+    #[test]
+    fn test_is_likely_password() {
+        assert!(is_likely_password("Root@123"));
+        assert!(is_likely_password("Admin#456"));
+        assert!(is_likely_password("Password1!"));
+        assert!(!is_likely_password("root"));
+        assert!(!is_likely_password("admin"));
+    }
+
+    #[test]
+    fn test_is_likely_username() {
+        assert!(is_likely_username("root"));
+        assert!(is_likely_username("admin"));
+        assert!(is_likely_username("huawei"));
+        assert!(is_likely_username("user123"));
+        assert!(!is_likely_username("Root@123"));
+    }
+
+    #[test]
+    fn test_classify_token() {
+        assert_eq!(classify_token("192.168.1.1"), TokenType::Ip);
+        assert_eq!(classify_token("22"), TokenType::Port);
+        assert_eq!(classify_token("root"), TokenType::Username);
+        assert_eq!(classify_token("Admin@123"), TokenType::Password);
+        assert_eq!(classify_token("slot23"), TokenType::Label);
+        assert_eq!(classify_token("管理网口"), TokenType::Label);
+    }
+
+    #[test]
+    fn test_multiline_single_connection_detection() {
+        let lines: Vec<&str> = vec!["6.6.62.23 slot23", "huawei", "Router@202508"];
+        assert!(is_multiline_single_connection(&lines));
+
+        let lines: Vec<&str> = vec!["192.168.1.1", "192.168.1.2"];
+        assert!(!is_multiline_single_connection(&lines));
+
+        let lines: Vec<&str> = vec!["no ip here", "huawei", "pass"];
+        assert!(!is_multiline_single_connection(&lines));
     }
 }

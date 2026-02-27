@@ -372,15 +372,28 @@ The `remote_explorer` crate (`crates/remote_explorer`) provides a panel for brow
 
 ### Quick Add Area (`crates/remote_explorer/src/quick_add/`)
 
-Auto-recognize input supports flexible IP detection anywhere in the string:
+Auto-recognize input supports flexible IP detection anywhere in the string with smart credential detection:
 
 | Format | Example | Result |
 |--------|---------|--------|
-| IP only | `192.168.1.1` | Telnet:23 |
-| IP:port | `192.168.1.1:22` | SSH:22 |
-| With credentials | `192.168.1.1 root/pass` | Telnet with auth |
-| Name prefix | `管理网口192.168.1.1` | Name includes prefix |
+| IP only | `192.168.1.1` | Telnet:23, grouped by IP |
+| IP:port | `192.168.1.1:22` | SSH:22, grouped by IP |
+| With credentials | `192.168.1.1 root pass` | Telnet with auth |
+| Smart credentials | `192.168.1.1 root123 Root@123` | user=root123, pass=Root@123 |
+| With label | `192.168.1.1 root Root@123 slot23` | Name includes "slot23" |
+| Name prefix | `管理网口192.168.1.1 huawei Admin@123` | Name=管理网口, with auth |
+| Multi-line | `6.6.62.23 slot23\nhuawei\nRouter@202508` | Single connection with credentials |
 | Bulk (环境/后台) | `环境192.168.1.1\troot\tpass` | Telnet, grouped by IP |
+
+**Session Grouping:** All quick-add sessions are automatically placed in a group named after the IP address.
+
+**Smart Token Classification:**
+- **Username**: Common names (root, admin, huawei, cisco) or names starting with them (root123)
+- **Password**: Contains special characters (@!#$%) or has complexity (mixed case + digits)
+- **Label**: Contains non-ASCII (中文) or alphanumeric mix (slot23)
+- **Port**: Pure digits 1-65535
+
+**Multi-line Format:** If input has multiple lines but only the first contains an IP, subsequent lines are parsed as credentials.
 
 **Credential separators:** tab, slash, or space. **Bulk import:** `环境` = Telnet, `后台` = SSH.
 

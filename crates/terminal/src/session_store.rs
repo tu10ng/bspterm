@@ -788,6 +788,30 @@ impl SessionStoreEntity {
         }
     }
 
+    /// Find a group by name at root level.
+    pub fn find_group_by_name(&self, name: &str) -> Option<Uuid> {
+        self.store.root.iter().find_map(|node| {
+            if let SessionNode::Group(g) = node {
+                if g.name == name {
+                    return Some(g.id);
+                }
+            }
+            None
+        })
+    }
+
+    /// Get or create a group by name at root level.
+    /// Returns the group's UUID.
+    pub fn get_or_create_group_by_name(&mut self, name: &str, cx: &mut Context<Self>) -> Uuid {
+        if let Some(id) = self.find_group_by_name(name) {
+            return id;
+        }
+        let group = SessionGroup::new(name);
+        let id = group.id;
+        self.add_group(group, None, cx);
+        id
+    }
+
     fn schedule_save(&mut self, cx: &mut Context<Self>) {
         let store = self.store.clone();
         self.save_task = Some(cx.spawn(async move |_, _| {

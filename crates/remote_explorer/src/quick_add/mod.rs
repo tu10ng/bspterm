@@ -206,8 +206,12 @@ impl QuickAddArea {
                 let session_config =
                     terminal::SessionConfig::new_telnet(session_name, config.clone());
 
+                let group_id = self.session_store.update(cx, |store, cx| {
+                    store.get_or_create_group_by_name(&connection.host, cx)
+                });
+
                 self.session_store.update(cx, |store, cx| {
-                    store.add_session(session_config, None, cx);
+                    store.add_session(session_config, Some(group_id), cx);
                 });
 
                 if let (Some(workspace), Some(pane)) = (workspace.upgrade(), pane) {
@@ -236,8 +240,12 @@ impl QuickAddArea {
                 let session_config =
                     terminal::SessionConfig::new_ssh(session_name, ssh_config.clone());
 
+                let group_id = self.session_store.update(cx, |store, cx| {
+                    store.get_or_create_group_by_name(&connection.host, cx)
+                });
+
                 self.session_store.update(cx, |store, cx| {
-                    store.add_session(session_config, None, cx);
+                    store.add_session(session_config, Some(group_id), cx);
                 });
 
                 if let (Some(workspace), Some(pane)) = (workspace.upgrade(), pane) {
