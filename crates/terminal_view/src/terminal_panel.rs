@@ -26,6 +26,7 @@ use ui::{
     ButtonLike, Clickable, ContextMenu, FluentBuilder, PopoverMenu, SplitButton, Toggleable,
     Tooltip, prelude::*,
 };
+use search;
 use util::{ResultExt, TryFutureExt};
 use workspace::{
     ActivateNextPane, ActivatePane, ActivatePaneDown, ActivatePaneLeft, ActivatePaneRight,
@@ -183,11 +184,14 @@ impl TerminalPanel {
                             }),
                     )
                     .child(
-                        IconButton::new("ssh-connect", IconName::Server)
+                        IconButton::new("search", IconName::MagnifyingGlass)
                             .icon_size(IconSize::Small)
-                            .tooltip(Tooltip::text(t("terminal_panel.connect_ssh")))
+                            .tooltip(Tooltip::text(t("menu.find")))
                             .on_click(|_, window, cx| {
-                                window.dispatch_action(ConnectSsh.boxed_clone(), cx);
+                                window.dispatch_action(
+                                    Box::new(search::buffer_search::Deploy::find()),
+                                    cx,
+                                );
                             }),
                     )
                     .children(assistant_tab_bar_button.clone())

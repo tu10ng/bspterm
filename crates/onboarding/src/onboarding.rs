@@ -27,7 +27,6 @@ use workspace::{
 };
 use bspterm_actions::OpenOnboarding;
 
-mod base_keymap_picker;
 mod basics_page;
 pub mod multibuffer_hint;
 mod theme_preview;
@@ -171,8 +170,6 @@ pub fn init(cx: &mut App) {
         });
     })
     .detach();
-
-    base_keymap_picker::init(cx);
 
     register_serializable_item::<Onboarding>(cx);
     register_serializable_item::<WelcomePage>(cx);

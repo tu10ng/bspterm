@@ -303,26 +303,11 @@ pub struct ExtensionsSettingsContent {
 pub enum BaseKeymapContent {
     #[default]
     VSCode,
-    JetBrains,
-    SublimeText,
-    Atom,
-    TextMate,
-    Emacs,
-    Cursor,
     None,
 }
 
 impl strum::VariantNames for BaseKeymapContent {
-    const VARIANTS: &'static [&'static str] = &[
-        "VSCode",
-        "JetBrains",
-        "Sublime Text",
-        "Atom",
-        "TextMate",
-        "Emacs",
-        "Cursor",
-        "None",
-    ];
+    const VARIANTS: &'static [&'static str] = &["VSCode", "None"];
 }
 
 #[with_fallible_options]

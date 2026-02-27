@@ -35,7 +35,10 @@ use workspace::Workspace;
 use std::mem;
 use std::{fmt::Debug, ops::RangeInclusive, rc::Rc};
 
-use crate::{BlockContext, BlockProperties, ContentMode, TerminalMode, TerminalView};
+use crate::{
+    BlockContext, BlockProperties, ContentMode, RowDecoration, RowDecorator, TerminalMode,
+    TerminalView, TimestampGapDecorator,
+};
 
 /// Gutter dimensions for line numbers and timestamps.
 #[derive(Clone, Debug)]
@@ -68,6 +71,7 @@ struct GutterLineEntry {
     line_number: Option<ShapedLine>,
     timestamp: Option<ShapedLine>,
     is_cursor_line: bool,
+    decorations: Vec<RowDecoration>,
 }
 
 /// The information generated during layout that is necessary for painting.
@@ -561,6 +565,7 @@ impl TerminalElement {
         gutter_settings: &GutterSettings,
         text_style: &TextStyle,
         theme: &Theme,
+        painters: &mut [Box<dyn RowDecorator>],
         window: &mut Window,
         _cx: &App,
     ) -> (TerminalGutterDimensions, Vec<GutterLineEntry>) {
@@ -641,9 +646,14 @@ impl TerminalElement {
             total_width,
         };
 
+        // Reset all painters at start of layout pass
+        for painter in painters.iter_mut() {
+            painter.reset();
+        }
+
         let mut entries = Vec::with_capacity(visible_rows.len());
 
-        for screen_row in visible_rows {
+        for (row_index, screen_row) in visible_rows.clone().enumerate() {
             let grid_line = screen_row - display_offset as i32;
 
             let is_cursor_line = vi_mode && grid_line == cursor_line;
@@ -715,10 +725,17 @@ impl TerminalElement {
                 None
             };
 
+            // Collect decorations from all painters
+            let mut decorations = Vec::new();
+            for painter in painters.iter_mut() {
+                decorations.extend(painter.layout(row_index, grid_line, terminal));
+            }
+
             entries.push(GutterLineEntry {
                 line_number,
                 timestamp,
                 is_cursor_line,
+                decorations,
             });
         }
 
@@ -729,6 +746,7 @@ impl TerminalElement {
         gutter_dimensions: &TerminalGutterDimensions,
         gutter_entries: &[GutterLineEntry],
         bounds: Bounds<Pixels>,
+        content_bounds: Bounds<Pixels>,
         line_height: Pixels,
         scroll_top: Pixels,
         gutter_background: Hsla,
@@ -748,6 +766,23 @@ impl TerminalElement {
         let mut y = bounds.origin.y - scroll_top;
 
         for entry in gutter_entries {
+            // Paint decorations (separator lines) before the row content
+            for decoration in &entry.decorations {
+                match decoration {
+                    RowDecoration::Separator { color, thickness } => {
+                        // Draw separator line spanning from gutter to content edge
+                        let separator_y = y - *thickness / 2.;
+                        let full_width =
+                            content_bounds.origin.x + content_bounds.size.width - bounds.origin.x;
+                        let line_bounds = Bounds {
+                            origin: point(bounds.origin.x, separator_y),
+                            size: size(full_width, *thickness),
+                        };
+                        window.paint_quad(fill(line_bounds, *color));
+                    }
+                }
+            }
+
             if let Some(ref line_number) = entry.line_number {
                 let x = bounds.origin.x
                     + gutter_dimensions.left_padding
@@ -1238,6 +1273,11 @@ impl Element for TerminalElement {
 
                     let visible_rows = 0..(screen_lines as i32);
 
+                    // Initialize row decorators
+                    let mut painters: Vec<Box<dyn RowDecorator>> = vec![Box::new(
+                        TimestampGapDecorator::new(10, theme.colors().border),
+                    )];
+
                     let (gutter_dims, gutter_entries) = Self::layout_gutter(
                         terminal,
                         visible_rows,
@@ -1248,6 +1288,7 @@ impl Element for TerminalElement {
                         &gutter_settings,
                         &text_style,
                         &theme,
+                        &mut painters,
                         window,
                         cx,
                     );
@@ -1543,6 +1584,7 @@ impl Element for TerminalElement {
                 &layout.gutter_dimensions,
                 &layout.gutter_entries,
                 bounds,
+                layout.dimensions.bounds,
                 layout.dimensions.line_height,
                 scroll_top,
                 gutter_background,

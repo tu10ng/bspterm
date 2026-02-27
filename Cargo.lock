@@ -18440,6 +18440,7 @@ dependencies = [
  "regex",
  "schemars",
  "script_panel",
+ "search",
  "serde",
  "serde_json",
  "settings",

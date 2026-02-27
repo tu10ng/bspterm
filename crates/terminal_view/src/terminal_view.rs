@@ -1,5 +1,6 @@
 mod abbr_bar;
 mod button_bar;
+mod row_decorator;
 mod persistence;
 mod shortcut_bar;
 mod ssh_connect_modal;
@@ -8,6 +9,8 @@ pub mod terminal_panel;
 mod terminal_path_like_target;
 pub mod terminal_scrollbar;
 mod terminal_slash_command;
+
+pub use row_decorator::*;
 
 use button_bar::script_runner::ScriptStatus;
 
@@ -57,6 +60,7 @@ use ui::{
     scrollbars::{self, GlobalSetting, ScrollbarVisibility},
 };
 use i18n::t;
+use search::buffer_search;
 use util::ResultExt;
 use workspace::{
     CloseActiveItem, NewCenterTerminal, NewTerminal, Toast, ToolbarItemLocation, Workspace,
@@ -723,6 +727,7 @@ impl TerminalView {
                 .action(t("menu.copy"), Box::new(Copy))
                 .action(t("menu.paste"), Box::new(Paste))
                 .action(t("menu.select_all"), Box::new(SelectAll))
+                .action(t("menu.find"), Box::new(buffer_search::Deploy::find()))
                 .action(t("terminal.clear"), Box::new(Clear))
                 .action(t("terminal.export_all_output"), Box::new(ExportOutputToBuffer))
                 .when(assistant_enabled, |menu| {

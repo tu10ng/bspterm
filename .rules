@@ -316,9 +316,15 @@ When `send_keybindings_to_shell` setting is enabled, keystrokes are intercepted 
 
 - `terminal::SendKeystroke` and `terminal::SendText` are always sent to the shell, even with Terminal context
 
+### Terminal Search
+
+Search functionality is available in the terminal via:
+- **Context menu**: Right-click → "Find" (uses `buffer_search::Deploy::find()`)
+- **Toolbar button**: Search icon (magnifying glass) in terminal panel tab bar
+
 ## Terminal Gutter
 
-The terminal gutter displays line numbers and timestamps in the left margin (`crates/terminal_view/src/terminal_element.rs`).
+The terminal gutter displays line numbers, timestamps, and separator lines in the left margin (`crates/terminal_view/src/terminal_element.rs`, `crates/terminal_view/src/row_decorator.rs`).
 
 ### Display Logic
 
@@ -329,11 +335,31 @@ Both line numbers and timestamps only appear on lines that have actual content (
 | Line numbers | `get_line_timestamp().is_some()` | Only on lines with output |
 | Timestamps | `get_line_timestamp().is_some()` | Only on lines with output |
 | Empty lines | No timestamp | No gutter content displayed |
+| Gap separators | Timestamp gap >10s | Horizontal line between rows |
+
+### Row Decorator System
+
+The gutter supports pluggable decorations via the `RowDecorator` trait (`row_decorator.rs`):
+
+```rust
+pub trait RowDecorator: Send + Sync {
+    fn layout(&mut self, row_index: usize, grid_line: i32, terminal: &Terminal) -> Vec<RowDecoration>;
+    fn reset(&mut self);
+}
+```
+
+**Built-in Decorators:**
+- `TimestampGapDecorator`: Draws horizontal separator lines between output lines when the timestamp gap exceeds 10 seconds
+
+**Adding New Decorators:**
+1. Implement `RowDecorator` trait
+2. Add to painters vec in `TerminalElement::prepaint()`
+3. Decorations are collected in `layout_gutter()` and painted in `paint_gutter()`
 
 ### Key Functions
 
-- `layout_gutter()`: Calculates gutter dimensions and creates `GutterLineEntry` for each visible row
-- `paint_gutter()`: Renders line numbers and timestamps based on `GutterLineEntry` data
+- `layout_gutter()`: Calculates gutter dimensions, creates `GutterLineEntry` for each visible row, and collects decorations from painters
+- `paint_gutter()`: Renders decorations, line numbers, and timestamps based on `GutterLineEntry` data
 - `get_line_timestamp()`: Returns `Option<DateTime>` indicating if a line has content
 
 ### Settings
@@ -640,6 +666,25 @@ When ACP fails, detailed logs help diagnose the issue:
 [INFO] Attempting Terminal mode fallback for 'codeagent'...
 [INFO] Terminal mode connection established for 'codeagent'
 ```
+
+## Base Keymap Configuration
+
+The base keymap setting has been simplified to only support two options (`crates/settings/src/base_keymap_setting.rs`):
+
+| Option | Description |
+|--------|-------------|
+| `VSCode` (default) | VS Code-style keybindings |
+| `None` | No base keymap, only user-defined bindings |
+
+Other editor keymaps (JetBrains, Sublime Text, Atom, Emacs, Cursor, TextMate) have been removed.
+
+**Keymap Files Kept:**
+- `assets/keymaps/default-linux.json`
+- `assets/keymaps/default-macos.json`
+- `assets/keymaps/default-windows.json`
+- `assets/keymaps/vim.json`
+- `assets/keymaps/initial.json`
+- `assets/keymaps/storybook.json`
 
 ## Zed 遗留命名
 
