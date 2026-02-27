@@ -3,12 +3,15 @@ pub mod active_session_tracker;
 pub mod button_bar_config;
 pub mod command_history;
 pub mod connection;
+pub mod highlight_rule;
+pub mod highlight_store;
 pub mod mappings;
 pub mod rule_engine;
 pub mod rule_store;
 pub mod session_logger;
 pub mod session_store;
 pub mod shortcut_bar_store;
+pub mod terminal_lsp;
 
 pub use alacritty_terminal;
 
@@ -46,6 +49,19 @@ pub use active_session_tracker::{
 pub use command_history::{CommandHistory, TerminalCommand};
 
 pub use session_logger::{SessionLogger, SessionMetadata};
+
+pub use highlight_rule::{
+    HighlightProtocol, HighlightRule, SemanticToken, TerminalTokenModifiers, TerminalTokenType,
+};
+
+pub use highlight_store::{
+    GlobalHighlightStore, HighlightStore, HighlightStoreEntity, HighlightStoreEvent,
+};
+
+pub use terminal_lsp::{
+    CompiledRule, TerminalDocument, TerminalLanguageServer, default_token_color,
+    default_token_modifiers,
+};
 
 pub use crate::connection::ssh::{SshAuthConfig, SshConfig};
 pub use crate::connection::telnet::TelnetConfig;

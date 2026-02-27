@@ -39,9 +39,9 @@ use std::{
 };
 use task::TaskId;
 use terminal::{
-    Clear, ClearScrollback, Copy, Event, HoveredWord, MaybeNavigationTarget, Paste, ScrollLineDown,
-    ScrollLineUp, ScrollPageDown, ScrollPageUp, ScrollToBottom, ScrollToTop, ShowCharacterPalette,
-    TaskState, TaskStatus, Terminal, TerminalBounds, ToggleViMode,
+    Clear, ClearScrollback, Copy, Event, HighlightStoreEntity, HoveredWord, MaybeNavigationTarget,
+    Paste, ScrollLineDown, ScrollLineUp, ScrollPageDown, ScrollPageUp, ScrollToBottom, ScrollToTop,
+    ShowCharacterPalette, TaskState, TaskStatus, Terminal, TerminalBounds, ToggleViMode,
     alacritty_terminal::{
         index::Point as AlacPoint,
         term::{TermMode, point_to_viewport, search::RegexSearch},
@@ -188,6 +188,7 @@ pub fn init(cx: &mut App) {
     ButtonBarStoreEntity::init(cx);
     AbbreviationStoreEntity::init(cx);
     ShortcutBarStoreEntity::init(cx);
+    HighlightStoreEntity::init(cx);
 
     fn ensure_session_log_directory(cx: &App) {
         let settings = TerminalSettings::get_global(cx);

@@ -578,6 +578,69 @@ let visible = store.abbreviations_for_protocol(protocol.as_ref());
 
 **Persistence:** `~/.config/bspterm/abbreviations.json`
 
+## Terminal Semantic Highlighting
+
+Regex-based semantic highlighting for terminal output (`crates/terminal/src/highlight_rule.rs`, `crates/terminal/src/highlight_store.rs`, `crates/terminal/src/terminal_lsp.rs`).
+
+### Data Structures
+
+- `TerminalTokenType`: Semantic token types (Error, Warning, Info, Debug, Timestamp, IpAddress, Url, Path, Number, Success, Custom)
+- `TerminalTokenModifiers`: Bitfield for styles (Bold, Italic, Underline, Dim, Strikethrough)
+- `HighlightProtocol`: Protocol filter enum (`All`, `Ssh`, `Telnet`, `Local`)
+- `HighlightRule`: Rule definition with pattern, token type, modifiers, priority, colors, protocol filter
+- `SemanticToken`: Highlighted region with position (line, start_col, length) and styling
+
+### HighlightStore
+
+- `HighlightStore`: Rule collection with version, enabled flag, CRUD operations
+- `HighlightStoreEntity`: GPUI entity with auto-save and event emission
+- `HighlightStoreEvent`: Events (Changed, RuleAdded, RuleRemoved, HighlightingToggled)
+
+**Usage:** `HighlightStoreEntity::init(cx)` on startup, then `HighlightStoreEntity::global(cx)` to access.
+
+### TerminalLanguageServer
+
+Pattern matching engine in `terminal_lsp.rs`:
+- `CompiledRule`: Pre-compiled regex with case-insensitivity support
+- `compute_line_tokens()`: Match rules against line, return `Vec<SemanticToken>`
+- Priority-based evaluation (higher priority first, no overlapping tokens)
+- Protocol filtering for connection-specific rules
+
+### Default Rules
+
+| Rule | Priority | Pattern Example |
+|------|----------|-----------------|
+| Error keywords | 100 | `\b(error|fail(ed)?|fatal|critical)\b` |
+| Warning keywords | 90 | `\b(warn(ing)?|caution|deprecated)\b` |
+| Success keywords | 85 | `\b(success(ful)?|passed|ok|done)\b` |
+| IPv4 Address | 60 | `\b(?:\d{1,3}\.){3}\d{1,3}\b` |
+| URL | 55 | `https?://[^\s<>"']+` |
+| ISO Timestamp | 50 | `\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}` |
+| Unix Path | 40 | `(?:/[a-zA-Z0-9._-]+)+` |
+
+### Default Colors
+
+| Token Type | Color |
+|------------|-------|
+| Error | `#e06c75` (red) |
+| Warning | `#e5c07b` (yellow) |
+| Success | `#98c379` (green) |
+| Info | `#61afef` (blue) |
+| Debug | `#c678dd` (purple) |
+| Timestamp | `#5c6370` (gray) |
+| IP Address | `#d19a66` (orange) |
+| URL | `#56b6c2` (cyan, underlined) |
+
+### Rendering Integration
+
+In `terminal_element.rs`:
+1. `compute_semantic_tokens()`: Extract text from cells, create LSP server, compute tokens
+2. During cell rendering, lookup matching token at position
+3. Apply token's foreground color and modifiers (bold, italic, underline)
+
+**Persistence:** `~/.config/bspterm/highlight_rules.json`
+**Defaults:** `assets/settings/default_highlight_rules.json`
+
 ## Agent Connection Fallback
 
 The `agent_servers` crate (`crates/agent_servers/`) provides fallback mechanisms when the ACP (Agent Client Protocol) fails to connect.

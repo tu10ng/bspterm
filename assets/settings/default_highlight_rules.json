@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "highlighting_enabled": true,
+  "rules": [
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "name": "Error",
+      "pattern": "(?i)\\b(error|fail(ed)?|fatal|critical|exception|panic)\\b",
+      "token_type": "error",
+      "modifiers": 1,
+      "enabled": true,
+      "case_insensitive": true,
+      "protocol": "all",
+      "priority": 100
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000002",
+      "name": "Warning",
+      "pattern": "(?i)\\b(warn(ing)?|caution|deprecated)\\b",
+      "token_type": "warning",
+      "modifiers": 0,
+      "enabled": true,
+      "case_insensitive": true,
+      "protocol": "all",
+      "priority": 90
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000003",
+      "name": "Success",
+      "pattern": "(?i)\\b(success(ful)?|passed|ok|done|completed)\\b",
+      "token_type": "success",
+      "modifiers": 0,
+      "enabled": true,
+      "case_insensitive": true,
+      "protocol": "all",
+      "priority": 85
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000004",
+      "name": "Info",
+      "pattern": "(?i)\\binfo\\b",
+      "token_type": "info",
+      "modifiers": 0,
+      "enabled": true,
+      "case_insensitive": true,
+      "protocol": "all",
+      "priority": 80
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000005",
+      "name": "Debug",
+      "pattern": "(?i)\\b(debug|trace)\\b",
+      "token_type": "debug",
+      "modifiers": 0,
+      "enabled": true,
+      "case_insensitive": true,
+      "protocol": "all",
+      "priority": 70
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000006",
+      "name": "ISO Timestamp",
+      "pattern": "\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}",
+      "token_type": "timestamp",
+      "modifiers": 0,
+      "enabled": true,
+      "case_insensitive": false,
+      "protocol": "all",
+      "priority": 50
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000007",
+      "name": "Log Timestamp",
+      "pattern": "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2}",
+      "token_type": "timestamp",
+      "modifiers": 0,
+      "enabled": true,
+      "case_insensitive": false,
+      "protocol": "all",
+      "priority": 50
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000008",
+      "name": "IPv4 Address",
+      "pattern": "\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b",
+      "token_type": "ip_address",
+      "modifiers": 0,
+      "enabled": true,
+      "case_insensitive": false,
+      "protocol": "all",
+      "priority": 60
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000009",
+      "name": "URL",
+      "pattern": "https?://[^\\s<>\"']+",
+      "token_type": "url",
+      "modifiers": 4,
+      "enabled": true,
+      "case_insensitive": false,
+      "protocol": "all",
+      "priority": 55
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000010",
+      "name": "Unix Path",
+      "pattern": "(?:/[a-zA-Z0-9._-]+)+(?:/[a-zA-Z0-9._-]*)?",
+      "token_type": "path",
+      "modifiers": 0,
+      "enabled": true,
+      "case_insensitive": false,
+      "protocol": "all",
+      "priority": 40
+    }
+  ]
+}

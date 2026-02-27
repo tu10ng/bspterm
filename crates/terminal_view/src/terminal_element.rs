@@ -14,7 +14,8 @@ use language::CursorShape;
 use settings::Settings;
 use std::time::Instant;
 use terminal::{
-    IndexedCell, Terminal, TerminalBounds, TerminalContent,
+    HighlightStoreEntity, IndexedCell, SemanticToken, Terminal, TerminalBounds, TerminalContent,
+    TerminalLanguageServer, default_token_color,
     alacritty_terminal::{
         grid::Dimensions,
         index::Point as AlacPoint,
@@ -376,6 +377,7 @@ impl TerminalElement {
         text_style: &TextStyle,
         hyperlink: Option<(HighlightStyle, &RangeInclusive<AlacPoint>)>,
         minimum_contrast: f32,
+        semantic_tokens: Option<&[SemanticToken]>,
         cx: &App,
     ) -> (Vec<LayoutRect>, Vec<BatchedTextRun>) {
         let start_time = Instant::now();
@@ -447,6 +449,15 @@ impl TerminalElement {
                 {
                     if !is_blank(&cell) {
                         cell_count += 1;
+
+                        // Find semantic token for this cell position
+                        let col = cell.point.column.0;
+                        let semantic_token = semantic_tokens.and_then(|tokens| {
+                            tokens.iter().find(|t| {
+                                t.line == line_index && col >= t.start_col && col < t.end_col()
+                            })
+                        });
+
                         let cell_style = TerminalElement::cell_style(
                             &cell,
                             fg,
@@ -455,6 +466,7 @@ impl TerminalElement {
                             text_style,
                             hyperlink,
                             minimum_contrast,
+                            semantic_token,
                         );
 
                         let cell_point = AlacPoint::new(alac_line, cell.point.column.0 as i32);
@@ -540,6 +552,76 @@ impl TerminalElement {
         );
 
         (rects, batched_runs)
+    }
+
+    /// Computes semantic tokens for terminal cells using highlight rules.
+    fn compute_semantic_tokens(cells: &[IndexedCell], cx: &App) -> Option<Vec<SemanticToken>> {
+        // Get the highlight store, return None if not initialized or disabled
+        let store = HighlightStoreEntity::try_global(cx)?;
+        let store = store.read(cx);
+
+        if !store.highlighting_enabled() {
+            return None;
+        }
+
+        let rules = store.enabled_rules();
+        if rules.is_empty() {
+            return None;
+        }
+
+        // Build the LSP server with current rules
+        let rules_vec: Vec<_> = rules.into_iter().cloned().collect();
+        let lsp_server = TerminalLanguageServer::new(&rules_vec);
+
+        // Extract text content from cells, grouped by line
+        let mut tokens = Vec::new();
+        let mut current_line: Option<i32> = None;
+        let mut line_text = String::new();
+        let mut line_number = 0usize; // Track the enumerated line number (matches layout_grid)
+
+        for cell in cells.iter() {
+            let cell_line = cell.point.line.0;
+
+            // If we moved to a new line, process the previous line
+            if current_line.is_some() && current_line != Some(cell_line) {
+                if !line_text.is_empty() {
+                    let line_tokens = lsp_server.compute_line_tokens(
+                        line_number,
+                        &line_text,
+                        None, // TODO: pass protocol filter
+                    );
+                    tokens.extend(line_tokens);
+                }
+                line_text.clear();
+                line_number += 1; // Increment line number for next line
+            }
+
+            if current_line != Some(cell_line) {
+                current_line = Some(cell_line);
+            }
+
+            // Add character to line text
+            let c = cell.c;
+            if c != ' ' || !line_text.is_empty() {
+                line_text.push(c);
+            }
+        }
+
+        // Process the last line
+        if !line_text.is_empty() {
+            let line_tokens = lsp_server.compute_line_tokens(
+                line_number,
+                &line_text,
+                None,
+            );
+            tokens.extend(line_tokens);
+        }
+
+        if tokens.is_empty() {
+            None
+        } else {
+            Some(tokens)
+        }
     }
 
     /// Computes the cursor position based on the cursor point and terminal dimensions.
@@ -653,7 +735,7 @@ impl TerminalElement {
 
         let mut entries = Vec::with_capacity(visible_rows.len());
 
-        for (row_index, screen_row) in visible_rows.clone().enumerate() {
+        for (row_index, screen_row) in visible_rows.enumerate() {
             let grid_line = screen_row - display_offset as i32;
 
             let is_cursor_line = vi_mode && grid_line == cursor_line;
@@ -841,10 +923,25 @@ impl TerminalElement {
         text_style: &TextStyle,
         hyperlink: Option<(HighlightStyle, &RangeInclusive<AlacPoint>)>,
         minimum_contrast: f32,
+        semantic_token: Option<&SemanticToken>,
     ) -> TextRun {
         let flags = indexed.cell.flags;
         let mut fg = convert_color(&fg, colors);
         let bg = convert_color(&bg, colors);
+
+        // Apply semantic token color override if present
+        if let Some(token) = semantic_token {
+            if let Some(ref color_str) = token.foreground_color {
+                if let Some(color) = parse_hex_color(color_str) {
+                    fg = color;
+                }
+            } else {
+                // Use default color for token type
+                if let Some(color) = parse_hex_color(default_token_color(&token.token_type)) {
+                    fg = color;
+                }
+            }
+        }
 
         // Only apply contrast adjustment to non-decorative characters
         if !Self::is_decorative_character(indexed.c) {
@@ -1380,6 +1477,9 @@ impl Element for TerminalElement {
 
                 // then have that representation be converted to the appropriate highlight data structure
 
+                // Compute semantic tokens for highlighting
+                let semantic_tokens = Self::compute_semantic_tokens(cells, cx);
+
                 let content_mode = self.terminal_view.read(cx).content_mode(window, cx);
 
                 // Calculate the intersection of the terminal's bounds with the current
@@ -1412,6 +1512,7 @@ impl Element for TerminalElement {
                             .as_ref()
                             .map(|last_hovered_word| (link_style, &last_hovered_word.word_match)),
                         minimum_contrast,
+                        semantic_tokens.as_deref(),
                         cx,
                     )
                 } else {
@@ -1444,6 +1545,7 @@ impl Element for TerminalElement {
                             .as_ref()
                             .map(|last_hovered_word| (link_style, &last_hovered_word.word_match)),
                         minimum_contrast,
+                        semantic_tokens.as_deref(),
                         cx,
                     )
                 };
@@ -2016,6 +2118,22 @@ pub fn convert_color(fg: &terminal::alacritty_terminal::vte::ansi::Color, theme:
             terminal::get_color_at_index(*i as usize, theme)
         }
     }
+}
+
+/// Parses a hex color string (e.g., "#ff0000" or "ff0000") into an Hsla color.
+fn parse_hex_color(hex: &str) -> Option<Hsla> {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() != 6 {
+        return None;
+    }
+
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+
+    Some(Hsla::from(gpui::rgb(
+        ((r as u32) << 16) | ((g as u32) << 8) | (b as u32),
+    )))
 }
 
 #[cfg(test)]
