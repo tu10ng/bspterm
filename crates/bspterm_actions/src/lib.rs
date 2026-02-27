@@ -346,6 +346,18 @@ pub mod rule_editor {
     );
 }
 
+pub mod highlight_editor {
+    use gpui::actions;
+
+    actions!(
+        highlight_editor,
+        [
+            /// Toggles focus on the highlight rules editor panel.
+            ToggleFocus
+        ]
+    );
+}
+
 pub mod terminal_outline {
     use gpui::actions;
 

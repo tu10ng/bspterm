@@ -465,3 +465,31 @@ ssh_connect:
   error_invalid_port: "无效的端口号"
   error_format_hint: "格式: user@host[:port] 或 host user password [port]"
   error_user_host_required: "需要用户名和主机"
+
+# 高亮编辑器面板
+highlight_editor:
+  title: "高亮规则"
+  add_rule: "添加规则"
+  no_rules: "暂无高亮规则"
+  reset_defaults: "重置为默认"
+
+# 高亮规则编辑对话框
+highlight_edit:
+  title_new: "新建高亮规则"
+  title_edit: "编辑高亮规则"
+  name_placeholder: "规则名称"
+  pattern_placeholder: "输入正则表达式"
+  sample_placeholder: "输入示例文本以测试正则"
+  none: "(无)"
+  pattern: "正则表达式"
+  token_type: "标记类型"
+  protocol: "协议"
+  modifiers: "样式修饰"
+  priority: "优先级"
+  case_insensitive: "忽略大小写"
+  foreground_color: "前景颜色"
+  background_color: "背景颜色"
+  preview: "预览"
+  matches: "个匹配"
+  valid: "有效"
+  invalid: "无效"

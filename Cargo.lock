@@ -2626,6 +2626,7 @@ dependencies = [
  "go_to_line",
  "gpui",
  "gpui_tokio",
+ "highlight_editor",
  "http_client",
  "i18n",
  "image",
@@ -8631,6 +8632,25 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "highlight_editor"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bspterm_actions",
+ "editor",
+ "gpui",
+ "i18n",
+ "log",
+ "regex",
+ "settings",
+ "terminal",
+ "ui",
+ "util",
+ "uuid",
+ "workspace",
 ]
 
 [[package]]

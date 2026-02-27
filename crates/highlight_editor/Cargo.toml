@@ -1,0 +1,28 @@
+[package]
+name = "highlight_editor"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+license = "GPL-3.0-or-later"
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/highlight_editor.rs"
+doctest = false
+
+[dependencies]
+anyhow.workspace = true
+gpui.workspace = true
+i18n.workspace = true
+log.workspace = true
+settings.workspace = true
+terminal.workspace = true
+ui.workspace = true
+util.workspace = true
+workspace.workspace = true
+uuid.workspace = true
+bspterm_actions.workspace = true
+editor.workspace = true
+regex.workspace = true

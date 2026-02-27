@@ -58,6 +58,7 @@ This is a fork of [Zed](https://github.com/zed-industries/zed), a GPU-accelerate
 - **terminal** / **terminal_view** (`crates/terminal`, `crates/terminal_view`): Terminal emulator with SSH/Telnet session management and automation rule engine.
 - **remote_explorer** (`crates/remote_explorer`): Panel for browsing and managing saved SSH/Telnet sessions in a tree view.
 - **rule_editor** (`crates/rule_editor`): Panel for managing terminal automation rules (auto-login, pattern-based actions).
+- **highlight_editor** (`crates/highlight_editor`): Panel for managing terminal semantic highlighting rules (regex-based pattern matching with colors).
 
 ## Rust Coding Guidelines
 
@@ -534,6 +535,50 @@ let actions = engine.check(TriggerEvent::Wakeup, &screen_content);
 **Defaults:** `assets/settings/default_terminal_rules.json`
 
 **Test:** `cargo test -p terminal rule_engine`
+
+## Highlight Editor Panel
+
+The `highlight_editor` crate (`crates/highlight_editor`) provides a panel for managing terminal semantic highlighting rules.
+
+### Architecture
+
+- Uses `UniformList` for virtualized scrolling of rules
+- Subscribes to `HighlightStoreEvent` for real-time updates
+- Implements `Panel`, `Focusable`, `Render` traits
+
+### Module Structure
+
+```
+src/
+├── highlight_editor.rs      # Main panel with rule list
+└── highlight_edit_modal.rs  # Modal for creating/editing rules
+```
+
+### Key Components
+
+- `HighlightEditor`: Main panel struct with master toggle and rule list
+- `HighlightEditModal`: Modal dialog for rule editing with live regex preview
+
+### UI Features
+
+| Feature | Description |
+|---------|-------------|
+| Master Toggle | Enable/disable all highlighting globally |
+| Rule List | Shows name, pattern, token type, protocol, color preview |
+| Live Regex Validation | Shows Valid/Invalid indicator while typing pattern |
+| Match Count Preview | Displays number of matches in sample text |
+| Color Swatches | Visual preview of hex foreground/background colors |
+| Token Type Selector | Error, Warning, Info, Debug, Success, Timestamp, IP, URL, Path, Number |
+| Protocol Selector | All, SSH, Telnet, Local |
+| Modifier Checkboxes | Bold, Italic, Underline, Dim |
+
+### Integration Points
+
+- **Action**: `bspterm_actions::highlight_editor::ToggleFocus`
+- **Position**: Right dock (priority: 12)
+- **Icon**: Sparkle icon
+
+**Persistence:** Uses `HighlightStoreEntity` from terminal crate (`~/.config/bspterm/highlight_rules.json`)
 
 ## Terminal Abbreviations
 

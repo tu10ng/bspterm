@@ -465,3 +465,31 @@ ssh_connect:
   error_invalid_port: "Invalid port number"
   error_format_hint: "Format: user@host[:port] or host user password [port]"
   error_user_host_required: "Username and host required"
+
+# Highlight Editor Panel
+highlight_editor:
+  title: "Highlight Rules"
+  add_rule: "Add Rule"
+  no_rules: "No highlight rules"
+  reset_defaults: "Reset to Defaults"
+
+# Highlight Edit Modal
+highlight_edit:
+  title_new: "New Highlight Rule"
+  title_edit: "Edit Highlight Rule"
+  name_placeholder: "Rule Name"
+  pattern_placeholder: "Enter regex pattern"
+  sample_placeholder: "Enter sample text to test pattern"
+  none: "(none)"
+  pattern: "Pattern (regex)"
+  token_type: "Token Type"
+  protocol: "Protocol"
+  modifiers: "Modifiers"
+  priority: "Priority"
+  case_insensitive: "Case Insensitive"
+  foreground_color: "Foreground Color"
+  background_color: "Background Color"
+  preview: "Preview"
+  matches: "matches"
+  valid: "Valid"
+  invalid: "Invalid"

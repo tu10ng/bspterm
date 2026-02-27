@@ -182,6 +182,7 @@ release_channel.workspace = true
 remote_explorer.workspace = true
 remote.workspace = true
 rule_editor.workspace = true
+highlight_editor.workspace = true
 user_info_panel.workspace = true
 repl.workspace = true
 reqwest.workspace = true
