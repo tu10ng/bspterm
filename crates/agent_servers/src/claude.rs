@@ -11,7 +11,7 @@ use anyhow::{Context as _, Result};
 use gpui::{App, AppContext as _, SharedString, Task};
 use project::agent_server_store::{AllAgentServersSettings, CLAUDE_CODE_NAME};
 
-use crate::{AgentServer, AgentServerDelegate, load_proxy_env};
+use crate::{AgentServer, AgentServerDelegate, ConnectionMode, load_proxy_env};
 use acp_thread::AgentConnection;
 
 #[derive(Clone)]
@@ -206,6 +206,26 @@ impl AgentServer for ClaudeCode {
         });
     }
 
+    fn default_connection_mode(&self, cx: &App) -> ConnectionMode {
+        let settings = cx.read_global(|settings: &SettingsStore, _| {
+            settings.get::<AllAgentServersSettings>(None).claude.clone()
+        });
+
+        settings
+            .as_ref()
+            .and_then(|s| s.connection_mode)
+            .unwrap_or(ConnectionMode::Auto)
+    }
+
+    fn supported_modes(&self) -> Vec<ConnectionMode> {
+        vec![
+            ConnectionMode::Auto,
+            ConnectionMode::Acp,
+            ConnectionMode::Terminal,
+            ConnectionMode::Prompt,
+        ]
+    }
+
     fn connect(
         &self,
         root_dir: Option<&Path>,
@@ -219,6 +239,7 @@ impl AgentServer for ClaudeCode {
         let extra_env = load_proxy_env(cx);
         let default_mode = self.default_mode(cx);
         let default_model = self.default_model(cx);
+        let connection_mode = self.default_connection_mode(cx);
         let default_config_options = cx.read_global(|settings: &SettingsStore, _| {
             settings
                 .get::<AllAgentServersSettings>(None)
@@ -243,7 +264,7 @@ impl AgentServer for ClaudeCode {
                     ))
                 })??
                 .await?;
-            let connection = crate::acp::connect(
+            let connection = crate::acp::connect_with_fallback(
                 name,
                 command,
                 root_dir.as_ref(),
@@ -251,6 +272,7 @@ impl AgentServer for ClaudeCode {
                 default_model,
                 default_config_options,
                 is_remote,
+                connection_mode,
                 cx,
             )
             .await?;

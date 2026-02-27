@@ -2250,6 +2250,7 @@ pub struct BuiltinAgentServerSettings {
     pub favorite_models: Vec<String>,
     pub default_config_options: HashMap<String, String>,
     pub favorite_config_option_values: HashMap<String, Vec<String>>,
+    pub connection_mode: Option<settings::ConnectionMode>,
 }
 
 impl BuiltinAgentServerSettings {
@@ -2277,6 +2278,7 @@ impl From<settings::BuiltinAgentServerSettings> for BuiltinAgentServerSettings {
             favorite_models: value.favorite_models,
             default_config_options: value.default_config_options,
             favorite_config_option_values: value.favorite_config_option_values,
+            connection_mode: value.connection_mode,
         }
     }
 }

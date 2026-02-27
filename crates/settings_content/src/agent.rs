@@ -9,6 +9,16 @@ use crate::ExtendingVec;
 
 use crate::{DockPosition, DockSide};
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema, MergeFrom)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectionMode {
+    #[default]
+    Auto,
+    Acp,
+    Terminal,
+    Prompt,
+}
+
 #[with_fallible_options]
 #[derive(Clone, PartialEq, Serialize, Deserialize, JsonSchema, MergeFrom, Debug, Default)]
 pub struct AgentSettingsContent {
@@ -387,6 +397,15 @@ pub struct BuiltinAgentServerSettings {
     /// Default: {}
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub favorite_config_option_values: HashMap<String, Vec<String>>,
+    /// The connection mode to use for communicating with this agent.
+    ///
+    /// - `auto`: Try ACP first, fall back to Terminal mode if ACP fails
+    /// - `acp`: Use ACP (Agent Client Protocol) JSON-RPC over stdio
+    /// - `terminal`: Run agent in a terminal and interact via stdin/stdout
+    /// - `prompt`: Run agent with --prompt flag for each message
+    ///
+    /// Default: auto
+    pub connection_mode: Option<ConnectionMode>,
 }
 
 #[with_fallible_options]

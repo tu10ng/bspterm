@@ -3,6 +3,8 @@ mod claude;
 mod codex;
 mod custom;
 mod gemini;
+mod prompt_mode;
+mod terminal_mode;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod e2e_tests;
@@ -16,6 +18,8 @@ use fs::Fs;
 pub use gemini::*;
 use http_client::read_no_proxy_from_env;
 use project::agent_server_store::AgentServerStore;
+pub use prompt_mode::*;
+pub use terminal_mode::*;
 
 use acp_thread::AgentConnection;
 use anyhow::Result;
@@ -24,7 +28,8 @@ use project::Project;
 use settings::SettingsStore;
 use std::{any::Any, path::Path, rc::Rc, sync::Arc};
 
-pub use acp::AcpConnection;
+pub use acp::{AcpConnection, AcpConnectionError, connect_with_fallback};
+pub use settings::ConnectionMode;
 
 pub struct AgentServerDelegate {
     store: Entity<AgentServerStore>,
@@ -131,6 +136,14 @@ pub trait AgentServer: Send {
         _fs: Arc<dyn Fs>,
         _cx: &App,
     ) {
+    }
+
+    fn supported_modes(&self) -> Vec<ConnectionMode> {
+        vec![ConnectionMode::Acp]
+    }
+
+    fn default_connection_mode(&self, _cx: &App) -> ConnectionMode {
+        ConnectionMode::Auto
     }
 }
 

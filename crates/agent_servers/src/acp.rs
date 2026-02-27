@@ -35,6 +35,24 @@ use terminal::terminal_settings::{AlternateScroll, CursorShape, TerminalSettings
 #[error("Unsupported version")]
 pub struct UnsupportedVersion;
 
+#[derive(Debug, Error)]
+pub enum AcpConnectionError {
+    #[error("Unsupported ACP protocol version")]
+    UnsupportedVersion,
+
+    #[error("ACP connection failed: agent did not send valid JSON-RPC response. Raw output: {raw_output}")]
+    InvalidResponse { raw_output: String },
+
+    #[error("ACP connection failed: agent exited unexpectedly. Stderr: {stderr}")]
+    AgentExited { stderr: String },
+
+    #[error("ACP initialization timeout")]
+    Timeout,
+
+    #[error("Agent does not support ACP protocol. Try switching to Terminal or Prompt mode. Error: {message}")]
+    NotSupported { message: String },
+}
+
 pub struct AcpConnection {
     server_name: SharedString,
     telemetry_id: SharedString,
@@ -179,6 +197,111 @@ pub async fn connect(
     )
     .await?;
     Ok(Rc::new(conn) as _)
+}
+
+use crate::{ConnectionMode, PromptModeConnection, TerminalModeConnection};
+
+pub async fn connect_with_fallback(
+    server_name: SharedString,
+    command: AgentServerCommand,
+    root_dir: &Path,
+    default_mode: Option<acp::SessionModeId>,
+    default_model: Option<acp::ModelId>,
+    default_config_options: HashMap<String, String>,
+    is_remote: bool,
+    connection_mode: ConnectionMode,
+    cx: &mut AsyncApp,
+) -> Result<Rc<dyn AgentConnection>> {
+    match connection_mode {
+        ConnectionMode::Auto => {
+            log::info!("Connecting to agent '{}' with auto mode (trying ACP first)...", server_name);
+
+            match connect(
+                server_name.clone(),
+                command.clone(),
+                root_dir,
+                default_mode,
+                default_model,
+                default_config_options,
+                is_remote,
+                cx,
+            )
+            .await
+            {
+                Ok(conn) => {
+                    log::info!("ACP connection established successfully for '{}'", server_name);
+                    Ok(conn)
+                }
+                Err(e) => {
+                    log::warn!(
+                        "ACP connection failed for '{}': {}. \
+                         This may indicate that the agent does not support ACP protocol. \
+                         Consider switching to Terminal or Prompt mode in settings.",
+                        server_name,
+                        e
+                    );
+                    log::info!("Attempting Terminal mode fallback for '{}'...", server_name);
+
+                    let command_str = command.path.to_string_lossy().to_string();
+                    let terminal_conn = cx.update(|cx| {
+                        TerminalModeConnection::new(
+                            server_name.clone(),
+                            &command_str,
+                            &command.args,
+                            command.env.clone(),
+                            root_dir,
+                            cx,
+                        )
+                    }).await?;
+
+                    log::info!("Terminal mode connection established for '{}'", server_name);
+                    Ok(Rc::new(terminal_conn) as _)
+                }
+            }
+        }
+        ConnectionMode::Acp => {
+            log::info!("Connecting to agent '{}' with ACP mode...", server_name);
+            connect(
+                server_name,
+                command,
+                root_dir,
+                default_mode,
+                default_model,
+                default_config_options,
+                is_remote,
+                cx,
+            )
+            .await
+        }
+        ConnectionMode::Terminal => {
+            log::info!("Connecting to agent '{}' with Terminal mode...", server_name);
+            let command_str = command.path.to_string_lossy().to_string();
+            let terminal_conn = cx.update(|cx| {
+                TerminalModeConnection::new(
+                    server_name.clone(),
+                    &command_str,
+                    &command.args,
+                    command.env.clone(),
+                    root_dir,
+                    cx,
+                )
+            }).await?;
+            log::info!("Terminal mode connection established for '{}'", server_name);
+            Ok(Rc::new(terminal_conn) as _)
+        }
+        ConnectionMode::Prompt => {
+            log::info!("Connecting to agent '{}' with Prompt mode...", server_name);
+            let prompt_conn = PromptModeConnection::new(
+                server_name.clone(),
+                command.path.clone(),
+                command.args.clone(),
+                command.env.clone().unwrap_or_default(),
+                root_dir.to_path_buf(),
+            );
+            log::info!("Prompt mode connection established for '{}'", server_name);
+            Ok(Rc::new(prompt_conn) as _)
+        }
+    }
 }
 
 const MINIMUM_SUPPORTED_VERSION: acp::ProtocolVersion = acp::ProtocolVersion::V1;

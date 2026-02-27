@@ -539,6 +539,95 @@ let visible = store.abbreviations_for_protocol(protocol.as_ref());
 
 **Persistence:** `~/.config/bspterm/abbreviations.json`
 
+## Agent Connection Fallback
+
+The `agent_servers` crate (`crates/agent_servers/`) provides fallback mechanisms when the ACP (Agent Client Protocol) fails to connect.
+
+### Module Structure
+
+```
+src/
+├── agent_servers.rs    # Main module, exports, AgentServer trait
+├── acp.rs              # ACP protocol implementation, connect_with_fallback
+├── claude.rs           # Claude Code agent server
+├── terminal_mode.rs    # Terminal fallback connection
+├── prompt_mode.rs      # --prompt flag fallback connection
+├── codex.rs            # Codex agent server
+├── gemini.rs           # Gemini agent server
+└── custom.rs           # Custom agent servers
+```
+
+### Connection Modes
+
+| Mode | Description |
+|------|-------------|
+| `auto` (default) | Tries ACP first, falls back to Terminal mode on failure |
+| `acp` | Use ACP JSON-RPC over stdio (standard protocol) |
+| `terminal` | Run agent in a terminal, interact via text input |
+| `prompt` | Spawn new process with `--prompt` flag for each message |
+
+### Key Types
+
+- `ConnectionMode`: Enum defining connection strategies (`Auto`, `Acp`, `Terminal`, `Prompt`)
+- `TerminalModeConnection`: Runs agent in a terminal and sends text
+- `PromptModeConnection`: Spawns subprocess with `--prompt` for each message
+- `AcpConnectionError`: Detailed error types for ACP failures
+
+### connect_with_fallback (`acp.rs`)
+
+```rust
+pub async fn connect_with_fallback(
+    server_name: SharedString,
+    command: AgentServerCommand,
+    root_dir: &Path,
+    default_mode: Option<SessionModeId>,
+    default_model: Option<ModelId>,
+    default_config_options: HashMap<String, String>,
+    is_remote: bool,
+    connection_mode: ConnectionMode,
+    cx: &mut AsyncApp,
+) -> Result<Rc<dyn AgentConnection>>
+```
+
+**Behavior:**
+- `Auto`: Tries ACP → on failure logs warning and falls back to Terminal
+- `Acp`/`Terminal`/`Prompt`: Uses specified mode directly
+
+### Settings Configuration
+
+```json
+{
+  "agent_servers": {
+    "claude": {
+      "connection_mode": "auto"
+    }
+  }
+}
+```
+
+**File:** `crates/settings_content/src/agent.rs` defines `ConnectionMode` enum and `BuiltinAgentServerSettings.connection_mode` field.
+
+### When to Use Fallback Modes
+
+| Scenario | Recommended Mode |
+|----------|------------------|
+| Agent supports ACP | `auto` or `acp` |
+| Agent outputs non-JSON to stdout | `terminal` |
+| Agent has hooks that pollute stdout | `terminal` |
+| Agent only supports `--prompt` flag | `prompt` |
+| Each request should be isolated | `prompt` |
+
+### Logging
+
+When ACP fails, detailed logs help diagnose the issue:
+
+```
+[INFO] Connecting to agent 'codeagent' with auto mode (trying ACP first)...
+[WARN] ACP connection failed for 'codeagent': expected JSON-RPC response...
+[INFO] Attempting Terminal mode fallback for 'codeagent'...
+[INFO] Terminal mode connection established for 'codeagent'
+```
+
 ## Zed 遗留命名
 
 以下模块/文件保留了 Zed 命名，这是历史原因造成的：
