@@ -51,6 +51,7 @@ EOF
 # Copy scripts
 mkdir -p "$temp_dir/scripts"
 cp assets/scripts/ne5000e_mpu_collector.py "$temp_dir/scripts/"
+cp assets/scripts/device_online_notify.py "$temp_dir/scripts/"
 
 # Ensure output directory exists
 mkdir -p "$output_dir"

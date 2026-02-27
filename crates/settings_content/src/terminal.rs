@@ -212,6 +212,16 @@ pub struct TerminalSettingsContent {
     ///
     /// Default: duplicate
     pub tab_double_click_action: Option<TabDoubleClickAction>,
+    /// The action to perform when device comes back online after reconnection.
+    /// 设备重连上线后执行的动作。
+    ///
+    /// Default: notify
+    pub device_online_action: Option<DeviceOnlineAction>,
+    /// Path to the Python script to run when device_online_action is "run_script".
+    /// Relative paths are resolved from ~/.config/bspterm/scripts/
+    /// 当 device_online_action 为 "run_script" 时执行的 Python 脚本路径。
+    /// 相对路径从 ~/.config/bspterm/scripts/ 解析。
+    pub device_online_script: Option<String>,
 }
 
 /// Shell configuration to open the terminal with.
@@ -615,6 +625,33 @@ pub enum TabDoubleClickAction {
     Close,
     /// Rename the terminal tab.
     Rename,
+}
+
+/// The action to perform when device comes back online after reconnection.
+/// 设备上线后的通知动作
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    JsonSchema,
+    MergeFrom,
+    strum::VariantArray,
+    strum::VariantNames,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceOnlineAction {
+    /// Send desktop notification only (default).
+    /// 仅发送桌面通知
+    #[default]
+    Notify,
+    /// Run a Python script with terminal info.
+    /// 运行 Python 脚本
+    RunScript,
 }
 
 #[cfg(test)]

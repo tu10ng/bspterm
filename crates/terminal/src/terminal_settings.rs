@@ -9,6 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 pub use settings::AlternateScroll;
+pub use settings::DeviceOnlineAction;
 pub use settings::TabDoubleClickAction;
 
 use settings::{
@@ -103,6 +104,8 @@ pub struct TerminalSettings {
     pub recently_active_timeout_secs: u64,
     pub ping_timeout_secs: u64,
     pub tab_double_click_action: TabDoubleClickAction,
+    pub device_online_action: DeviceOnlineAction,
+    pub device_online_script: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -223,6 +226,10 @@ impl settings::Settings for TerminalSettings {
             tab_double_click_action: user_content
                 .tab_double_click_action
                 .unwrap_or(TabDoubleClickAction::Duplicate),
+            device_online_action: user_content
+                .device_online_action
+                .unwrap_or(DeviceOnlineAction::Notify),
+            device_online_script: user_content.device_online_script,
         }
     }
 }

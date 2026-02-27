@@ -882,6 +882,8 @@ impl VsCodeSettings {
             recently_active_timeout_secs: None,
             ping_timeout_secs: None,
             tab_double_click_action: None,
+            device_online_action: None,
+            device_online_script: None,
         })
     }
 
