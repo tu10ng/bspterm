@@ -1,5 +1,6 @@
 mod abbr_bar;
 mod button_bar;
+mod number_popover;
 mod row_decorator;
 mod persistence;
 mod shortcut_bar;
@@ -10,6 +11,7 @@ mod terminal_path_like_target;
 pub mod terminal_scrollbar;
 mod terminal_slash_command;
 
+pub use number_popover::{NumberPopover, NumberPopoverDrag, NumberPopoverElement};
 pub use row_decorator::*;
 
 use button_bar::script_runner::ScriptStatus;
@@ -249,6 +251,12 @@ pub struct TerminalView {
     custom_title: Option<String>,
     hover: Option<HoverTarget>,
     hover_tooltip_update: Task<()>,
+    /// Timer task for delayed number hover highlight
+    number_hover_task: Option<Task<()>>,
+    /// Active number popover (non-pinned)
+    active_number_popover: Option<number_popover::NumberPopover>,
+    /// Pinned number popovers
+    pinned_number_popovers: Vec<number_popover::NumberPopover>,
     workspace_id: Option<WorkspaceId>,
     show_breadcrumbs: bool,
     block_below_cursor: Option<Rc<BlockProperties>>,
@@ -454,6 +462,9 @@ impl TerminalView {
             blinking_terminal_enabled: false,
             hover: None,
             hover_tooltip_update: Task::ready(()),
+            number_hover_task: None,
+            active_number_popover: None,
+            pinned_number_popovers: Vec::new(),
             mode: TerminalMode::Standalone,
             workspace_id,
             show_breadcrumbs: TerminalSettings::get_global(cx).toolbar.breadcrumbs,
@@ -550,6 +561,150 @@ impl TerminalView {
                     }
                 }
             }
+        }
+    }
+
+    /// Schedules a delayed number hover check at the given position.
+    /// The check only runs if the mouse stays still for the delay period.
+    pub fn schedule_number_hover(
+        &mut self,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        const NUMBER_HOVER_DELAY_MS: u64 = 300;
+
+        let terminal = self.terminal.clone();
+        self.number_hover_task = Some(cx.spawn_in(window, async move |_this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(NUMBER_HOVER_DELAY_MS))
+                .await;
+
+            let _ = terminal.update(&mut cx.clone(), |terminal, cx| {
+                terminal.schedule_find_number(position);
+                cx.notify();
+            });
+        }));
+    }
+
+    /// Clears the number hover state and cancels any pending hover task.
+    pub fn clear_number_hover(&mut self, cx: &mut Context<Self>) {
+        self.number_hover_task = None;
+        self.terminal.update(cx, |terminal, _| {
+            terminal.clear_hovered_number();
+        });
+    }
+
+    /// Shows a number popover at the position of the hovered number (calculated from grid coordinates).
+    pub fn show_number_popover_at_hovered_number(&mut self, cx: &mut Context<Self>) {
+        let (hovered_number, terminal_bounds, display_offset) = {
+            let terminal = self.terminal.read(cx);
+            let hovered_number = match terminal.last_content.last_hovered_number.clone() {
+                Some(num) => num,
+                None => return,
+            };
+            let terminal_bounds = terminal.last_content.terminal_bounds;
+            let display_offset = terminal.last_content.display_offset;
+            (hovered_number, terminal_bounds, display_offset)
+        };
+
+        // Calculate pixel position from the start of the number in the grid
+        let start_point = hovered_number.parsed.word_match.start();
+        let viewport_line = start_point.line.0 + display_offset as i32;
+
+        let position = Point {
+            x: terminal_bounds.bounds.origin.x
+                + start_point.column.0 as f32 * terminal_bounds.cell_width,
+            y: terminal_bounds.bounds.origin.y
+                + viewport_line as f32 * terminal_bounds.line_height
+                + terminal_bounds.line_height, // Position below the number
+        };
+
+        self.active_number_popover = Some(NumberPopover::new(hovered_number.parsed, position));
+
+        // Clear the hover state to avoid visual confusion
+        self.terminal.update(cx, |terminal, _| {
+            terminal.clear_hovered_number();
+        });
+
+        cx.notify();
+    }
+
+    /// Pins the active number popover.
+    pub fn pin_active_popover(&mut self, cx: &mut Context<Self>) {
+        if let Some(mut popover) = self.active_number_popover.take() {
+            popover.is_pinned = true;
+            self.pinned_number_popovers.push(popover);
+            cx.notify();
+        }
+    }
+
+    /// Unpins a popover and makes it active again (or removes if already unpinned).
+    pub fn toggle_popover_pin(&mut self, popover_id: usize, cx: &mut Context<Self>) {
+        if let Some(active) = &mut self.active_number_popover {
+            if active.id == popover_id {
+                active.toggle_pinned();
+                if active.is_pinned {
+                    self.pin_active_popover(cx);
+                }
+                return;
+            }
+        }
+
+        if let Some(index) = self
+            .pinned_number_popovers
+            .iter()
+            .position(|p| p.id == popover_id)
+        {
+            let mut popover = self.pinned_number_popovers.remove(index);
+            popover.is_pinned = false;
+            self.active_number_popover = Some(popover);
+            cx.notify();
+        }
+    }
+
+    /// Closes a popover by id.
+    pub fn close_popover(&mut self, popover_id: usize, cx: &mut Context<Self>) {
+        if let Some(active) = &self.active_number_popover {
+            if active.id == popover_id {
+                self.active_number_popover = None;
+                cx.notify();
+                return;
+            }
+        }
+
+        if let Some(index) = self
+            .pinned_number_popovers
+            .iter()
+            .position(|p| p.id == popover_id)
+        {
+            self.pinned_number_popovers.remove(index);
+            cx.notify();
+        }
+    }
+
+    /// Closes the active (non-pinned) popover.
+    pub fn close_active_popover(&mut self, cx: &mut Context<Self>) {
+        if self.active_number_popover.is_some() {
+            self.active_number_popover = None;
+            cx.notify();
+        }
+    }
+
+    /// Updates the position of a pinned popover (for drag).
+    pub fn update_popover_position(
+        &mut self,
+        popover_id: usize,
+        new_position: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(popover) = self
+            .pinned_number_popovers
+            .iter_mut()
+            .find(|p| p.id == popover_id)
+        {
+            popover.position = new_position;
+            cx.notify();
         }
     }
 
@@ -3137,6 +3292,13 @@ impl Render for TerminalView {
                 MouseButton::Right,
                 cx.listener(|this, event: &MouseDownEvent, window, cx| {
                     if !this.terminal.read(cx).mouse_mode(event.modifiers.shift) {
+                        // Check if we right-clicked on a hovered number - show popover instead of context menu
+                        if this.terminal.read(cx).last_content.last_hovered_number.is_some() {
+                            this.show_number_popover_at_hovered_number(cx);
+                            cx.notify();
+                            return;
+                        }
+
                         if this.terminal.read(cx).last_content.selection.is_none() {
                             this.terminal.update(cx, |terminal, _| {
                                 terminal.select_word_at_event_position(event);

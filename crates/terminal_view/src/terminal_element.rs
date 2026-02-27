@@ -1,13 +1,13 @@
 use chrono::Local;
 use editor::{CursorLayout, EditorSettings, HighlightedRange, HighlightedRangeLine};
 use gpui::{
-    AbsoluteLength, AnyElement, App, AvailableSpace, Bounds, ContentMask, Context, DispatchPhase,
-    Element, ElementId, Entity, FocusHandle, Font, FontFeatures, FontStyle, FontWeight,
-    GlobalElementId, HighlightStyle, Hitbox, Hsla, InputHandler, InteractiveElement, Interactivity,
-    IntoElement, LayoutId, Length, ModifiersChangedEvent, MouseButton, MouseMoveEvent, Pixels,
-    Point, ShapedLine, StatefulInteractiveElement, StrikethroughStyle, Styled, TextRun, TextStyle,
-    UTF16Selection, UnderlineStyle, WeakEntity, WhiteSpace, Window, div, fill, point, px, relative,
-    size,
+    AbsoluteLength, AnyElement, App, AvailableSpace, Bounds, ContentMask, Context, Corner,
+    DispatchPhase, Element, ElementId, Entity, FocusHandle, Font, FontFeatures, FontStyle,
+    FontWeight, GlobalElementId, HighlightStyle, Hitbox, Hsla, InputHandler, InteractiveElement,
+    Interactivity, IntoElement, LayoutId, Length, ModifiersChangedEvent, MouseButton,
+    MouseMoveEvent, Pixels, Point, ShapedLine, StatefulInteractiveElement, StrikethroughStyle,
+    Styled, TextRun, TextStyle, UTF16Selection, UnderlineStyle, WeakEntity, WhiteSpace, Window,
+    anchored, deferred, div, fill, point, px, relative, size,
 };
 use itertools::Itertools;
 use language::CursorShape;
@@ -37,8 +37,8 @@ use std::mem;
 use std::{fmt::Debug, ops::RangeInclusive, rc::Rc};
 
 use crate::{
-    BlockContext, BlockProperties, ContentMode, RowDecoration, RowDecorator, TerminalMode,
-    TerminalView, TimestampGapDecorator,
+    BlockContext, BlockProperties, ContentMode, NumberPopoverElement, RowDecoration, RowDecorator,
+    TerminalMode, TerminalView, TimestampGapDecorator,
 };
 
 /// Gutter dimensions for line numbers and timestamps.
@@ -88,6 +88,7 @@ pub struct LayoutState {
     mode: TermMode,
     display_offset: usize,
     hyperlink_tooltip: Option<AnyElement>,
+    number_popovers: Vec<AnyElement>,
     gutter: Pixels,
     gutter_dimensions: TerminalGutterDimensions,
     gutter_entries: Vec<GutterLineEntry>,
@@ -1048,6 +1049,11 @@ impl TerminalElement {
             move |e, window, cx| {
                 window.focus(&focus, cx);
 
+                // Close any active (non-pinned) popover when clicking elsewhere
+                terminal_view.update(cx, |view, cx| {
+                    view.close_active_popover(cx);
+                });
+
                 let scroll_top = terminal_view.read(cx).scroll_top;
                 terminal.update(cx, |terminal, cx| {
                     let mut adjusted_event = e.clone();
@@ -1089,7 +1095,23 @@ impl TerminalElement {
                 if hitbox.is_hovered(window) {
                     terminal.update(cx, |terminal, cx| {
                         terminal.mouse_move(e, cx);
-                    })
+                    });
+
+                    // Schedule number hover detection when not in text selection mode
+                    if e.pressed_button.is_none() {
+                        log::debug!(
+                            "[NumberHover] Mouse move in hitbox: position={:?}",
+                            e.position
+                        );
+                        terminal_view.update(cx, |view, cx| {
+                            view.schedule_number_hover(e.position, window, cx);
+                        });
+                    }
+                } else {
+                    // Clear number hover when mouse leaves terminal
+                    terminal_view.update(cx, |view, cx| {
+                        view.clear_number_hover(cx);
+                    });
                 }
             }
         });
@@ -1453,6 +1475,83 @@ impl Element for TerminalElement {
                     element
                 });
 
+                // Prepare number popovers - extract data first, then release borrow
+                let (active_popover, pinned_popovers) = {
+                    let terminal_view = self.terminal_view.read(cx);
+                    (
+                        terminal_view.active_number_popover.clone(),
+                        terminal_view.pinned_number_popovers.clone(),
+                    )
+                };
+
+                let mut number_popovers = Vec::new();
+
+                // Prepare active popover
+                if let Some(ref popover) = active_popover {
+                    let terminal_view_for_pin = self.terminal_view.clone();
+                    let terminal_view_for_close = self.terminal_view.clone();
+                    let popover_id = popover.id;
+                    let mut element = deferred(
+                        anchored()
+                            .position(popover.position)
+                            .anchor(Corner::TopLeft)
+                            .snap_to_window_with_margin(px(8.))
+                            .child(
+                                NumberPopoverElement::new(popover.clone())
+                                    .on_pin(move |_, cx| {
+                                        terminal_view_for_pin.update(cx, |view, cx| {
+                                            view.toggle_popover_pin(popover_id, cx);
+                                        });
+                                    })
+                                    .on_close(move |_, cx| {
+                                        terminal_view_for_close.update(cx, |view, cx| {
+                                            view.close_popover(popover_id, cx);
+                                        });
+                                    }),
+                            ),
+                    )
+                    .with_priority(1)
+                    .into_any_element();
+                    element.prepaint_as_root(bounds.origin, bounds.size.into(), window, cx);
+                    number_popovers.push(element);
+                }
+
+                // Prepare pinned popovers
+                for popover in &pinned_popovers {
+                    let terminal_view_for_pin = self.terminal_view.clone();
+                    let terminal_view_for_close = self.terminal_view.clone();
+                    let terminal_view_for_drag = self.terminal_view.clone();
+                    let popover_id = popover.id;
+                    let mut element = deferred(
+                        anchored()
+                            .position(popover.position)
+                            .anchor(Corner::TopLeft)
+                            .snap_to_window_with_margin(px(8.))
+                            .child(
+                                NumberPopoverElement::new(popover.clone())
+                                    .on_pin(move |_, cx| {
+                                        terminal_view_for_pin.update(cx, |view, cx| {
+                                            view.toggle_popover_pin(popover_id, cx);
+                                        });
+                                    })
+                                    .on_close(move |_, cx| {
+                                        terminal_view_for_close.update(cx, |view, cx| {
+                                            view.close_popover(popover_id, cx);
+                                        });
+                                    })
+                                    .on_drag_move(move |new_pos, _, cx| {
+                                        terminal_view_for_drag.update(cx, |view, cx| {
+                                            view.update_popover_position(popover_id, new_pos, cx);
+                                        });
+                                    }),
+                            ),
+                    )
+                    .with_priority(1)
+                    .into_any_element();
+                    element.prepaint_as_root(bounds.origin, bounds.size.into(), window, cx);
+                    number_popovers.push(element);
+                }
+
                 let TerminalContent {
                     cells,
                     mode,
@@ -1473,6 +1572,16 @@ impl Element for TerminalElement {
                 if let Some(selection) = selection {
                     relative_highlighted_ranges
                         .push((selection.start..=selection.end, player_color.selection));
+                }
+
+                // Add number hover highlight
+                if let Some(ref hovered_number) =
+                    self.terminal.read(cx).last_content.last_hovered_number
+                {
+                    // Use a golden/yellow highlight color for better visibility
+                    let number_highlight_color = gpui::hsla(45.0 / 360.0, 0.8, 0.5, 0.35);
+                    relative_highlighted_ranges
+                        .push((hovered_number.parsed.word_match.clone(), number_highlight_color));
                 }
 
                 // then have that representation be converted to the appropriate highlight data structure
@@ -1653,6 +1762,7 @@ impl Element for TerminalElement {
                     mode,
                     display_offset,
                     hyperlink_tooltip,
+                    number_popovers,
                     gutter,
                     gutter_dimensions,
                     gutter_entries,
@@ -1727,6 +1837,7 @@ impl Element for TerminalElement {
             let original_cursor = layout.cursor.take();
             let hyperlink_tooltip = layout.hyperlink_tooltip.take();
             let block_below_cursor_element = layout.block_below_cursor_element.take();
+            let number_popovers = std::mem::take(&mut layout.number_popovers);
             self.interactivity.paint(
                 global_id,
                 inspector_id,
@@ -1839,6 +1950,12 @@ impl Element for TerminalElement {
 
                     if let Some(mut element) = hyperlink_tooltip {
                         element.paint(window, cx);
+                    }
+
+                    // Paint number popovers (moved from outside the closure)
+                    let _ = &number_popovers; // force capture
+                    for mut popover_element in number_popovers.into_iter() {
+                        popover_element.paint(window, cx);
                     }
 
                     log::debug!(
