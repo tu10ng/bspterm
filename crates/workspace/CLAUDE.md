@@ -6,22 +6,23 @@ Window management, local state serialization, and project grouping. Manages the 
 
 ```
 src/
-├── workspace.rs        # Main Workspace entity (12,480 lines)
-├── dock.rs             # Dock container management
-├── pane.rs             # Pane container for items (8,194 lines)
-├── pane_group.rs       # Hierarchical pane splitting
-├── item.rs             # Item trait for tab content
-├── utility_pane.rs     # Side utility panes
-├── persistence.rs      # Window/workspace serialization (3,558 lines)
-├── notifications.rs    # Toast/notification system
-├── searchable.rs       # Search interface for items
-├── toolbar.rs          # Toolbar and status bar items
-├── history_manager.rs  # Navigation history
-├── modal_layer.rs      # Modal dialog layer
-├── toast_layer.rs      # Toast notification layer
-├── activity_bar.rs     # Activity bar UI
-├── status_bar.rs       # Status bar UI
-└── shared_screen.rs    # Collaboration screen sharing
+├── workspace.rs              # Main Workspace entity (12,480 lines)
+├── dock.rs                   # Dock container management
+├── pane.rs                   # Pane container for items (8,194 lines)
+├── pane_group.rs             # Hierarchical pane splitting
+├── item.rs                   # Item trait for tab content
+├── utility_pane.rs           # Side utility panes
+├── persistence.rs            # Window/workspace serialization (3,558 lines)
+├── notifications.rs          # Toast/notification system
+├── device_online_detector.rs # Device online notification grouping
+├── searchable.rs             # Search interface for items
+├── toolbar.rs                # Toolbar and status bar items
+├── history_manager.rs        # Navigation history
+├── modal_layer.rs            # Modal dialog layer
+├── toast_layer.rs            # Toast notification layer
+├── activity_bar.rs           # Activity bar UI
+├── status_bar.rs             # Status bar UI
+└── shared_screen.rs          # Collaboration screen sharing
 ```
 
 ## Key Types
@@ -39,6 +40,8 @@ src/
 | `ItemHandle` | Type-erased item handle |
 | `Member` | Pane or Axis in split tree |
 | `SplitDirection` | Horizontal, Vertical |
+| `DeviceOnlineDetector` | Groups device online notifications by session |
+| `OnlineDeviceInfo` | Info about a device that came online |
 
 ## Dependencies
 

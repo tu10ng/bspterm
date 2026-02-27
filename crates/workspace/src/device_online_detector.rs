@@ -9,9 +9,9 @@ use terminal::terminal_settings::TerminalSettings;
 use util::desktop_notification::DesktopNotification;
 use uuid::Uuid;
 
-/// Information about a reconnected terminal for notification grouping.
+/// Information about an online device for notification grouping.
 #[derive(Clone, Debug)]
-pub struct ReconnectedTerminal {
+pub struct OnlineDeviceInfo {
     pub terminal_id: gpui::EntityId,
     pub host: String,
     pub group_id: Option<Uuid>,
@@ -29,8 +29,8 @@ struct TerminalInfoJson {
     group_name: Option<String>,
 }
 
-impl From<&ReconnectedTerminal> for TerminalInfoJson {
-    fn from(t: &ReconnectedTerminal) -> Self {
+impl From<&OnlineDeviceInfo> for TerminalInfoJson {
+    fn from(t: &OnlineDeviceInfo) -> Self {
         Self {
             terminal_id: format!("{}", t.terminal_id),
             host: t.host.clone(),
@@ -40,24 +40,24 @@ impl From<&ReconnectedTerminal> for TerminalInfoJson {
     }
 }
 
-/// Events emitted by the reconnection notifier.
+/// Events emitted by the device online detector.
 #[derive(Clone, Debug)]
-pub enum ReconnectionNotifierEvent {
+pub enum DeviceOnlineEvent {
     NotificationSent,
 }
 
-impl EventEmitter<ReconnectionNotifierEvent> for ReconnectionNotifier {}
+impl EventEmitter<DeviceOnlineEvent> for DeviceOnlineDetector {}
 
-/// Central manager for grouped reconnection notifications.
+/// Central manager for grouped device online notifications.
 ///
-/// This manager collects reconnection events and groups them by session group
+/// This manager collects device online events and groups them by session group
 /// (from remote explorer) before sending combined desktop notifications.
-pub struct ReconnectionNotifier {
-    pending_notifications: HashMap<Option<Uuid>, Vec<ReconnectedTerminal>>,
+pub struct DeviceOnlineDetector {
+    pending_notifications: HashMap<Option<Uuid>, Vec<OnlineDeviceInfo>>,
     debounce_task: Option<Task<()>>,
 }
 
-impl ReconnectionNotifier {
+impl DeviceOnlineDetector {
     pub fn new() -> Self {
         Self {
             pending_notifications: HashMap::default(),
@@ -65,15 +65,15 @@ impl ReconnectionNotifier {
         }
     }
 
-    /// Queue a notification for a reconnected terminal.
+    /// Queue a notification for a device that came online.
     /// Notifications are grouped by group_id and debounced for 500ms.
-    pub fn notify_reconnected(
+    pub fn notify_device_online(
         &mut self,
-        terminal_info: ReconnectedTerminal,
+        terminal_info: OnlineDeviceInfo,
         cx: &mut Context<Self>,
     ) {
         log::info!(
-            "[RECONNECT-NOTIFIER] Queuing notification for host: {}, group_id: {:?}",
+            "[DEVICE-ONLINE] Queuing notification for host: {}, group_id: {:?}",
             terminal_info.host,
             terminal_info.group_id
         );
@@ -105,7 +105,7 @@ impl ReconnectionNotifier {
         let pending = std::mem::take(&mut self.pending_notifications);
 
         log::info!(
-            "[RECONNECT-NOTIFIER] Flushing {} notification groups",
+            "[DEVICE-ONLINE] Flushing {} notification groups",
             pending.len()
         );
 
@@ -114,7 +114,7 @@ impl ReconnectionNotifier {
         let script_path = settings.device_online_script.clone();
 
         // Collect all terminals across all groups for script execution
-        let all_terminals: Vec<ReconnectedTerminal> =
+        let all_terminals: Vec<OnlineDeviceInfo> =
             pending.values().flatten().cloned().collect();
 
         match action {
@@ -125,7 +125,7 @@ impl ReconnectionNotifier {
                     }
 
                     log::info!(
-                        "[RECONNECT-NOTIFIER] Sending notification: {} terminals, group_id={:?}",
+                        "[DEVICE-ONLINE] Sending notification: {} terminals, group_id={:?}",
                         terminals.len(),
                         group_id
                     );
@@ -134,7 +134,7 @@ impl ReconnectionNotifier {
 
                     cx.spawn(async move |_, _| {
                         if let Err(e) = notification.send().await {
-                            log::warn!("[RECONNECT-NOTIFIER] Failed to send notification: {}", e);
+                            log::warn!("[DEVICE-ONLINE] Failed to send notification: {}", e);
                         }
                     })
                     .detach();
@@ -142,17 +142,17 @@ impl ReconnectionNotifier {
             }
             DeviceOnlineAction::RunScript => {
                 if all_terminals.is_empty() {
-                    log::debug!("[RECONNECT-NOTIFIER] No terminals to process for script");
+                    log::debug!("[DEVICE-ONLINE] No terminals to process for script");
                 } else if let Some(ref script) = script_path {
                     log::info!(
-                        "[RECONNECT-NOTIFIER] Running script for {} terminals: {}",
+                        "[DEVICE-ONLINE] Running script for {} terminals: {}",
                         all_terminals.len(),
                         script
                     );
                     self.run_device_online_script(&all_terminals, script, cx);
                 } else {
                     log::warn!(
-                        "[RECONNECT-NOTIFIER] device_online_action is run_script but no script configured, falling back to notification"
+                        "[DEVICE-ONLINE] device_online_action is run_script but no script configured, falling back to notification"
                     );
                     for (group_id, terminals) in pending {
                         if terminals.is_empty() {
@@ -168,13 +168,13 @@ impl ReconnectionNotifier {
             }
         }
 
-        cx.emit(ReconnectionNotifierEvent::NotificationSent);
+        cx.emit(DeviceOnlineEvent::NotificationSent);
     }
 
     /// Run the device online script with terminal information.
     fn run_device_online_script(
         &self,
-        terminals: &[ReconnectedTerminal],
+        terminals: &[OnlineDeviceInfo],
         script_path: &str,
         cx: &mut Context<Self>,
     ) {
@@ -184,7 +184,7 @@ impl ReconnectionNotifier {
             Ok(s) => s,
             Err(e) => {
                 log::error!(
-                    "[RECONNECT-NOTIFIER] Failed to serialize terminals JSON: {}",
+                    "[DEVICE-ONLINE] Failed to serialize terminals JSON: {}",
                     e
                 );
                 return;
@@ -194,7 +194,7 @@ impl ReconnectionNotifier {
         let script_full_path = self.resolve_script_path(script_path);
 
         log::info!(
-            "[RECONNECT-NOTIFIER] Executing script: {:?} with {} terminals",
+            "[DEVICE-ONLINE] Executing script: {:?} with {} terminals",
             script_full_path,
             terminals.len()
         );
@@ -252,24 +252,24 @@ impl ReconnectionNotifier {
             Ok(output) => {
                 if output.status.success() {
                     log::info!(
-                        "[RECONNECT-NOTIFIER] Script executed successfully: {:?}",
+                        "[DEVICE-ONLINE] Script executed successfully: {:?}",
                         script_path
                     );
                     if !output.stdout.is_empty() {
                         log::debug!(
-                            "[RECONNECT-NOTIFIER] Script stdout: {}",
+                            "[DEVICE-ONLINE] Script stdout: {}",
                             String::from_utf8_lossy(&output.stdout)
                         );
                     }
                 } else {
                     log::warn!(
-                        "[RECONNECT-NOTIFIER] Script exited with code {:?}: {:?}",
+                        "[DEVICE-ONLINE] Script exited with code {:?}: {:?}",
                         output.status.code(),
                         script_path
                     );
                     if !output.stderr.is_empty() {
                         log::warn!(
-                            "[RECONNECT-NOTIFIER] Script stderr: {}",
+                            "[DEVICE-ONLINE] Script stderr: {}",
                             String::from_utf8_lossy(&output.stderr)
                         );
                     }
@@ -277,7 +277,7 @@ impl ReconnectionNotifier {
             }
             Err(e) => {
                 log::error!(
-                    "[RECONNECT-NOTIFIER] Failed to execute script {:?}: {}",
+                    "[DEVICE-ONLINE] Failed to execute script {:?}: {}",
                     script_path,
                     e
                 );
@@ -288,7 +288,7 @@ impl ReconnectionNotifier {
     /// Build a desktop notification for a group of reconnected terminals.
     fn build_notification(
         &self,
-        terminals: &[ReconnectedTerminal],
+        terminals: &[OnlineDeviceInfo],
         group_id: Option<Uuid>,
     ) -> DesktopNotification {
         let title = "Terminal Reconnected";
@@ -315,32 +315,32 @@ impl ReconnectionNotifier {
     }
 }
 
-impl Default for ReconnectionNotifier {
+impl Default for DeviceOnlineDetector {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// Global marker for accessing the ReconnectionNotifier via cx.global()
-pub struct GlobalReconnectionNotifier(pub Entity<ReconnectionNotifier>);
+/// Global marker for accessing the DeviceOnlineDetector via cx.global()
+pub struct GlobalDeviceOnlineDetector(pub Entity<DeviceOnlineDetector>);
 
-impl gpui::Global for GlobalReconnectionNotifier {}
+impl gpui::Global for GlobalDeviceOnlineDetector {}
 
-impl GlobalReconnectionNotifier {
-    /// Initialize the global reconnection notifier.
+impl GlobalDeviceOnlineDetector {
+    /// Initialize the global device online detector.
     pub fn init(cx: &mut App) {
-        let notifier = cx.new(|_| ReconnectionNotifier::new());
-        cx.set_global(GlobalReconnectionNotifier(notifier));
+        let detector = cx.new(|_| DeviceOnlineDetector::new());
+        cx.set_global(GlobalDeviceOnlineDetector(detector));
     }
 
-    /// Get the global reconnection notifier entity.
-    pub fn global(cx: &App) -> Entity<ReconnectionNotifier> {
-        cx.global::<GlobalReconnectionNotifier>().0.clone()
+    /// Get the global device online detector entity.
+    pub fn global(cx: &App) -> Entity<DeviceOnlineDetector> {
+        cx.global::<GlobalDeviceOnlineDetector>().0.clone()
     }
 
-    /// Try to get the global reconnection notifier entity if initialized.
-    pub fn try_global(cx: &App) -> Option<Entity<ReconnectionNotifier>> {
-        cx.try_global::<GlobalReconnectionNotifier>()
+    /// Try to get the global device online detector entity if initialized.
+    pub fn try_global(cx: &App) -> Option<Entity<DeviceOnlineDetector>> {
+        cx.try_global::<GlobalDeviceOnlineDetector>()
             .map(|g| g.0.clone())
     }
 }

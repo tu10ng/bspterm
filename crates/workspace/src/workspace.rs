@@ -9,7 +9,7 @@ pub mod pane;
 pub mod pane_group;
 mod path_list;
 mod persistence;
-pub mod reconnection_notifier;
+pub mod device_online_detector;
 pub mod searchable;
 mod security_modal;
 pub mod shared_screen;
@@ -623,7 +623,7 @@ pub fn init(app_state: Arc<AppState>, cx: &mut App) {
     theme_preview::init(cx);
     toast_layer::init(cx);
     history_manager::init(cx);
-    reconnection_notifier::GlobalReconnectionNotifier::init(cx);
+    device_online_detector::GlobalDeviceOnlineDetector::init(cx);
 
     cx.on_action(|_: &CloseWindow, cx| Workspace::close_global(cx))
         .on_action(|_: &Reload, cx| reload(cx))

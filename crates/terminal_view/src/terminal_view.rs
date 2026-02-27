@@ -65,7 +65,7 @@ use workspace::{
         BreadcrumbText, Item, ItemEvent, SerializableItem, TabContentParams, TabTooltipContent,
     },
     notifications::NotificationId,
-    reconnection_notifier::{GlobalReconnectionNotifier, ReconnectedTerminal},
+    device_online_detector::{GlobalDeviceOnlineDetector, OnlineDeviceInfo},
     register_serializable_item,
     searchable::{
         Direction, SearchEvent, SearchOptions, SearchToken, SearchableItem, SearchableItemHandle,
@@ -2561,10 +2561,10 @@ print(output)
 
                                     let (group_id, group_name) = this.get_session_group_info(cx);
 
-                                    if let Some(notifier) = GlobalReconnectionNotifier::try_global(cx) {
-                                        notifier.update(cx, |notifier, cx| {
-                                            notifier.notify_reconnected(
-                                                ReconnectedTerminal {
+                                    if let Some(detector) = GlobalDeviceOnlineDetector::try_global(cx) {
+                                        detector.update(cx, |detector, cx| {
+                                            detector.notify_device_online(
+                                                OnlineDeviceInfo {
                                                     terminal_id: this.terminal.entity_id(),
                                                     host: host.clone(),
                                                     group_id,
@@ -2574,7 +2574,7 @@ print(output)
                                             );
                                         });
                                     } else {
-                                        log::warn!("[AUTO-RECONNECT] GlobalReconnectionNotifier not available");
+                                        log::warn!("[AUTO-RECONNECT] GlobalDeviceOnlineDetector not available");
                                     }
                                 } else {
                                     log::debug!("[AUTO-RECONNECT] Skipping notification (notify_on_reconnect disabled)");
