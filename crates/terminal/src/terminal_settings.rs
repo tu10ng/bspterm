@@ -106,6 +106,8 @@ pub struct TerminalSettings {
     pub tab_double_click_action: TabDoubleClickAction,
     pub device_online_action: DeviceOnlineAction,
     pub device_online_script: Option<String>,
+    pub ssh_keepalive_interval_secs: u64,
+    pub ssh_keepalive_max: usize,
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -230,6 +232,8 @@ impl settings::Settings for TerminalSettings {
                 .device_online_action
                 .unwrap_or(DeviceOnlineAction::Notify),
             device_online_script: user_content.device_online_script,
+            ssh_keepalive_interval_secs: user_content.ssh_keepalive_interval_secs.unwrap_or(5),
+            ssh_keepalive_max: user_content.ssh_keepalive_max.unwrap_or(2),
         }
     }
 }

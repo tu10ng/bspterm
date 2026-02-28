@@ -190,7 +190,8 @@ impl SessionEditModal {
                                     AuthMethod::Password { password }
                                 },
                                 env: std::collections::HashMap::new(),
-                                keepalive_interval_secs: Some(30),
+                                keepalive_interval_secs: Some(5),
+                                keepalive_max: Some(2),
                                 initial_command: None,
                                 terminal_type,
                             });

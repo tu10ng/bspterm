@@ -222,6 +222,18 @@ pub struct TerminalSettingsContent {
     /// 当 device_online_action 为 "run_script" 时执行的 Python 脚本路径。
     /// 相对路径从 ~/.config/bspterm/scripts/ 解析。
     pub device_online_script: Option<String>,
+    /// SSH keepalive interval in seconds. Sends keepalive packets to detect
+    /// disconnections from unresponsive servers (e.g., hardware power-off).
+    /// SSH keepalive 间隔（秒）。发送 keepalive 数据包以检测服务器断开（如硬件断电）。
+    ///
+    /// Default: 5
+    pub ssh_keepalive_interval_secs: Option<u64>,
+    /// Maximum number of keepalive packets without response before
+    /// considering the connection dead.
+    /// 无响应的 keepalive 数据包最大次数，超过后认为连接已断开。
+    ///
+    /// Default: 2
+    pub ssh_keepalive_max: Option<usize>,
 }
 
 /// Shell configuration to open the terminal with.

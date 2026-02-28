@@ -884,6 +884,8 @@ impl VsCodeSettings {
             tab_double_click_action: None,
             device_online_action: None,
             device_online_script: None,
+            ssh_keepalive_interval_secs: None,
+            ssh_keepalive_max: None,
         })
     }
 

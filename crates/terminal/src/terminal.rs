@@ -3606,7 +3606,10 @@ impl Terminal {
         let tokio_handle = gpui_tokio::Tokio::handle(cx);
         let events_tx = self.events_tx.clone();
         let terminal_size = self.last_content.terminal_bounds.into();
-        let connection_timeout = TerminalSettings::get_global(cx).connection_timeout();
+        let settings = TerminalSettings::get_global(cx);
+        let connection_timeout = settings.connection_timeout();
+        let ssh_keepalive_interval = Duration::from_secs(settings.ssh_keepalive_interval_secs);
+        let ssh_keepalive_max = settings.ssh_keepalive_max;
 
         cx.spawn(async move |_| {
             match connection_info {
@@ -3632,7 +3635,9 @@ impl Terminal {
 
                     let mut ssh_config = connection::ssh::SshConfig::new(host, port)
                         .with_auth(auth)
-                        .with_connection_timeout(connection_timeout);
+                        .with_connection_timeout(connection_timeout)
+                        .with_keepalive(ssh_keepalive_interval)
+                        .with_keepalive_max(ssh_keepalive_max);
                     if let Some(user) = username {
                         ssh_config = ssh_config.with_username(user);
                     }

@@ -19,6 +19,7 @@ pub struct SshConfig {
     pub auth: SshAuthConfig,
     pub env: collections::HashMap<String, String>,
     pub keepalive_interval: Option<std::time::Duration>,
+    pub keepalive_max: usize,
     pub initial_command: Option<String>,
     pub terminal_type: String,
     pub connection_timeout: Option<std::time::Duration>,
@@ -32,7 +33,8 @@ impl SshConfig {
             username: None,
             auth: SshAuthConfig::Auto,
             env: collections::HashMap::default(),
-            keepalive_interval: Some(std::time::Duration::from_secs(30)),
+            keepalive_interval: Some(std::time::Duration::from_secs(5)),
+            keepalive_max: 2,
             initial_command: None,
             terminal_type: "xterm-256color".to_string(),
             connection_timeout: None,
@@ -56,6 +58,11 @@ impl SshConfig {
 
     pub fn with_keepalive(mut self, interval: std::time::Duration) -> Self {
         self.keepalive_interval = Some(interval);
+        self
+    }
+
+    pub fn with_keepalive_max(mut self, max: usize) -> Self {
+        self.keepalive_max = max;
         self
     }
 

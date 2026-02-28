@@ -135,6 +135,7 @@ pub struct SshSessionConfig {
     #[serde(default)]
     pub env: HashMap<String, String>,
     pub keepalive_interval_secs: Option<u64>,
+    pub keepalive_max: Option<usize>,
     pub initial_command: Option<String>,
     #[serde(default)]
     pub terminal_type: Option<String>,
@@ -148,7 +149,8 @@ impl SshSessionConfig {
             username: None,
             auth: AuthMethod::Interactive,
             env: HashMap::new(),
-            keepalive_interval_secs: Some(30),
+            keepalive_interval_secs: Some(5),
+            keepalive_max: Some(2),
             initial_command: None,
             terminal_type: None,
         }
@@ -223,6 +225,9 @@ impl From<&SshSessionConfig> for SshConfig {
         if let Some(secs) = config.keepalive_interval_secs {
             ssh_config = ssh_config.with_keepalive(Duration::from_secs(secs));
         }
+        if let Some(max) = config.keepalive_max {
+            ssh_config = ssh_config.with_keepalive_max(max);
+        }
         if let Some(cmd) = &config.initial_command {
             ssh_config = ssh_config.with_initial_command(cmd);
         }
@@ -256,6 +261,7 @@ impl From<&SshConfig> for SshSessionConfig {
             auth: (&config.auth).into(),
             env: config.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
             keepalive_interval_secs: config.keepalive_interval.map(|d| d.as_secs()),
+            keepalive_max: Some(config.keepalive_max),
             initial_command: config.initial_command.clone(),
             terminal_type: if config.terminal_type == "xterm-256color" {
                 None
@@ -921,6 +927,7 @@ mod tests {
             auth: AuthMethod::Password { password: "pass".into() },
             env: [("TERM".into(), "xterm".into())].into_iter().collect(),
             keepalive_interval_secs: Some(60),
+            keepalive_max: Some(3),
             initial_command: Some("htop".into()),
             terminal_type: Some("vt100".into()),
         };
@@ -932,6 +939,7 @@ mod tests {
         assert_eq!(ssh_config.username, Some("user".into()));
         assert!(matches!(ssh_config.auth, SshAuthConfig::Password(_)));
         assert_eq!(ssh_config.keepalive_interval, Some(Duration::from_secs(60)));
+        assert_eq!(ssh_config.keepalive_max, 3);
         assert_eq!(ssh_config.initial_command, Some("htop".into()));
         assert_eq!(ssh_config.terminal_type, "vt100");
     }

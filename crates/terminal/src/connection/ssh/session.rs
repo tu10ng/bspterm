@@ -58,7 +58,7 @@ impl SshSession {
 
         let ssh_config = Arc::new(Config {
             keepalive_interval: config.keepalive_interval,
-            keepalive_max: 3,
+            keepalive_max: config.keepalive_max,
             ..Config::default()
         });
 
