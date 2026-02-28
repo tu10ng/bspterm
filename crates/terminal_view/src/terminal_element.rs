@@ -579,6 +579,7 @@ impl TerminalElement {
         let mut current_line: Option<i32> = None;
         let mut line_text = String::new();
         let mut line_number = 0usize; // Track the enumerated line number (matches layout_grid)
+        let mut leading_spaces = 0usize; // Track leading spaces stripped from line_text
 
         for cell in cells.iter() {
             let cell_line = cell.point.line.0;
@@ -586,14 +587,19 @@ impl TerminalElement {
             // If we moved to a new line, process the previous line
             if current_line.is_some() && current_line != Some(cell_line) {
                 if !line_text.is_empty() {
-                    let line_tokens = lsp_server.compute_line_tokens(
+                    let mut line_tokens = lsp_server.compute_line_tokens(
                         line_number,
                         &line_text,
                         None, // TODO: pass protocol filter
                     );
+                    // Adjust token positions to account for stripped leading spaces
+                    for token in &mut line_tokens {
+                        token.start_col += leading_spaces;
+                    }
                     tokens.extend(line_tokens);
                 }
                 line_text.clear();
+                leading_spaces = 0;
                 line_number += 1; // Increment line number for next line
             }
 
@@ -601,20 +607,26 @@ impl TerminalElement {
                 current_line = Some(cell_line);
             }
 
-            // Add character to line text
+            // Add character to line text, tracking leading spaces
             let c = cell.c;
-            if c != ' ' || !line_text.is_empty() {
+            if c == ' ' && line_text.is_empty() {
+                leading_spaces += 1;
+            } else {
                 line_text.push(c);
             }
         }
 
         // Process the last line
         if !line_text.is_empty() {
-            let line_tokens = lsp_server.compute_line_tokens(
+            let mut line_tokens = lsp_server.compute_line_tokens(
                 line_number,
                 &line_text,
                 None,
             );
+            // Adjust token positions to account for stripped leading spaces
+            for token in &mut line_tokens {
+                token.start_col += leading_spaces;
+            }
             tokens.extend(line_tokens);
         }
 

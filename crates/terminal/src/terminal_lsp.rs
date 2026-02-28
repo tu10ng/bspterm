@@ -95,8 +95,9 @@ impl TerminalLanguageServer {
             }
 
             for mat in compiled_rule.regex.find_iter(line_content) {
-                let start_col = mat.start();
-                let length = mat.len();
+                // Convert byte positions to character positions for proper UTF-8 support
+                let start_col = line_content[..mat.start()].chars().count();
+                let length = line_content[mat.start()..mat.end()].chars().count();
 
                 // Check if this region overlaps with any existing token
                 // Since rules are sorted by priority, we skip if there's already a token
@@ -222,17 +223,17 @@ impl TerminalDocument {
 /// Returns a hex color string.
 pub fn default_token_color(token_type: &TerminalTokenType) -> &'static str {
     match token_type {
-        TerminalTokenType::Error => "#e06c75",      // Red
-        TerminalTokenType::Warning => "#e5c07b",    // Yellow
-        TerminalTokenType::Info => "#61afef",       // Blue
-        TerminalTokenType::Debug => "#c678dd",      // Purple
-        TerminalTokenType::Timestamp => "#5c6370",  // Gray
-        TerminalTokenType::IpAddress => "#d19a66",  // Orange
-        TerminalTokenType::Url => "#56b6c2",        // Cyan
-        TerminalTokenType::Path => "#c678dd",       // Purple
-        TerminalTokenType::Number => "#d19a66",     // Orange
-        TerminalTokenType::Success => "#98c379",    // Green
-        TerminalTokenType::Custom(_) => "#abb2bf",  // Default text color
+        TerminalTokenType::Error => "#f44747",      // Bright Red
+        TerminalTokenType::Warning => "#ffcc00",    // Bright Yellow
+        TerminalTokenType::Info => "#3794ff",       // Bright Blue
+        TerminalTokenType::Debug => "#b267e6",      // Magenta
+        TerminalTokenType::Timestamp => "#858585",  // Medium Gray
+        TerminalTokenType::IpAddress => "#ce9178",  // Salmon Orange
+        TerminalTokenType::Url => "#4ec9b0",        // Teal Cyan
+        TerminalTokenType::Path => "#dcdcaa",       // Yellow
+        TerminalTokenType::Number => "#b5cea8",     // Light Green
+        TerminalTokenType::Success => "#89d185",    // Light Green
+        TerminalTokenType::Custom(_) => "#d4d4d4",  // Light Gray
     }
 }
 
@@ -378,5 +379,59 @@ mod tests {
         assert!(TerminalLanguageServer::token_at_position(&tokens, 0, 4).is_some());
         assert!(TerminalLanguageServer::token_at_position(&tokens, 0, 5).is_none());
         assert!(TerminalLanguageServer::token_at_position(&tokens, 1, 0).is_none());
+    }
+
+    #[test]
+    fn test_utf8_character_positions() {
+        let rules = vec![
+            HighlightRule::new(
+                "Timestamp",
+                r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}",
+                TerminalTokenType::Timestamp,
+            )
+            .with_priority(50),
+        ];
+
+        let server = TerminalLanguageServer::new(&rules);
+
+        // Test with Chinese characters before the timestamp
+        // "登录时间: " has 5 characters but more bytes in UTF-8
+        let tokens = server.compute_line_tokens(0, "登录时间: 2026-02-28 09:46:21.", None);
+
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].token_type, TerminalTokenType::Timestamp);
+        // Position should be in characters, not bytes
+        // "登录时间: " = 5 chars + 1 space = 6 characters before timestamp
+        assert_eq!(tokens[0].start_col, 6);
+        // Timestamp "2026-02-28 09:46:21" = 19 characters
+        assert_eq!(tokens[0].length, 19);
+    }
+
+    #[test]
+    fn test_timestamp_position_in_english_text() {
+        let rules = vec![
+            HighlightRule::new(
+                "Timestamp",
+                r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}",
+                TerminalTokenType::Timestamp,
+            )
+            .with_priority(50),
+        ];
+
+        let server = TerminalLanguageServer::new(&rules);
+
+        // Test the exact scenario from the bug report
+        let tokens = server.compute_line_tokens(
+            0,
+            "The current login time is 2026-02-28 09:46:21.",
+            None,
+        );
+
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].token_type, TerminalTokenType::Timestamp);
+        // "The current login time is " = 26 characters
+        assert_eq!(tokens[0].start_col, 26);
+        // "2026-02-28 09:46:21" = 19 characters
+        assert_eq!(tokens[0].length, 19);
     }
 }
