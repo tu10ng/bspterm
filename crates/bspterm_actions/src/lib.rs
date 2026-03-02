@@ -370,6 +370,36 @@ pub mod terminal_outline {
     );
 }
 
+pub mod log_tracer {
+    use gpui::actions;
+
+    actions!(
+        log_tracer,
+        [
+            /// Opens the log tracer to analyze terminal logs and generate call graphs.
+            TraceCallGraph,
+            /// Toggles focus on the call graph panel.
+            ToggleFocus
+        ]
+    );
+}
+
+pub mod call_graph_panel {
+    use gpui::actions;
+
+    actions!(
+        call_graph_panel,
+        [
+            /// Toggles focus on the call graph panel.
+            ToggleFocus,
+            /// Exports the current call graph to DOT format.
+            ExportDot,
+            /// Exports the current call graph to SVG format.
+            ExportSvg
+        ]
+    );
+}
+
 pub mod terminal_panel {
     use gpui::actions;
 

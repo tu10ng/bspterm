@@ -183,6 +183,7 @@ remote_explorer.workspace = true
 remote.workspace = true
 rule_editor.workspace = true
 highlight_editor.workspace = true
+call_graph_panel.workspace = true
 user_info_panel.workspace = true
 repl.workspace = true
 reqwest.workspace = true

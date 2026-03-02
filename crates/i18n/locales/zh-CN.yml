@@ -344,6 +344,7 @@ terminal:
   inline_assist: "内联助手"
   add_to_thread: "添加到 Agent 会话"
   close_tab: "关闭终端标签页"
+  trace_call_graph: "追踪调用图"
 
 # Script errors
 script:
@@ -497,3 +498,15 @@ highlight_edit:
   matches: "个匹配"
   valid: "有效"
   invalid: "无效"
+
+# Call Graph Panel
+call_graph:
+  title: "调用图"
+  idle: "选择日志并追踪以生成调用图"
+  building: "构建调用图中..."
+  rendering: "渲染中..."
+  complete: "调用图完成"
+  error: "错误"
+  error_title: "分析失败"
+  export_dot: "导出 DOT"
+  export_svg: "导出 SVG"

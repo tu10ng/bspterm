@@ -77,6 +77,7 @@ use std::{
     sync::Arc,
     sync::atomic::{self, AtomicBool},
 };
+use call_graph_panel::CallGraphPanel;
 use editor_panel::EditorPanel;
 use terminal::ShortcutBarStoreEntity;
 use terminal_view::terminal_panel::{self, TerminalPanel};
@@ -712,6 +713,7 @@ fn initialize_panels(
         // let git_panel = GitPanel::load(workspace_handle.clone(), cx.clone());
         // let debug_panel = DebugPanel::load(workspace_handle.clone(), cx);
         let user_info_panel = user_info_panel::UserInfoPanel::load(workspace_handle.clone(), cx.clone());
+        let call_graph_panel = CallGraphPanel::load(workspace_handle.clone(), cx.clone());
 
         async fn add_panel_when_ready(
             panel_task: impl Future<Output = anyhow::Result<Entity<impl workspace::Panel>>> + 'static,
@@ -742,6 +744,7 @@ fn initialize_panels(
             // add_panel_when_ready(git_panel, workspace_handle.clone(), cx.clone()),
             // add_panel_when_ready(debug_panel, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(user_info_panel, workspace_handle.clone(), cx.clone()),
+            add_panel_when_ready(call_graph_panel, workspace_handle.clone(), cx.clone()),
             initialize_agent_panel(workspace_handle.clone(), prompt_builder, cx.clone()).map(|r| r.log_err()),
             // initialize_agents_panel(workspace_handle, cx.clone()).map(|r| r.log_err())
         );
@@ -5070,6 +5073,7 @@ mod tests {
             remote_explorer::init(cx);
             rule_editor::init(cx);
             highlight_editor::init(cx);
+            call_graph_panel::init(cx);
             outline_panel::init(cx);
             terminal_view::init(cx);
             command_panel::init(cx);

@@ -2581,6 +2581,7 @@ dependencies = [
  "bspterm_actions",
  "bspterm_env_vars",
  "call",
+ "call_graph_panel",
  "channel",
  "chrono",
  "clap",
@@ -2984,6 +2985,27 @@ dependencies = [
  "settings",
  "telemetry",
  "util",
+]
+
+[[package]]
+name = "call_graph_panel"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bspterm_actions",
+ "editor",
+ "futures 0.3.31",
+ "gpui",
+ "i18n",
+ "log",
+ "log_tracer",
+ "serde",
+ "serde_json",
+ "settings",
+ "terminal",
+ "ui",
+ "util",
+ "workspace",
 ]
 
 [[package]]
@@ -7010,6 +7032,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
 
 [[package]]
+name = "fixedbitset"
+version = "0.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
+
+[[package]]
 name = "flate2"
 version = "1.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10658,6 +10686,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "log_tracer"
+version = "0.1.0"
+dependencies = [
+ "aho-corasick",
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "dirs 4.0.0",
+ "futures 0.3.31",
+ "gpui",
+ "log",
+ "lru",
+ "parking_lot",
+ "paths",
+ "petgraph 0.8.3",
+ "rayon",
+ "regex",
+ "russh",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "loom"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13213,8 +13266,20 @@ version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4c5cc86750666a3ed20bdaf5ca2a0344f9c67674cae0515bec2da16fbaa47db"
 dependencies = [
- "fixedbitset",
+ "fixedbitset 0.4.2",
  "indexmap",
+]
+
+[[package]]
+name = "petgraph"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8701b58ea97060d5e5b155d383a69952a60943f0e6dfe30b04c287beb0b27455"
+dependencies = [
+ "fixedbitset 0.5.7",
+ "hashbrown 0.15.5",
+ "indexmap",
+ "serde",
 ]
 
 [[package]]
@@ -14097,7 +14162,7 @@ dependencies = [
  "lazy_static",
  "log",
  "multimap 0.8.3",
- "petgraph",
+ "petgraph 0.6.5",
  "prost 0.9.0",
  "prost-types 0.9.0",
  "regex",
@@ -14117,7 +14182,7 @@ dependencies = [
  "log",
  "multimap 0.10.1",
  "once_cell",
- "petgraph",
+ "petgraph 0.6.5",
  "prettyplease",
  "prost 0.12.6",
  "prost-types 0.12.6",
@@ -18440,6 +18505,7 @@ dependencies = [
  "async-recursion",
  "breadcrumbs",
  "bspterm_actions",
+ "call_graph_panel",
  "chrono",
  "client",
  "collections",

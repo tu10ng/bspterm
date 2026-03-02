@@ -90,6 +90,8 @@ This is a fork of [Zed](https://github.com/zed-industries/zed), a GPU-accelerate
 - **remote_explorer** (`crates/remote_explorer`): Panel for browsing and managing saved SSH/Telnet sessions in a tree view.
 - **rule_editor** (`crates/rule_editor`): Panel for managing terminal automation rules (auto-login, pattern-based actions).
 - **highlight_editor** (`crates/highlight_editor`): Panel for managing terminal semantic highlighting rules (regex-based pattern matching with colors).
+- **log_tracer** (`crates/log_tracer`): Core analysis engine for parsing terminal logs, searching code in Docker containers, and generating call graphs.
+- **call_graph_panel** (`crates/call_graph_panel`): Panel for visualizing call graphs generated from terminal log analysis.
 
 ## Rust Coding Guidelines
 

@@ -53,6 +53,7 @@ ui.workspace = true
 util.workspace = true
 workspace.workspace = true
 bspterm_actions.workspace = true
+call_graph_panel.workspace = true
 
 [dev-dependencies]
 client = { workspace = true, features = ["test-support"] }

@@ -659,6 +659,7 @@ fn main() {
         remote_explorer::init(cx);
         rule_editor::init(cx);
         highlight_editor::init(cx);
+        call_graph_panel::init(cx);
         outline_panel::init(cx);
         tasks_ui::init(cx);
         snippets_ui::init(cx);

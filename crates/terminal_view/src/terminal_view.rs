@@ -80,6 +80,7 @@ use workspace::{
 use bspterm_actions::{
     agent::AddSelectionToThread,
     assistant::InlineAssist,
+    log_tracer::TraceCallGraph,
     terminal_abbr_bar::{
         AddAbbreviation, ConfigureAbbrBar, DeleteAbbreviation, EditAbbreviation, ToggleAbbrBar,
         ToggleAbbrExpansion,
@@ -87,6 +88,7 @@ use bspterm_actions::{
     terminal_button_bar::{ConfigureButtonBar, ToggleButtonBar},
     terminal_shortcut_bar::{ConfigureShortcutBar, RunScriptShortcut, ToggleShortcutBar},
 };
+use call_graph_panel::TraceConfigModal;
 use abbr_bar::{AbbrBarConfigModal, AddAbbrModal, EditAbbrModal};
 use button_bar::ButtonBarScriptRunner;
 use shortcut_bar::{AddShortcutModal, EditShortcutModal, ShortcutBarConfigModal};
@@ -890,6 +892,8 @@ impl TerminalView {
                 .action(t("menu.find"), Box::new(buffer_search::Deploy::find()))
                 .action(t("terminal.clear"), Box::new(Clear))
                 .action(t("terminal.export_all_output"), Box::new(ExportOutputToBuffer))
+                .separator()
+                .action(t("terminal.trace_call_graph"), Box::new(TraceCallGraph))
                 .when(assistant_enabled, |menu| {
                     menu.separator()
                         .action(t("terminal.inline_assist"), Box::new(InlineAssist::default()))
@@ -1855,6 +1859,24 @@ print(output)
         );
         self.button_bar_runner = Some(runner);
         cx.notify();
+    }
+
+    fn trace_call_graph(
+        &mut self,
+        _: &TraceCallGraph,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let content = self.terminal.read(cx).get_content();
+        let weak_workspace = self.workspace.clone();
+
+        self.workspace
+            .update(cx, |ws, cx| {
+                ws.toggle_modal(window, cx, |window, cx| {
+                    TraceConfigModal::new(weak_workspace, content.clone(), window, cx)
+                });
+            })
+            .ok();
     }
 
     fn deploy_shortcut_context_menu(
@@ -3334,6 +3356,7 @@ impl Render for TerminalView {
             .on_action(cx.listener(Self::toggle_shortcut_bar))
             .on_action(cx.listener(Self::configure_shortcut_bar))
             .on_action(cx.listener(Self::run_script_shortcut))
+            .on_action(cx.listener(Self::trace_call_graph))
             .on_key_down(cx.listener(Self::key_down))
             .on_mouse_down(
                 MouseButton::Right,

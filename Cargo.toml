@@ -101,6 +101,8 @@ members = [
     "crates/json_schema_store",
     "crates/keymap_editor",
     "crates/language",
+    "crates/log_tracer",
+    "crates/call_graph_panel",
     "crates/language_extension",
     "crates/language_model",
     "crates/language_models",
@@ -356,6 +358,8 @@ journal = { path = "crates/journal" }
 json_schema_store = { path = "crates/json_schema_store" }
 keymap_editor = { path = "crates/keymap_editor" }
 language = { path = "crates/language" }
+log_tracer = { path = "crates/log_tracer" }
+call_graph_panel = { path = "crates/call_graph_panel" }
 language_extension = { path = "crates/language_extension" }
 language_model = { path = "crates/language_model" }
 language_models = { path = "crates/language_models" }
@@ -489,8 +493,8 @@ ztracing_macro = { path = "crates/ztracing_macro" }
 #
 
 agent-client-protocol = { version = "=0.9.4", features = ["unstable"] }
-aho-corasick = "1.1"
 alacritty_terminal = { git = "https://github.com/zed-industries/alacritty", rev = "9d9640d4" }
+aho-corasick = "1.1"
 any_vec = "0.14"
 anyhow = "1.0.86"
 arrayvec = { version = "0.7.4", features = ["serde"] }
@@ -628,6 +632,7 @@ open = "5.0.0"
 ordered-float = "2.1.1"
 palette = { version = "0.7.5", default-features = false, features = ["std"] }
 parking_lot = "0.12.1"
+petgraph = "0.8"
 partial-json-fixer = "0.5.3"
 parse_int = "0.9"
 pciid-parser = "0.8.0"

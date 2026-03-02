@@ -344,6 +344,7 @@ terminal:
   inline_assist: "Inline Assist"
   add_to_thread: "Add to Agent Thread"
   close_tab: "Close Terminal Tab"
+  trace_call_graph: "Trace Call Graph"
 
 # Script errors
 script:
@@ -497,3 +498,15 @@ highlight_edit:
   matches: "matches"
   valid: "Valid"
   invalid: "Invalid"
+
+# Call Graph Panel
+call_graph:
+  title: "Call Graph"
+  idle: "Select log and trace to generate call graph"
+  building: "Building call graph..."
+  rendering: "Rendering..."
+  complete: "Call graph complete"
+  error: "Error"
+  error_title: "Analysis Failed"
+  export_dot: "Export DOT"
+  export_svg: "Export SVG"
