@@ -585,11 +585,11 @@ impl RemoteExplorer {
             .handle_auto_recognize_confirm(workspace, pane, window, cx)
         {
             match result {
-                ConnectionResult::Ssh(ssh_config, workspace, pane) => {
-                    connect_ssh(ssh_config, None, workspace, pane, window, cx);
+                ConnectionResult::Ssh(ssh_config, session_id, workspace, pane) => {
+                    connect_ssh(ssh_config, Some(session_id), workspace, pane, window, cx);
                 }
-                ConnectionResult::Telnet(telnet_config, workspace, pane) => {
-                    connect_telnet(telnet_config, None, workspace, pane, window, cx);
+                ConnectionResult::Telnet(telnet_config, session_id, workspace, pane) => {
+                    connect_telnet(telnet_config, Some(session_id), workspace, pane, window, cx);
                 }
             }
         }
@@ -598,22 +598,22 @@ impl RemoteExplorer {
     fn handle_telnet_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let workspace = self.workspace.clone();
         let pane = self.get_terminal_pane(cx);
-        if let Some((telnet_config, workspace, pane)) = self
+        if let Some((telnet_config, session_id, workspace, pane)) = self
             .quick_add_area
             .handle_telnet_connect(workspace, pane, window, cx)
         {
-            connect_telnet(telnet_config, None, workspace, pane, window, cx);
+            connect_telnet(telnet_config, Some(session_id), workspace, pane, window, cx);
         }
     }
 
     fn handle_ssh_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let workspace = self.workspace.clone();
         let pane = self.get_terminal_pane(cx);
-        if let Some((ssh_config, workspace, pane)) = self
+        if let Some((ssh_config, session_id, workspace, pane)) = self
             .quick_add_area
             .handle_ssh_connect(workspace, pane, window, cx)
         {
-            connect_ssh(ssh_config, None, workspace, pane, window, cx);
+            connect_ssh(ssh_config, Some(session_id), workspace, pane, window, cx);
         }
     }
 

@@ -123,10 +123,11 @@ impl MultiConnectionModal {
                 .unwrap_or(23);
             let username = entry.username_editor.read(cx).text(cx);
             let password = entry.password_editor.read(cx).text(cx);
+            let host = entry.host.clone();
 
             match entry.protocol {
                 ConnectionProtocol::Telnet => {
-                    let config = terminal::TelnetSessionConfig::new(&entry.host, port);
+                    let config = terminal::TelnetSessionConfig::new(&host, port);
                     let config = if !username.is_empty() {
                         config.with_credentials(username.clone(), password.clone())
                     } else {
@@ -134,15 +135,16 @@ impl MultiConnectionModal {
                     };
 
                     let session_name = if username.is_empty() {
-                        format!("{}:{}", entry.host, port)
+                        format!("{}:{}", host, port)
                     } else {
-                        format!("{}@{}:{}", username, entry.host, port)
+                        format!("{}@{}:{}", username, host, port)
                     };
 
                     let session_config =
                         terminal::SessionConfig::new_telnet(session_name.clone(), config);
                     self.session_store.update(cx, |store, cx| {
-                        store.add_session(session_config, None, cx);
+                        let group_id = store.get_or_create_group_by_name(&host, cx);
+                        store.add_session(session_config, Some(group_id), cx);
                     });
 
                     log::info!("Telnet connection not yet implemented: {}", session_name);
@@ -159,16 +161,17 @@ impl MultiConnectionModal {
                         password.clone()
                     };
 
-                    let ssh_config = terminal::SshSessionConfig::new(&entry.host, port)
+                    let ssh_config = terminal::SshSessionConfig::new(&host, port)
                         .with_username(&username)
                         .with_auth(terminal::AuthMethod::Password { password });
 
-                    let session_name = format!("{}@{}:{}", username, entry.host, port);
+                    let session_name = format!("{}@{}:{}", username, host, port);
                     let session_config =
                         terminal::SessionConfig::new_ssh(session_name, ssh_config);
 
                     self.session_store.update(cx, |store, cx| {
-                        store.add_session(session_config, None, cx);
+                        let group_id = store.get_or_create_group_by_name(&host, cx);
+                        store.add_session(session_config, Some(group_id), cx);
                     });
                 }
             }

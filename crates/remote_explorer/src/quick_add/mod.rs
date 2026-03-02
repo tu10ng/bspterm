@@ -14,11 +14,12 @@ use gpui::{App, Entity, IntoElement, ParentElement, Styled, WeakEntity, Window};
 use i18n::t;
 use terminal::{SessionConfig, SessionGroup, SessionStoreEntity};
 use ui::{prelude::*, Color, Disclosure, Label, LabelSize, h_flex, v_flex};
+use uuid::Uuid;
 use workspace::{Pane, Workspace};
 
 pub enum ConnectionResult {
-    Ssh(terminal::SshSessionConfig, Entity<Workspace>, Entity<Pane>),
-    Telnet(terminal::TelnetSessionConfig, Entity<Workspace>, Entity<Pane>),
+    Ssh(terminal::SshSessionConfig, Uuid, Entity<Workspace>, Entity<Pane>),
+    Telnet(terminal::TelnetSessionConfig, Uuid, Entity<Workspace>, Entity<Pane>),
 }
 
 pub struct QuickAddArea {
@@ -205,6 +206,7 @@ impl QuickAddArea {
                 });
                 let session_config =
                     terminal::SessionConfig::new_telnet(session_name, config.clone());
+                let session_id = session_config.id;
 
                 let group_id = self.session_store.update(cx, |store, cx| {
                     store.get_or_create_group_by_name(&connection.host, cx)
@@ -215,7 +217,7 @@ impl QuickAddArea {
                 });
 
                 if let (Some(workspace), Some(pane)) = (workspace.upgrade(), pane) {
-                    Some(ConnectionResult::Telnet(config, workspace, pane))
+                    Some(ConnectionResult::Telnet(config, session_id, workspace, pane))
                 } else {
                     None
                 }
@@ -239,6 +241,7 @@ impl QuickAddArea {
                 });
                 let session_config =
                     terminal::SessionConfig::new_ssh(session_name, ssh_config.clone());
+                let session_id = session_config.id;
 
                 let group_id = self.session_store.update(cx, |store, cx| {
                     store.get_or_create_group_by_name(&connection.host, cx)
@@ -249,7 +252,7 @@ impl QuickAddArea {
                 });
 
                 if let (Some(workspace), Some(pane)) = (workspace.upgrade(), pane) {
-                    Some(ConnectionResult::Ssh(ssh_config, workspace, pane))
+                    Some(ConnectionResult::Ssh(ssh_config, session_id, workspace, pane))
                 } else {
                     None
                 }
@@ -283,7 +286,7 @@ impl QuickAddArea {
         pane: Option<Entity<Pane>>,
         window: &mut Window,
         cx: &mut App,
-    ) -> Option<(terminal::TelnetSessionConfig, Entity<Workspace>, Entity<Pane>)> {
+    ) -> Option<(terminal::TelnetSessionConfig, Uuid, Entity<Workspace>, Entity<Pane>)> {
         let (host, port, username, password) = self.telnet_section.get_values(cx);
 
         if host.is_empty() {
@@ -299,20 +302,22 @@ impl QuickAddArea {
         };
 
         let session_name = if port == 23 {
-            host
+            host.clone()
         } else {
             format!("{}:{}", host, port)
         };
 
         let session_config = terminal::SessionConfig::new_telnet(session_name, config.clone());
+        let session_id = session_config.id;
         self.session_store.update(cx, |store, cx| {
-            store.add_session(session_config, None, cx);
+            let group_id = store.get_or_create_group_by_name(&host, cx);
+            store.add_session(session_config, Some(group_id), cx);
         });
 
         self.telnet_section.clear_fields(window, cx);
 
         if let (Some(workspace), Some(pane)) = (workspace.upgrade(), pane) {
-            Some((config, workspace, pane))
+            Some((config, session_id, workspace, pane))
         } else {
             None
         }
@@ -324,7 +329,7 @@ impl QuickAddArea {
         pane: Option<Entity<Pane>>,
         window: &mut Window,
         cx: &mut App,
-    ) -> Option<(terminal::SshSessionConfig, Entity<Workspace>, Entity<Pane>)> {
+    ) -> Option<(terminal::SshSessionConfig, Uuid, Entity<Workspace>, Entity<Pane>)> {
         let host_input = self.ssh_section.get_host(cx);
         if host_input.is_empty() {
             return None;
@@ -339,21 +344,23 @@ impl QuickAddArea {
             .with_auth(terminal::AuthMethod::Password { password });
 
         let session_name = if port == 22 {
-            host
+            host.clone()
         } else {
             format!("{}:{}", host, port)
         };
         let session_config =
             terminal::SessionConfig::new_ssh(session_name, ssh_config.clone());
+        let session_id = session_config.id;
 
         self.session_store.update(cx, |store, cx| {
-            store.add_session(session_config, None, cx);
+            let group_id = store.get_or_create_group_by_name(&host, cx);
+            store.add_session(session_config, Some(group_id), cx);
         });
 
         self.ssh_section.clear_host(window, cx);
 
         if let (Some(workspace), Some(pane)) = (workspace.upgrade(), pane) {
-            Some((ssh_config, workspace, pane))
+            Some((ssh_config, session_id, workspace, pane))
         } else {
             None
         }
