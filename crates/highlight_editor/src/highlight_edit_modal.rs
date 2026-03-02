@@ -592,6 +592,16 @@ impl Render for HighlightEditModal {
                                 .on_click(cx.listener(|this, _, _window, cx| {
                                     this.toggle_modifier(TerminalTokenModifiers::DIM, cx);
                                 })),
+                            )
+                            .child(
+                                Checkbox::new(
+                                    "modifier-border",
+                                    self.modifiers.is_border().into(),
+                                )
+                                .label("Border")
+                                .on_click(cx.listener(|this, _, _window, cx| {
+                                    this.toggle_modifier(TerminalTokenModifiers::BORDER, cx);
+                                })),
                             ),
                     ),
             )

@@ -332,7 +332,7 @@ impl Render for TerminalOutput {
                 cell: ic.cell.clone(),
             });
         let minimum_contrast = TerminalSettings::get_global(cx).minimum_contrast;
-        let (rects, batched_text_runs) =
+        let (rects, batched_text_runs, border_regions) =
             TerminalElement::layout_grid(grid, 0, &text_style, None, minimum_contrast, None, cx);
 
         // lines are 0-indexed, so we must add 1 to get the number of lines
@@ -360,6 +360,18 @@ impl Render for TerminalOutput {
             move |bounds, _, window, cx| {
                 for rect in rects {
                     rect.paint(
+                        bounds.origin,
+                        &terminal::TerminalBounds {
+                            cell_width,
+                            line_height: text_line_height,
+                            bounds,
+                        },
+                        window,
+                    );
+                }
+
+                for border in border_regions {
+                    border.paint(
                         bounds.origin,
                         &terminal::TerminalBounds {
                             cell_width,

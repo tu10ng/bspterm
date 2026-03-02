@@ -14,8 +14,8 @@ use language::CursorShape;
 use settings::Settings;
 use std::time::Instant;
 use terminal::{
-    HighlightStoreEntity, IndexedCell, SemanticToken, Terminal, TerminalBounds, TerminalContent,
-    TerminalLanguageServer, default_token_color,
+    HighlightProtocol, HighlightStoreEntity, IndexedCell, SemanticToken, Terminal, TerminalBounds,
+    TerminalContent, TerminalLanguageServer, default_token_color,
     alacritty_terminal::{
         grid::Dimensions,
         index::Point as AlacPoint,
@@ -80,6 +80,7 @@ pub struct LayoutState {
     hitbox: Hitbox,
     batched_text_runs: Vec<BatchedTextRun>,
     rects: Vec<LayoutRect>,
+    border_regions: Vec<BorderRegion>,
     relative_highlighted_ranges: Vec<(RangeInclusive<AlacPoint>, Hsla)>,
     cursor: Option<CursorLayout>,
     ime_cursor_bounds: Option<Bounds<Pixels>>,
@@ -323,6 +324,52 @@ fn merge_background_regions(regions: Vec<BackgroundRegion>) -> Vec<BackgroundReg
     merged
 }
 
+/// Represents a border region around highlighted text
+#[derive(Debug, Clone)]
+pub struct BorderRegion {
+    line: i32,
+    start_col: usize,
+    length: usize,
+    color: Hsla,
+}
+
+impl BorderRegion {
+    fn new(line: i32, start_col: usize, length: usize, color: Hsla) -> Self {
+        BorderRegion {
+            line,
+            start_col,
+            length,
+            color,
+        }
+    }
+
+    pub fn paint(&self, origin: Point<Pixels>, dimensions: &TerminalBounds, window: &mut Window) {
+        let position = point(
+            (origin.x + self.start_col as f32 * dimensions.cell_width).floor(),
+            origin.y + self.line as f32 * dimensions.line_height,
+        );
+        let size = point(
+            (dimensions.cell_width * self.length as f32).ceil(),
+            dimensions.line_height,
+        )
+        .into();
+
+        let bounds = Bounds::new(position, size);
+        let border_width = px(1.0);
+        let corner_radius = px(2.0);
+
+        // Paint a rounded rectangle border
+        window.paint_quad(gpui::quad(
+            bounds,
+            corner_radius,
+            gpui::transparent_black(),
+            gpui::Edges::all(border_width),
+            self.color,
+            gpui::BorderStyle::default(),
+        ));
+    }
+}
+
 /// The GPUI element that paints the terminal.
 /// We need to keep a reference to the model for mouse events, do we need it for any other terminal stuff, or can we move that to connection?
 pub struct TerminalElement {
@@ -380,7 +427,7 @@ impl TerminalElement {
         minimum_contrast: f32,
         semantic_tokens: Option<&[SemanticToken]>,
         cx: &App,
-    ) -> (Vec<LayoutRect>, Vec<BatchedTextRun>) {
+    ) -> (Vec<LayoutRect>, Vec<BatchedTextRun>, Vec<BorderRegion>) {
         let start_time = Instant::now();
         let theme = cx.theme();
 
@@ -395,6 +442,33 @@ impl TerminalElement {
         // Collect background regions for efficient merging
         let mut background_regions: Vec<BackgroundRegion> = Vec::with_capacity(estimated_regions);
         let mut current_batch: Option<BatchedTextRun> = None;
+
+        // Collect border regions from semantic tokens with border modifier
+        let mut border_regions: Vec<BorderRegion> = Vec::new();
+
+        // Collect border regions from semantic tokens with border modifier (once per token)
+        if let Some(tokens) = semantic_tokens {
+            for token in tokens.iter() {
+                if token.modifiers.is_border() {
+                    // Get the border color (from token or default)
+                    let border_color = token
+                        .foreground_color
+                        .as_ref()
+                        .and_then(|c| parse_hex_color(c))
+                        .unwrap_or_else(|| {
+                            parse_hex_color(default_token_color(&token.token_type))
+                                .unwrap_or_else(|| gpui::hsla(0.0, 0.0, 0.5, 1.0))
+                        });
+
+                    border_regions.push(BorderRegion::new(
+                        start_line_offset + token.line as i32,
+                        token.start_col,
+                        token.length,
+                        border_color,
+                    ));
+                }
+            }
+        }
 
         // First pass: collect all cells and their backgrounds
         let linegroups = grid.into_iter().chunk_by(|i| i.point.line);
@@ -543,20 +617,25 @@ impl TerminalElement {
 
         log::debug!(
             "Terminal layout_grid: {} cells processed, \
-            {} batched runs created, {} rects (from {} merged regions), \
+            {} batched runs created, {} rects (from {} merged regions), {} borders, \
             layout took {:?}",
             cell_count,
             batched_runs.len(),
             rects.len(),
             region_count,
+            border_regions.len(),
             layout_time
         );
 
-        (rects, batched_runs)
+        (rects, batched_runs, border_regions)
     }
 
     /// Computes semantic tokens for terminal cells using highlight rules.
-    fn compute_semantic_tokens(cells: &[IndexedCell], cx: &App) -> Option<Vec<SemanticToken>> {
+    fn compute_semantic_tokens(
+        cells: &[IndexedCell],
+        protocol: Option<&HighlightProtocol>,
+        cx: &App,
+    ) -> Option<Vec<SemanticToken>> {
         // Get the highlight store, return None if not initialized or disabled
         let store = HighlightStoreEntity::try_global(cx)?;
         let store = store.read(cx);
@@ -587,11 +666,8 @@ impl TerminalElement {
             // If we moved to a new line, process the previous line
             if current_line.is_some() && current_line != Some(cell_line) {
                 if !line_text.is_empty() {
-                    let mut line_tokens = lsp_server.compute_line_tokens(
-                        line_number,
-                        &line_text,
-                        None, // TODO: pass protocol filter
-                    );
+                    let mut line_tokens =
+                        lsp_server.compute_line_tokens(line_number, &line_text, protocol);
                     // Adjust token positions to account for stripped leading spaces
                     for token in &mut line_tokens {
                         token.start_col += leading_spaces;
@@ -618,11 +694,8 @@ impl TerminalElement {
 
         // Process the last line
         if !line_text.is_empty() {
-            let mut line_tokens = lsp_server.compute_line_tokens(
-                line_number,
-                &line_text,
-                None,
-            );
+            let mut line_tokens =
+                lsp_server.compute_line_tokens(line_number, &line_text, protocol);
             // Adjust token positions to account for stripped leading spaces
             for token in &mut line_tokens {
                 token.start_col += leading_spaces;
@@ -942,6 +1015,13 @@ impl TerminalElement {
         let mut fg = convert_color(&fg, colors);
         let bg = convert_color(&bg, colors);
 
+        // Extract semantic token modifiers for combining with cell flags
+        let token_bold = semantic_token.is_some_and(|t| t.modifiers.is_bold());
+        let token_italic = semantic_token.is_some_and(|t| t.modifiers.is_italic());
+        let token_underline = semantic_token.is_some_and(|t| t.modifiers.is_underline());
+        let token_dim = semantic_token.is_some_and(|t| t.modifiers.is_dim());
+        let token_strikethrough = semantic_token.is_some_and(|t| t.modifiers.is_strikethrough());
+
         // Apply semantic token color override if present
         if let Some(token) = semantic_token {
             if let Some(ref color_str) = token.foreground_color {
@@ -963,41 +1043,55 @@ impl TerminalElement {
 
         // Ghostty uses (175/255) as the multiplier (~0.69), Alacritty uses 0.66, Kitty
         // uses 0.75. We're using 0.7 because it's pretty well in the middle of that.
-        if flags.intersects(Flags::DIM) {
+        // Apply dim from both cell flags and semantic token modifiers
+        if flags.intersects(Flags::DIM) || token_dim {
             fg.a *= 0.7;
         }
 
+        // Apply underline from cell flags, hyperlinks, or semantic token modifiers
         let underline = (flags.intersects(Flags::ALL_UNDERLINES)
-            || indexed.cell.hyperlink().is_some())
-        .then(|| UnderlineStyle {
-            color: Some(fg),
-            thickness: Pixels::from(1.0),
-            wavy: flags.contains(Flags::UNDERCURL),
-        });
-
-        let strikethrough = flags
-            .intersects(Flags::STRIKEOUT)
-            .then(|| StrikethroughStyle {
+            || indexed.cell.hyperlink().is_some()
+            || token_underline)
+            .then(|| UnderlineStyle {
                 color: Some(fg),
                 thickness: Pixels::from(1.0),
+                wavy: flags.contains(Flags::UNDERCURL),
             });
 
-        let weight = if flags.intersects(Flags::BOLD) {
+        // Apply strikethrough from cell flags or semantic token modifiers
+        let strikethrough = (flags.intersects(Flags::STRIKEOUT) || token_strikethrough).then(|| {
+            StrikethroughStyle {
+                color: Some(fg),
+                thickness: Pixels::from(1.0),
+            }
+        });
+
+        // Apply bold from cell flags or semantic token modifiers
+        let weight = if flags.intersects(Flags::BOLD) || token_bold {
             FontWeight::BOLD
         } else {
             text_style.font_weight
         };
 
-        let style = if flags.intersects(Flags::ITALIC) {
+        // Apply italic from cell flags or semantic token modifiers
+        let style = if flags.intersects(Flags::ITALIC) || token_italic {
             FontStyle::Italic
         } else {
             FontStyle::Normal
         };
 
+        // Get background color from semantic token if present
+        let background_color = semantic_token.and_then(|token| {
+            token
+                .background_color
+                .as_ref()
+                .and_then(|c| parse_hex_color(c))
+        });
+
         let mut result = TextRun {
             len: indexed.c.len_utf8(),
             color: fg,
-            background_color: None,
+            background_color,
             font: Font {
                 weight,
                 style,
@@ -1599,7 +1693,13 @@ impl Element for TerminalElement {
                 // then have that representation be converted to the appropriate highlight data structure
 
                 // Compute semantic tokens for highlighting
-                let semantic_tokens = Self::compute_semantic_tokens(cells, cx);
+                // Get protocol from terminal for protocol-specific highlight rules
+                let protocol = self
+                    .terminal
+                    .read(cx)
+                    .get_current_protocol()
+                    .map(|p| HighlightProtocol::from_abbreviation_protocol(&p));
+                let semantic_tokens = Self::compute_semantic_tokens(cells, protocol.as_ref(), cx);
 
                 let content_mode = self.terminal_view.read(cx).content_mode(window, cx);
 
@@ -1618,10 +1718,11 @@ impl Element for TerminalElement {
                 // This handles the case where the terminal has been scrolled past (above or
                 // below the viewport), similar to the editor fix in PR #45077 where start_row
                 // could exceed max_row when the editor was positioned above the viewport.
-                let (rects, batched_text_runs) = if intersection.size.height <= px(0.)
+                let (rects, batched_text_runs, border_regions) = if intersection.size.height
+                    <= px(0.)
                     || intersection.size.width <= px(0.)
                 {
-                    (Vec::new(), Vec::new())
+                    (Vec::new(), Vec::new(), Vec::new())
                 } else if intersection == bounds {
                     // Fast path: terminal fully visible, no clipping needed.
                     // Avoid grouping/allocation overhead by streaming cells directly.
@@ -1770,6 +1871,7 @@ impl Element for TerminalElement {
                     background_color,
                     dimensions,
                     rects,
+                    border_regions,
                     relative_highlighted_ranges,
                     mode,
                     display_offset,
@@ -1875,6 +1977,11 @@ impl Element for TerminalElement {
 
                     for rect in &layout.rects {
                         rect.paint(origin, &layout.dimensions, window);
+                    }
+
+                    // Paint border regions for semantic tokens with border modifier
+                    for border in &layout.border_regions {
+                        border.paint(origin, &layout.dimensions, window);
                     }
 
                     for (relative_highlighted_range, color) in &layout.relative_highlighted_ranges {

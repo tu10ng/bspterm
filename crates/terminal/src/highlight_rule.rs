@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::abbr_store::AbbreviationProtocol;
+
 fn default_true() -> bool {
     true
 }
@@ -99,6 +101,7 @@ impl TerminalTokenModifiers {
     pub const UNDERLINE: u32 = 1 << 2;
     pub const DIM: u32 = 1 << 3;
     pub const STRIKETHROUGH: u32 = 1 << 4;
+    pub const BORDER: u32 = 1 << 5;
 
     pub fn new() -> Self {
         Self(0)
@@ -129,6 +132,11 @@ impl TerminalTokenModifiers {
         self
     }
 
+    pub fn with_border(mut self) -> Self {
+        self.0 |= Self::BORDER;
+        self
+    }
+
     pub fn is_bold(&self) -> bool {
         self.0 & Self::BOLD != 0
     }
@@ -149,9 +157,13 @@ impl TerminalTokenModifiers {
         self.0 & Self::STRIKETHROUGH != 0
     }
 
+    pub fn is_border(&self) -> bool {
+        self.0 & Self::BORDER != 0
+    }
+
     /// Get all standard modifier names for the semantic token legend.
     pub fn standard_modifiers() -> Vec<&'static str> {
-        vec!["bold", "italic", "underline", "dim", "strikethrough"]
+        vec!["bold", "italic", "underline", "dim", "strikethrough", "border"]
     }
 }
 
@@ -189,6 +201,15 @@ impl HighlightProtocol {
             (HighlightProtocol::Local, Some(HighlightProtocol::Local)) => true,
             (HighlightProtocol::Local, None) => true,
             _ => false,
+        }
+    }
+
+    /// Convert from AbbreviationProtocol to HighlightProtocol.
+    pub fn from_abbreviation_protocol(protocol: &AbbreviationProtocol) -> Self {
+        match protocol {
+            AbbreviationProtocol::All => HighlightProtocol::All,
+            AbbreviationProtocol::Ssh => HighlightProtocol::Ssh,
+            AbbreviationProtocol::Telnet => HighlightProtocol::Telnet,
         }
     }
 }
