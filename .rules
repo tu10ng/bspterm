@@ -202,6 +202,8 @@ UI components that are constructed just to be turned into elements can instead i
 
 The style methods on elements are similar to those used by Tailwind CSS.
 
+**Scrollable lists in flex containers:** When using `UniformList` or other scrollable elements inside a flex container, the container must have `.min_h_0()` to allow shrinking below content height. Without this, taffy allocates the full content height and scrolling won't work.
+
 If some attributes or children of an element tree are conditional, `.when(condition, |this| ...)` can be used to run the closure only when `condition` is true. Similarly, `.when_some(option, |this, value| ...)` runs the closure when the `Option` has a value.
 
 ## Input events

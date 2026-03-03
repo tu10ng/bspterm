@@ -93,6 +93,7 @@ cargo test -p remote_explorer
 
 ## Pitfalls
 
+- **List container must have `min_h_0()`** - In flex layouts, the list container needs `.min_h_0()` to allow shrinking below content height, otherwise taffy allocates full content height and scrolling won't work
 - Panel uses UniformList for virtual scrolling - tree must be flattened
 - Indentation uses `ListItem.indent_level()` with `px(12.)` step size
 - Ping refresh loop runs every 5 seconds - be mindful of network load

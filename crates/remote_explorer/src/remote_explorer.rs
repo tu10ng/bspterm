@@ -1408,6 +1408,7 @@ impl Render for RemoteExplorer {
             .child(
                 v_flex()
                     .w_full()
+                    .flex_shrink_0()
                     .border_b_1()
                     .border_color(border_variant)
                     .child(self.render_quick_add_header(cx))
@@ -1417,7 +1418,32 @@ impl Render for RemoteExplorer {
             )
             .child(
                 v_flex()
-                    .flex_1()
+                    .flex_grow()
+                    .min_h_0()
+                    .id("remote-explorer-list-container")
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                            this.deploy_blank_area_context_menu(event.position, window, cx);
+                        }),
+                    )
+                    .on_drag_move::<DraggedSessionEntry>(cx.listener(
+                        |this, event: &DragMoveEvent<DraggedSessionEntry>, _window, cx| {
+                            if event.bounds.contains(&event.event.position) {
+                                this.drag_target = Some(DragTarget::Root);
+                                this.hover_expand_task = None;
+                                cx.notify();
+                            }
+                        },
+                    ))
+                    .on_drop(cx.listener(
+                        |this, dragged: &DraggedSessionEntry, window, cx| {
+                            this.handle_drop(dragged, window, cx);
+                        },
+                    ))
+                    .when(show_root_indicator, |this| {
+                        this.bg(drop_bg).border_t_2().border_color(accent_color)
+                    })
                     .child(if item_count > 0 {
                         uniform_list(
                             "remote-explorer-list",
@@ -1426,7 +1452,8 @@ impl Render for RemoteExplorer {
                                 this.render_entries(range, window, cx)
                             }),
                         )
-                        .with_sizing_behavior(ListSizingBehavior::Auto)
+                        .size_full()
+                        .with_sizing_behavior(ListSizingBehavior::Infer)
                         .track_scroll(&self.scroll_handle)
                         .on_drop(cx.listener(
                             |this, dragged: &DraggedSessionEntry, window, cx| {
@@ -1444,44 +1471,12 @@ impl Render for RemoteExplorer {
                         .into_any_element()
                     } else {
                         v_flex()
+                            .size_full()
                             .p_4()
                             .gap_2()
                             .child(Label::new(t("remote_explorer.no_saved_sessions")).color(Color::Muted))
                             .into_any_element()
-                    })
-                    .child(
-                        div()
-                            .id("remote-explorer-blank-area")
-                            .w_full()
-                            .flex_grow()
-                            .child(
-                                div()
-                                    .w_full()
-                                    .h(px(2.))
-                                    .when(show_root_indicator, |this| this.bg(accent_color)),
-                            )
-                            .when(show_root_indicator, |this| this.bg(drop_bg))
-                            .on_mouse_down(
-                                MouseButton::Right,
-                                cx.listener(|this, event: &MouseDownEvent, window, cx| {
-                                    this.deploy_blank_area_context_menu(event.position, window, cx);
-                                }),
-                            )
-                            .on_drag_move::<DraggedSessionEntry>(cx.listener(
-                                |this, event: &DragMoveEvent<DraggedSessionEntry>, _window, cx| {
-                                    if event.bounds.contains(&event.event.position) {
-                                        this.drag_target = Some(DragTarget::Root);
-                                        this.hover_expand_task = None;
-                                        cx.notify();
-                                    }
-                                },
-                            ))
-                            .on_drop(cx.listener(
-                                |this, dragged: &DraggedSessionEntry, window, cx| {
-                                    this.handle_drop(dragged, window, cx);
-                                },
-                            )),
-                    ),
+                    }),
             )
             .children(self.context_menu.as_ref().map(|(menu, position, _)| {
                 deferred(
