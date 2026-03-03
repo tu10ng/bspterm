@@ -1426,7 +1426,7 @@ impl Render for RemoteExplorer {
                                 this.render_entries(range, window, cx)
                             }),
                         )
-                        .with_sizing_behavior(ListSizingBehavior::Infer)
+                        .with_sizing_behavior(ListSizingBehavior::Auto)
                         .track_scroll(&self.scroll_handle)
                         .on_drop(cx.listener(
                             |this, dragged: &DraggedSessionEntry, window, cx| {
