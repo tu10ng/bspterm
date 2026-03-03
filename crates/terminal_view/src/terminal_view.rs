@@ -1,5 +1,6 @@
 mod abbr_bar;
 mod button_bar;
+mod function_bar;
 mod number_popover;
 mod row_decorator;
 mod persistence;
@@ -41,9 +42,10 @@ use std::{
 };
 use task::TaskId;
 use terminal::{
-    Clear, ClearScrollback, Copy, Event, HighlightStoreEntity, HoveredWord, MaybeNavigationTarget,
-    Paste, ScrollLineDown, ScrollLineUp, ScrollPageDown, ScrollPageUp, ScrollToBottom, ScrollToTop,
-    ShowCharacterPalette, TaskState, TaskStatus, Terminal, TerminalBounds, ToggleViMode,
+    Clear, ClearScrollback, Copy, Event, FunctionInvocation, HighlightStoreEntity, HoveredWord,
+    MaybeNavigationTarget, Paste, ScrollLineDown, ScrollLineUp, ScrollPageDown, ScrollPageUp,
+    ScrollToBottom, ScrollToTop, ShowCharacterPalette, TaskState, TaskStatus, Terminal,
+    TerminalBounds, ToggleViMode,
     alacritty_terminal::{
         index::Point as AlacPoint,
         term::{TermMode, point_to_viewport, search::RegexSearch},
@@ -86,16 +88,21 @@ use bspterm_actions::{
         ToggleAbbrExpansion,
     },
     terminal_button_bar::{ConfigureButtonBar, ToggleButtonBar},
+    terminal_function_bar::{
+        AddFunction, ConfigureFunctionBar, DeleteFunction, EditFunction, ToggleFunctionBar,
+        ToggleFunctionEnabled,
+    },
     terminal_shortcut_bar::{ConfigureShortcutBar, RunScriptShortcut, ToggleShortcutBar},
 };
 use call_graph_panel::TraceConfigModal;
 use abbr_bar::{AbbrBarConfigModal, AddAbbrModal, EditAbbrModal};
 use button_bar::ButtonBarScriptRunner;
+use function_bar::{FunctionBarConfigModal, AddFunctionModal, EditFunctionModal};
 use shortcut_bar::{AddShortcutModal, EditShortcutModal, ShortcutBarConfigModal};
 use terminal::{
     get_action_label, AbbreviationProtocol, AbbreviationStoreEntity, AbbreviationStoreEvent,
-    ButtonBarStoreEntity, ButtonBarStoreEvent, ShortcutBarStoreEntity, ShortcutBarStoreEvent,
-    ALL_SYSTEM_ACTIONS,
+    ButtonBarStoreEntity, ButtonBarStoreEvent, FunctionProtocol, FunctionStoreEntity,
+    FunctionStoreEvent, ShortcutBarStoreEntity, ShortcutBarStoreEvent, ALL_SYSTEM_ACTIONS,
 };
 use shortcut_bar::get_keybindings_for_action;
 use terminal_scripting::{ScriptingServer, TerminalRegistry};
@@ -191,6 +198,7 @@ pub fn init(cx: &mut App) {
     terminal_panel::init(cx);
     ButtonBarStoreEntity::init(cx);
     AbbreviationStoreEntity::init(cx);
+    FunctionStoreEntity::init(cx);
     ShortcutBarStoreEntity::init(cx);
     HighlightStoreEntity::init(cx);
     KeystrokeRecordingState::init(cx);
@@ -274,7 +282,9 @@ pub struct TerminalView {
     keystroke_intercept_subscription: Option<Subscription>,
     scripting_id: Option<uuid::Uuid>,
     button_bar_runner: Option<ButtonBarScriptRunner>,
+    function_runner: Option<ButtonBarScriptRunner>,
     _button_bar_subscription: Option<Subscription>,
+    _function_store_subscription: Option<Subscription>,
     /// Currently selected button for context menu operations (button_id, script_path)
     selected_button: Option<(uuid::Uuid, PathBuf)>,
     button_drag_target: Option<ButtonDragTarget>,
@@ -488,7 +498,9 @@ impl TerminalView {
             keystroke_intercept_subscription: None,
             scripting_id,
             button_bar_runner: None,
+            function_runner: None,
             _button_bar_subscription: button_bar_subscription,
+            _function_store_subscription: None,
             selected_button: None,
             button_drag_target: None,
             _abbr_store_subscription: abbr_store_subscription,
@@ -1459,6 +1471,65 @@ print(output)
         }
     }
 
+    /// Execute a function invoked from the terminal command line.
+    fn execute_function(&mut self, invocation: FunctionInvocation, cx: &mut Context<Self>) {
+        use script_panel::script_runner::ScriptRunner;
+        use std::collections::HashMap;
+
+        // Get connection info from terminal for socket connection
+        let Some(connection_info) = ScriptingServer::get(cx) else {
+            log::warn!("Cannot execute function: scripting server not available");
+            return;
+        };
+
+        // Stop any existing function runner
+        if let Some(runner) = &mut self.function_runner {
+            runner.stop();
+        }
+
+        let terminal_id = self.scripting_id.map(|id| id.to_string());
+        let script_path = shellexpand::tilde(&invocation.script_path.to_string_lossy()).into_owned();
+
+        // Build parameters from function arguments
+        let mut params: HashMap<String, String> = HashMap::new();
+        let argc = invocation.arguments.len();
+        params.insert("BSPTERM_PARAM_ARGC".to_string(), argc.to_string());
+        params.insert("BSPTERM_PARAM_ARGS".to_string(), invocation.raw_args.clone());
+
+        for (i, arg) in invocation.arguments.iter().enumerate() {
+            params.insert(format!("BSPTERM_PARAM_ARG{}", i), arg.clone());
+        }
+
+        let mut runner = ScriptRunner::new_with_params(
+            PathBuf::from(&script_path),
+            connection_info.to_env_string(),
+            terminal_id,
+            params,
+        );
+
+        if let Err(err) = runner.start() {
+            log::error!("Failed to start function script: {}", err);
+            self.show_script_error(&err.to_string(), cx);
+            return;
+        }
+
+        // Create a wrapper runner to track the script execution
+        // Note: ButtonBarScriptRunner wraps ScriptRunner, but since we've already
+        // started our parameterized runner, we just log completion. The script
+        // communicates via socket to control the terminal.
+        log::info!(
+            "Function '{}' started with {} args: {:?}",
+            invocation.function_name,
+            invocation.arguments.len(),
+            invocation.arguments
+        );
+
+        // For now, we don't track function runners separately since the script
+        // runs independently and communicates via socket. The runner will be
+        // dropped when it goes out of scope, but the Python process continues.
+        cx.notify();
+    }
+
     fn update_button_bar_runner(&mut self, cx: &mut Context<Self>) {
         let Some(runner) = &mut self.button_bar_runner else {
             return;
@@ -1760,6 +1831,155 @@ print(output)
                     ),
             )
             .into_any_element()
+    }
+
+    fn render_function_bar(&self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let Some(store) = FunctionStoreEntity::try_global(cx) else {
+            return h_flex().id("terminal-function-bar").into_any_element();
+        };
+
+        let protocol = self.terminal.read(cx).get_current_function_protocol();
+        let functions: Vec<_> = store
+            .read(cx)
+            .functions_for_protocol(protocol.as_ref())
+            .into_iter()
+            .cloned()
+            .collect();
+        let function_enabled = store.read(cx).function_enabled();
+        let terminal = self.terminal.clone();
+
+        h_flex()
+            .id("terminal-function-bar")
+            .w_full()
+            .gap_2()
+            .px_2()
+            .py_1()
+            .border_t_1()
+            .border_color(cx.theme().colors().border)
+            .bg(cx.theme().colors().surface_background)
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().colors().text_muted)
+                    .child(t("function.label")),
+            )
+            .children(functions.iter().map(|func| {
+                let func_name = func.name.clone();
+                let func_name_display = func_name.clone();
+                let terminal = terminal.clone();
+
+                div()
+                    .id(SharedString::from(format!("func-tag-{}", func.id)))
+                    .px_1p5()
+                    .py_0p5()
+                    .rounded_sm()
+                    .bg(cx.theme().colors().element_background)
+                    .border_1()
+                    .border_color(cx.theme().colors().border)
+                    .hover(|s| s.bg(cx.theme().colors().element_hover))
+                    .cursor_pointer()
+                    .on_click(move |_, _window, cx| {
+                        // Insert function name into terminal input
+                        terminal.update(cx, |term, _| {
+                            term.input(func_name.as_bytes().to_vec());
+                            term.input(b" ".to_vec());
+                        });
+                    })
+                    .child(
+                        div()
+                            .text_xs()
+                            .child(func_name_display),
+                    )
+                    .into_any_element()
+            }))
+            .child(div().flex_1())
+            .child(
+                h_flex()
+                    .gap_1()
+                    .child(
+                        ui::IconButton::new("function-bar-add", ui::IconName::Plus)
+                            .icon_size(ui::IconSize::Small)
+                            .tooltip(Tooltip::text(t("function.add_title")))
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.add_function(&AddFunction, window, cx);
+                            })),
+                    )
+                    .child(
+                        ui::IconButton::new("function-bar-settings", ui::IconName::Settings)
+                            .icon_size(ui::IconSize::Small)
+                            .tooltip(Tooltip::text(t("function.config_title")))
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.configure_function_bar(&ConfigureFunctionBar, window, cx);
+                            })),
+                    )
+                    .child(
+                        Switch::new(
+                            "function-enabled-switch",
+                            if function_enabled {
+                                ToggleState::Selected
+                            } else {
+                                ToggleState::Unselected
+                            },
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.toggle_function_enabled(&ToggleFunctionEnabled, window, cx);
+                        })),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    fn toggle_function_bar(
+        &mut self,
+        _: &ToggleFunctionBar,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(store) = FunctionStoreEntity::try_global(cx) {
+            store.update(cx, |store, cx| {
+                store.toggle_visibility(cx);
+            });
+        }
+    }
+
+    fn configure_function_bar(
+        &mut self,
+        _: &ConfigureFunctionBar,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.workspace
+            .update(cx, |ws, cx| {
+                ws.toggle_modal(window, cx, |window, cx| {
+                    FunctionBarConfigModal::new(window, cx)
+                });
+            })
+            .ok();
+    }
+
+    fn add_function(&mut self, _: &AddFunction, window: &mut Window, cx: &mut Context<Self>) {
+        let protocol = self.terminal.read(cx).get_current_function_protocol();
+        let default_protocol = protocol.unwrap_or(FunctionProtocol::All);
+        self.workspace
+            .update(cx, |ws, cx| {
+                ws.toggle_modal(window, cx, |window, cx| {
+                    AddFunctionModal::new(default_protocol, window, cx)
+                });
+            })
+            .ok();
+    }
+
+    fn toggle_function_enabled(
+        &mut self,
+        _: &ToggleFunctionEnabled,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(store) = FunctionStoreEntity::try_global(cx) {
+            store.update(cx, |store, cx| {
+                store.toggle_function_enabled(cx);
+            });
+        }
     }
 
     fn toggle_shortcut_bar(
@@ -2154,6 +2374,7 @@ print(output)
                 term.try_keystroke(
                     &Keystroke::parse("ctrl-cmd-space").unwrap(),
                     TerminalSettings::get_global(cx).option_as_meta,
+                    false,
                     false,
                     cx,
                 )
@@ -3024,6 +3245,14 @@ fn subscribe_for_terminal_events(
                     }
                     cx.emit(ItemEvent::UpdateTab);
                 }
+                Event::FunctionInvoked(invocation) => {
+                    log::info!(
+                        "Function invoked: {} with args: {:?}",
+                        invocation.function_name,
+                        invocation.arguments
+                    );
+                    terminal_view.execute_function(invocation.clone(), cx);
+                }
             }
         },
     );
@@ -3071,12 +3300,17 @@ impl TerminalView {
             .map(|store| store.read(cx).expansion_enabled())
             .unwrap_or(false);
 
+        let function_enabled = FunctionStoreEntity::try_global(cx)
+            .map(|store| store.read(cx).function_enabled())
+            .unwrap_or(false);
+
         let (handled, vi_mode_enabled) = self.terminal.update(cx, |term, cx| {
             (
                 term.try_keystroke(
                     keystroke,
                     TerminalSettings::get_global(cx).option_as_meta,
                     abbr_enabled,
+                    function_enabled,
                     cx,
                 ),
                 term.vi_mode_enabled(),
@@ -3312,6 +3546,9 @@ impl Render for TerminalView {
         let show_abbr_bar = AbbreviationStoreEntity::try_global(cx)
             .map(|store| store.read(cx).show_abbr_bar())
             .unwrap_or(false);
+        let show_function_bar = FunctionStoreEntity::try_global(cx)
+            .map(|store| store.read(cx).show_function_bar())
+            .unwrap_or(false);
         let show_shortcut_bar = ShortcutBarStoreEntity::try_global(cx)
             .map(|store| store.read(cx).show_shortcut_bar())
             .unwrap_or(false);
@@ -3362,6 +3599,10 @@ impl Render for TerminalView {
             .on_action(cx.listener(Self::edit_abbreviation))
             .on_action(cx.listener(Self::delete_abbreviation))
             .on_action(cx.listener(Self::toggle_abbr_expansion))
+            .on_action(cx.listener(Self::toggle_function_bar))
+            .on_action(cx.listener(Self::configure_function_bar))
+            .on_action(cx.listener(Self::add_function))
+            .on_action(cx.listener(Self::toggle_function_enabled))
             .on_action(cx.listener(Self::toggle_shortcut_bar))
             .on_action(cx.listener(Self::configure_shortcut_bar))
             .on_action(cx.listener(Self::run_script_shortcut))
@@ -3424,6 +3665,9 @@ impl Render for TerminalView {
             })
             .when(show_abbr_bar, |this| {
                 this.child(self.render_abbr_bar(window, cx))
+            })
+            .when(show_function_bar, |this| {
+                this.child(self.render_function_bar(window, cx))
             })
             .when(show_shortcut_bar, |this| {
                 this.child(self.render_shortcut_bar(window, cx))

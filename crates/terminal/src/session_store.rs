@@ -626,6 +626,10 @@ impl EventEmitter<SessionStoreEvent> for SessionStoreEntity {}
 impl SessionStoreEntity {
     /// Initialize global session store on app startup.
     pub fn init(cx: &mut App) {
+        if cx.try_global::<GlobalSessionStore>().is_some() {
+            return;
+        }
+
         let store = SessionStore::load_from_file(paths::sessions_file())
             .unwrap_or_else(|err| {
                 log::error!("Failed to load sessions: {}", err);

@@ -375,6 +375,20 @@ abbr:
   expansion_placeholder: "Expansion text (e.g., git)"
   label: "Abbreviations"
 
+# Function Bar
+function:
+  label: "Functions"
+  config_title: "Function Configuration"
+  enable_invocation: "Enable Function Invocation"
+  empty_hint: "No functions yet, click button below to add"
+  add_title: "Add Function"
+  edit_title: "Edit Function"
+  name_label: "Function Name"
+  name_placeholder: "Function name (e.g., disp_boa)"
+  script_path_label: "Script Path"
+  script_path_placeholder: "Script path (e.g., ~/.config/bspterm/scripts/disp_boa.py)"
+  applicable_protocol: "Applicable Protocol"
+
 # Button Bar
 button_bar:
   new_script_tab: "New Button Script"

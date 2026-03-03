@@ -3,6 +3,7 @@ pub mod active_session_tracker;
 pub mod button_bar_config;
 pub mod command_history;
 pub mod connection;
+pub mod function_store;
 pub mod highlight_rule;
 pub mod highlight_store;
 pub mod mappings;
@@ -29,6 +30,11 @@ pub use button_bar_config::{
 pub use abbr_store::{
     Abbreviation, AbbreviationProtocol, AbbreviationStore, AbbreviationStoreEntity,
     AbbreviationStoreEvent, GlobalAbbreviationStore,
+};
+
+pub use function_store::{
+    FunctionConfig, FunctionProtocol, FunctionStore, FunctionStoreEntity, FunctionStoreEvent,
+    GlobalFunctionStore,
 };
 
 pub use rule_store::{
@@ -116,6 +122,7 @@ use collections::{HashMap, VecDeque};
 use futures::StreamExt;
 use pty_info::{ProcessIdGetter, PtyProcessInfo};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use settings::Settings;
 use smol::channel::{Receiver, Sender};
 use task::{HideStrategy, Shell, SpawnInTerminal};
@@ -204,6 +211,21 @@ pub fn insert_zed_terminal_env(
     env.insert("TERM_PROGRAM_VERSION".to_string(), version.to_string());
 }
 
+/// Information about a function invocation triggered from the command line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FunctionInvocation {
+    /// The function ID from the store.
+    pub function_id: Uuid,
+    /// The function name that was typed.
+    pub function_name: String,
+    /// The path to the Python script to execute.
+    pub script_path: PathBuf,
+    /// The parsed arguments from the command line.
+    pub arguments: Vec<String>,
+    /// The raw argument string (everything after the function name).
+    pub raw_args: String,
+}
+
 ///Upward flowing events, for changing the title and such
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Event {
@@ -220,6 +242,8 @@ pub enum Event {
     CommandHistoryChanged,
     /// Remote terminal disconnected. Carries whether terminal was recently active.
     Disconnected { was_recently_active: bool },
+    /// Function invoked from the terminal command line.
+    FunctionInvoked(FunctionInvocation),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2379,7 +2403,8 @@ impl Terminal {
         keystroke: &Keystroke,
         option_as_meta: bool,
         abbr_enabled: bool,
-        cx: &App,
+        function_enabled: bool,
+        cx: &mut Context<Self>,
     ) -> bool {
         if self.vi_mode_enabled {
             self.vi_motion(keystroke);
@@ -2397,6 +2422,23 @@ impl Terminal {
 
             // Check if this is Enter key
             let is_enter = input_bytes.iter().any(|&b| b == b'\r' || b == b'\n');
+
+            // For Enter, check function invocation FIRST (higher priority than abbreviation)
+            if function_enabled && is_enter {
+                if let Some(invocation) = self.try_invoke_function(cx) {
+                    // Clear the input line by sending backspaces
+                    let line_len = self.current_line_buffer.len();
+                    for _ in 0..line_len {
+                        self.input(vec![0x7f]);
+                    }
+                    // Clear buffers
+                    self.current_word_buffer.clear();
+                    self.current_line_buffer.clear();
+                    // Emit the function invoked event
+                    cx.emit(Event::FunctionInvoked(invocation));
+                    return true;
+                }
+            }
 
             // For Enter, check abbreviation BEFORE updating buffers (which clears them)
             if abbr_enabled && is_enter {
@@ -2596,6 +2638,131 @@ impl Terminal {
         // Clear buffers since Enter will reset them anyway
         self.current_word_buffer.clear();
         self.current_line_buffer.clear();
+    }
+
+    /// Try to invoke a function from the current line buffer.
+    /// Returns Some(FunctionInvocation) if a matching function is found.
+    fn try_invoke_function(&self, cx: &App) -> Option<FunctionInvocation> {
+        // Get the current line without leading/trailing whitespace
+        let line = self.current_line_buffer.trim();
+        if line.is_empty() {
+            return None;
+        }
+
+        // Check if we're at a command position (line start, not after pipes etc.)
+        if !self.is_at_function_position() {
+            return None;
+        }
+
+        // Split the line into function name and arguments
+        let mut parts = line.splitn(2, char::is_whitespace);
+        let func_name = parts.next()?;
+        let raw_args = parts.next().unwrap_or("").trim().to_string();
+
+        // Get the function store
+        let store = FunctionStoreEntity::try_global(cx)?;
+        let store = store.read(cx);
+
+        if !store.function_enabled() {
+            return None;
+        }
+
+        // Get current protocol for filtering
+        let protocol = self.get_current_function_protocol();
+
+        // Find matching function
+        let func = store.find_by_name(func_name, protocol.as_ref())?;
+
+        // Parse arguments (simple space-separated, respecting quotes)
+        let arguments = Self::parse_function_arguments(&raw_args);
+
+        Some(FunctionInvocation {
+            function_id: func.id,
+            function_name: func.name.clone(),
+            script_path: func.script_path.clone(),
+            arguments,
+            raw_args,
+        })
+    }
+
+    /// Check if the cursor is at a position where a function can be invoked.
+    /// Similar to is_at_command_position but specifically for function invocation.
+    fn is_at_function_position(&self) -> bool {
+        let line = self.current_line_buffer.trim();
+        if line.is_empty() {
+            return false;
+        }
+
+        // Check for command separators - function should be at the start of a command
+        let last_command_sep = line
+            .rfind(|c| c == '|' || c == ';')
+            .or_else(|| {
+                if let Some(pos) = line.rfind("&&") {
+                    Some(pos + 1)
+                } else if let Some(pos) = line.rfind("||") {
+                    Some(pos + 1)
+                } else {
+                    None
+                }
+            });
+
+        // If there's a separator, we're not at a function position
+        // (functions are only invoked when they're the sole command)
+        last_command_sep.is_none()
+    }
+
+    /// Parse function arguments from a string.
+    /// Supports simple space-separated arguments and quoted strings.
+    fn parse_function_arguments(args_str: &str) -> Vec<String> {
+        let mut arguments = Vec::new();
+        let mut current_arg = String::new();
+        let mut in_single_quote = false;
+        let mut in_double_quote = false;
+        let mut escape_next = false;
+
+        for c in args_str.chars() {
+            if escape_next {
+                current_arg.push(c);
+                escape_next = false;
+                continue;
+            }
+
+            match c {
+                '\\' if !in_single_quote => {
+                    escape_next = true;
+                }
+                '\'' if !in_double_quote => {
+                    in_single_quote = !in_single_quote;
+                }
+                '"' if !in_single_quote => {
+                    in_double_quote = !in_double_quote;
+                }
+                ' ' | '\t' if !in_single_quote && !in_double_quote => {
+                    if !current_arg.is_empty() {
+                        arguments.push(current_arg);
+                        current_arg = String::new();
+                    }
+                }
+                _ => {
+                    current_arg.push(c);
+                }
+            }
+        }
+
+        if !current_arg.is_empty() {
+            arguments.push(current_arg);
+        }
+
+        arguments
+    }
+
+    /// Get the current protocol as FunctionProtocol for function filtering.
+    pub fn get_current_function_protocol(&self) -> Option<FunctionProtocol> {
+        match &self.connection_info {
+            Some(ConnectionInfo::Ssh { .. }) => Some(FunctionProtocol::Ssh),
+            Some(ConnectionInfo::Telnet { .. }) => Some(FunctionProtocol::Telnet),
+            None => None,
+        }
     }
 
     pub fn clear_input_buffers(&mut self) {
@@ -4546,12 +4713,12 @@ mod tests {
 
         let first_event = event_rx.recv().await.expect("No wakeup event received");
 
-        terminal.update(cx, |terminal, _| {
-            let success = terminal.try_keystroke(&Keystroke::parse("ctrl-c").unwrap(), false);
+        terminal.update(cx, |terminal, cx| {
+            let success = terminal.try_keystroke(&Keystroke::parse("ctrl-c").unwrap(), false, false, false, cx);
             assert!(success, "Should have registered ctrl-c sequence");
         });
-        terminal.update(cx, |terminal, _| {
-            let success = terminal.try_keystroke(&Keystroke::parse("ctrl-d").unwrap(), false);
+        terminal.update(cx, |terminal, cx| {
+            let success = terminal.try_keystroke(&Keystroke::parse("ctrl-d").unwrap(), false, false, false, cx);
             assert!(success, "Should have registered ctrl-d sequence");
         });
 

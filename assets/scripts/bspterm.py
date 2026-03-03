@@ -917,6 +917,81 @@ class _Params:
 params = _Params()
 
 
+class _Args:
+    """
+    Access function arguments passed from BSPTerm.
+
+    When a function is invoked from the terminal command line (e.g., `disp_boa 21`),
+    the arguments are passed as environment variables with BSPTERM_PARAM_ prefix:
+    - BSPTERM_PARAM_ARGC: Number of arguments
+    - BSPTERM_PARAM_ARG0, ARG1, etc.: Individual arguments
+    - BSPTERM_PARAM_ARGS: Raw argument string
+
+    Example:
+        from bspterm import args
+
+        # Access arguments by index
+        slotid = args[0] if len(args) > 0 else "0"
+
+        # Get the raw argument string
+        raw = args.raw
+
+        # Iterate over arguments
+        for arg in args:
+            print(arg)
+    """
+
+    def __init__(self):
+        self._loaded = False
+        self._args = []
+        self._raw = ""
+
+    def _load(self):
+        if self._loaded:
+            return
+        self._loaded = True
+
+        argc = int(os.environ.get("BSPTERM_PARAM_ARGC", "0"))
+        for i in range(argc):
+            self._args.append(os.environ.get(f"BSPTERM_PARAM_ARG{i}", ""))
+        self._raw = os.environ.get("BSPTERM_PARAM_ARGS", "")
+
+    def __getitem__(self, index):
+        """Get argument by index."""
+        self._load()
+        return self._args[index]
+
+    def __len__(self):
+        """Return number of arguments."""
+        self._load()
+        return len(self._args)
+
+    def __iter__(self):
+        """Iterate over arguments."""
+        self._load()
+        return iter(self._args)
+
+    @property
+    def raw(self):
+        """Get the raw argument string (everything after function name)."""
+        self._load()
+        return self._raw
+
+    def get(self, index, default=None):
+        """Get argument by index with optional default."""
+        self._load()
+        if 0 <= index < len(self._args):
+            return self._args[index]
+        return default
+
+    def __repr__(self):
+        self._load()
+        return f"Args({self._args})"
+
+
+args = _Args()
+
+
 __all__ = [
     "BsptermError",
     "ConnectionError",
@@ -932,6 +1007,7 @@ __all__ = [
     "Pane",
     "SSH",
     "Telnet",
+    "args",
     "current_terminal",
     "new_terminal",
     "toast",

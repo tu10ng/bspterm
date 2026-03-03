@@ -375,6 +375,20 @@ abbr:
   expansion_placeholder: "展开内容 (如: git)"
   label: "缩写"
 
+# Function Bar
+function:
+  label: "函数"
+  config_title: "函数配置"
+  enable_invocation: "启用函数调用"
+  empty_hint: "暂无函数，点击下方按钮添加"
+  add_title: "添加函数"
+  edit_title: "编辑函数"
+  name_label: "函数名"
+  name_placeholder: "函数名 (如: disp_boa)"
+  script_path_label: "脚本路径"
+  script_path_placeholder: "脚本路径 (如: ~/.config/bspterm/scripts/disp_boa.py)"
+  applicable_protocol: "适用协议"
+
 # Button Bar
 button_bar:
   new_script_tab: "新建按钮脚本"

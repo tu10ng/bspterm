@@ -494,6 +494,28 @@ pub mod terminal_abbr_bar {
     );
 }
 
+pub mod terminal_function_bar {
+    use gpui::actions;
+
+    actions!(
+        terminal_function_bar,
+        [
+            /// Toggles the terminal function bar visibility.
+            ToggleFunctionBar,
+            /// Opens the terminal function bar configuration modal.
+            ConfigureFunctionBar,
+            /// Adds a new function to the function bar.
+            AddFunction,
+            /// Edits the selected function.
+            EditFunction,
+            /// Deletes the selected function.
+            DeleteFunction,
+            /// Toggles whether function invocation is enabled.
+            ToggleFunctionEnabled
+        ]
+    );
+}
+
 pub mod terminal_shortcut_bar {
     use gpui::{Action, actions};
 
