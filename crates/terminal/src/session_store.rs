@@ -794,6 +794,38 @@ impl SessionStoreEntity {
         }
     }
 
+    /// Collapse all groups recursively.
+    pub fn collapse_all_groups(&mut self, cx: &mut Context<Self>) {
+        fn collapse_recursive(nodes: &mut [SessionNode]) {
+            for node in nodes {
+                if let SessionNode::Group(group) = node {
+                    group.expanded = false;
+                    collapse_recursive(&mut group.children);
+                }
+            }
+        }
+        collapse_recursive(&mut self.store.root);
+        self.schedule_save(cx);
+        cx.emit(SessionStoreEvent::Changed);
+        cx.notify();
+    }
+
+    /// Expand all groups recursively.
+    pub fn expand_all_groups(&mut self, cx: &mut Context<Self>) {
+        fn expand_recursive(nodes: &mut [SessionNode]) {
+            for node in nodes {
+                if let SessionNode::Group(group) = node {
+                    group.expanded = true;
+                    expand_recursive(&mut group.children);
+                }
+            }
+        }
+        expand_recursive(&mut self.store.root);
+        self.schedule_save(cx);
+        cx.emit(SessionStoreEvent::Changed);
+        cx.notify();
+    }
+
     /// Find a group by name at root level.
     pub fn find_group_by_name(&self, name: &str) -> Option<Uuid> {
         self.store.root.iter().find_map(|node| {

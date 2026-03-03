@@ -392,14 +392,11 @@ impl Panel for ScriptPanel {
     }
 
     fn position(&self, _window: &Window, _cx: &App) -> DockPosition {
-        DockPosition::Bottom
+        DockPosition::Left
     }
 
     fn position_is_valid(&self, position: DockPosition) -> bool {
-        matches!(
-            position,
-            DockPosition::Left | DockPosition::Right | DockPosition::Bottom
-        )
+        matches!(position, DockPosition::Left | DockPosition::Right)
     }
 
     fn set_position(

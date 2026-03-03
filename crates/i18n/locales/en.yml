@@ -191,6 +191,8 @@ remote_explorer:
   delete_group: "Delete Group"
   new_group: "New Group"
   copy_env_info: "Copy Environment Info"
+  collapse_all: "Collapse All"
+  expand_all: "Expand All"
 
   # Ping status
   ping_unknown: "Connectivity unknown"

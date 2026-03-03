@@ -99,3 +99,17 @@ cargo test -p remote_explorer
 - Icons: `FolderOpen`/`Folder` for groups, `Server` for sessions
 - Auto-recognize uses heuristics - passwords with only alphanumeric chars may be misclassified as usernames
 - Multi-line detection requires IP only on first line; if multiple lines have IPs, treated as separate connections
+- Title bar has single toggle button (`ToggleCollapseAll` action) that switches between collapse/expand based on current state
+- `has_any_expanded_group()` checks if any group is expanded to determine toggle behavior
+- Title bar toggle button uses VSCode-style dynamic icons: `CollapseAll` (minus) when expanded, `ExpandAll` (plus) when collapsed
+
+## Adding New Icons
+
+When adding new SVG icons to `assets/icons/`:
+
+1. Create SVG file in `assets/icons/` (e.g., `my_icon.svg`)
+2. Add enum variant to `IconName` in `crates/icons/src/icons.rs` (alphabetically ordered, use snake_case)
+3. **Important:** Run `cargo clean -p assets && cargo build -p assets` to re-embed assets via `rust_embed`
+4. Rebuild dependent crates
+
+The `assets` crate uses `rust_embed` to embed files at compile time. New files won't be included until the crate is recompiled.

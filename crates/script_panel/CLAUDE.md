@@ -54,4 +54,4 @@ cargo test -p script_panel
   - Unix: Uses `fcntl()` for non-blocking I/O
   - Windows: Uses `PeekNamedPipe()` for non-blocking reads
   - Windows: `CREATE_NO_WINDOW` flag hides console
-- Panel docks on Bottom by default (priority: 20)
+- Panel docks on Left by default (priority: 20), can be moved to Right but not Bottom

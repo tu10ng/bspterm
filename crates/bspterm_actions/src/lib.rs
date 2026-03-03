@@ -317,7 +317,9 @@ pub mod remote_explorer {
         remote_explorer,
         [
             /// Toggles focus on the remote explorer panel.
-            ToggleFocus
+            ToggleFocus,
+            /// Toggles between collapsing and expanding all groups in the remote explorer.
+            ToggleCollapseAll
         ]
     );
 }

@@ -423,12 +423,19 @@ The `remote_explorer` crate (`crates/remote_explorer`) provides a panel for brow
 
 ### Integration Points
 
-- **Action**: `bspterm_actions::remote_explorer::ToggleFocus`
+- **Actions**: `bspterm_actions::remote_explorer::ToggleFocus`, `ToggleCollapseAll`
 - **Menu**: View > Remote Explorer
 - **Icon**: Server icon in left dock
 - **Position**: Left or Right dock (default: Left)
 - **Priority**: `activation_priority = 10`
 
+### Title Bar Toggle Button
+
+The panel header has a single toggle button (VSCode-style) that switches between collapse/expand states:
+- Shows "Collapse All" tooltip when any group is expanded
+- Shows "Expand All" tooltip when all groups are collapsed
+- Uses dynamic VSCode-style icons: `CollapseAll` (minus sign) when expanded, `ExpandAll` (plus sign) when collapsed
+- `has_any_expanded_group()` method determines current state
 
 ### Quick Add Area (`crates/remote_explorer/src/quick_add/`)
 
@@ -533,6 +540,7 @@ term.close()
 ### Script Panel
 
 - **Action**: `bspterm_actions::script_panel::ToggleFocus`
+- **Position**: Left or Right dock (default: Left)
 - **Scripts**: `~/.config/bspterm/scripts/*.py`
 - **Env vars**: `BSPTERM_SOCKET`, `BSPTERM_CURRENT_TERMINAL`
 

@@ -14976,6 +14976,7 @@ dependencies = [
  "local_user",
  "log",
  "menu",
+ "panel",
  "settings",
  "smol",
  "terminal",

@@ -31,7 +31,8 @@ use workspace::{
     Pane, Workspace,
     dock::{DockPosition, Panel, PanelEvent},
 };
-use bspterm_actions::remote_explorer::ToggleFocus;
+use panel::{PanelHeader, panel_icon_button};
+use bspterm_actions::remote_explorer::{ToggleCollapseAll, ToggleFocus};
 
 use group_edit_modal::GroupEditModal;
 pub use quick_add::*;
@@ -96,6 +97,13 @@ pub fn init(cx: &mut App) {
     cx.observe_new(|workspace: &mut Workspace, _, _| {
         workspace.register_action(|workspace, _: &ToggleFocus, window, cx| {
             workspace.toggle_panel_focus::<RemoteExplorer>(window, cx);
+        });
+        workspace.register_action(|workspace, _: &ToggleCollapseAll, window, cx| {
+            if let Some(panel) = workspace.panel::<RemoteExplorer>(cx) {
+                panel.update(cx, |panel, cx| {
+                    panel.toggle_collapse_all(&ToggleCollapseAll, window, cx);
+                });
+            }
         });
     })
     .detach();
@@ -283,6 +291,81 @@ impl RemoteExplorer {
         Self::flatten_nodes(&store.root, 0, &mut entries);
         self.visible_entries = entries;
         self.schedule_ping_for_visible_sessions(cx);
+    }
+
+    fn has_any_expanded_group(&self, cx: &App) -> bool {
+        fn check_recursive(nodes: &[SessionNode]) -> bool {
+            nodes.iter().any(|node| {
+                if let SessionNode::Group(group) = node {
+                    group.expanded || check_recursive(&group.children)
+                } else {
+                    false
+                }
+            })
+        }
+        let store = self.session_store.read(cx);
+        check_recursive(&store.store().root)
+    }
+
+    fn toggle_collapse_all(
+        &mut self,
+        _: &ToggleCollapseAll,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let has_expanded = self.has_any_expanded_group(cx);
+        if has_expanded {
+            self.session_store.update(cx, |store, cx| {
+                store.collapse_all_groups(cx);
+            });
+        } else {
+            self.session_store.update(cx, |store, cx| {
+                store.expand_all_groups(cx);
+            });
+        }
+        self.update_visible_entries(cx);
+    }
+
+    fn render_title_bar(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let focus_handle = self.focus_handle.clone();
+        let has_expanded = self.has_any_expanded_group(cx);
+        let tooltip_text = if has_expanded {
+            t("remote_explorer.collapse_all")
+        } else {
+            t("remote_explorer.expand_all")
+        };
+
+        self.panel_header_container(window, cx)
+            .px_2()
+            .justify_between()
+            .border_b_1()
+            .border_color(cx.theme().colors().border_variant)
+            .child(
+                h_flex()
+                    .gap_1()
+                    .child(Icon::new(IconName::Server).color(Color::Muted).size(IconSize::Small))
+                    .child(Label::new(t("remote_explorer.title")).size(LabelSize::Small)),
+            )
+            .child({
+                let icon = if has_expanded {
+                    IconName::CollapseAll
+                } else {
+                    IconName::ExpandAll
+                };
+                panel_icon_button("toggle-collapse", icon)
+                    .icon_size(IconSize::Small)
+                    .tooltip(move |_window, cx| {
+                        Tooltip::for_action_in(
+                            tooltip_text.clone(),
+                            &ToggleCollapseAll,
+                            &focus_handle,
+                            cx,
+                        )
+                    })
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.toggle_collapse_all(&ToggleCollapseAll, window, cx);
+                    }))
+            })
     }
 
     fn flatten_nodes(nodes: &[SessionNode], depth: usize, result: &mut Vec<FlattenedEntry>) {
@@ -550,17 +633,25 @@ impl RemoteExplorer {
         cx: &mut Context<Self>,
     ) {
         let workspace = self.workspace.clone();
+        let has_expanded = self.has_any_expanded_group(cx);
+        let toggle_label = if has_expanded {
+            t("remote_explorer.collapse_all")
+        } else {
+            t("remote_explorer.expand_all")
+        };
 
         let context_menu = ContextMenu::build(window, cx, move |menu, _window, _cx| {
-            menu.entry(t("remote_explorer.new_group"), None, move |window, cx| {
-                if let Some(workspace) = workspace.upgrade() {
-                    workspace.update(cx, |ws, cx| {
-                        ws.toggle_modal(window, cx, |window, cx| {
-                            GroupEditModal::new_create(None, window, cx)
+            menu.action(toggle_label, ToggleCollapseAll.boxed_clone())
+                .separator()
+                .entry(t("remote_explorer.new_group"), None, move |window, cx| {
+                    if let Some(workspace) = workspace.upgrade() {
+                        workspace.update(cx, |ws, cx| {
+                            ws.toggle_modal(window, cx, |window, cx| {
+                                GroupEditModal::new_create(None, window, cx)
+                            });
                         });
-                    });
-                }
-            })
+                    }
+                })
         });
 
         window.focus(&context_menu.focus_handle(cx), cx);
@@ -1288,6 +1379,8 @@ impl RemoteExplorer {
 
 impl EventEmitter<PanelEvent> for RemoteExplorer {}
 
+impl PanelHeader for RemoteExplorer {}
+
 impl Render for RemoteExplorer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Clean up drag state when there's no active drag.
@@ -1310,6 +1403,8 @@ impl Render for RemoteExplorer {
             .id("remote-explorer")
             .size_full()
             .track_focus(&self.focus_handle(cx))
+            .on_action(cx.listener(Self::toggle_collapse_all))
+            .child(self.render_title_bar(window, cx))
             .child(
                 v_flex()
                     .w_full()
