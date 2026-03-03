@@ -287,6 +287,8 @@ pub struct TerminalView {
     timestamp_tick_task: Option<Task<()>>,
     /// Background task for auto-reconnect loop.
     auto_reconnect_task: Option<Task<()>>,
+    /// Background task for manual reconnection.
+    reconnect_task: Option<Task<anyhow::Result<()>>>,
 }
 
 #[derive(Default, Clone)]
@@ -496,6 +498,7 @@ impl TerminalView {
             _terminal_subscriptions: terminal_subscriptions,
             timestamp_tick_task,
             auto_reconnect_task: None,
+            reconnect_task: None,
         }
     }
 
@@ -2552,6 +2555,11 @@ print(output)
     }
 
     fn reconnect_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Guard: prevent multiple simultaneous reconnection attempts
+        if self.reconnect_task.is_some() {
+            return;
+        }
+
         if self.terminal.read(cx).connection_info().is_none() {
             return;
         }
@@ -2561,12 +2569,13 @@ print(output)
             terminal.write_output(b"\x1b[36mConnecting...\x1b[0m\r\n", cx);
         });
 
-        let reconnect_task = self.terminal.update(cx, |terminal, cx| terminal.reconnect(cx));
+        let reconnect_future = self.terminal.update(cx, |terminal, cx| terminal.reconnect(cx));
 
-        cx.spawn_in(window, async move |this, cx| {
-            match reconnect_task.await {
+        self.reconnect_task = Some(cx.spawn_in(window, async move |this, cx| {
+            match reconnect_future.await {
                 Ok(connection) => {
                     this.update(cx, |this, cx| {
+                        this.reconnect_task = None;
                         this.terminal.update(cx, |terminal, cx| {
                             terminal.set_connection(connection, cx);
                             terminal.write_output(b"\x1b[32mConnected\x1b[0m\r\n", cx);
@@ -2576,6 +2585,7 @@ print(output)
                 }
                 Err(err) => {
                     this.update(cx, |this, cx| {
+                        this.reconnect_task = None;
                         this.terminal.update(cx, |terminal, cx| {
                             let message = format!(
                                 "\x1b[31mConnection failed: {}\x1b[0m\r\n\x1b[31mPress Enter to retry\x1b[0m\r\n",
@@ -2589,8 +2599,7 @@ print(output)
             }
 
             anyhow::Ok(())
-        })
-        .detach_and_log_err(cx);
+        }));
     }
 
     fn disconnect_terminal(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
