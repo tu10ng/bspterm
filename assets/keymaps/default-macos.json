@@ -67,7 +67,6 @@
       "tab": "editor::Tab",
       "shift-tab": "editor::Backtab",
       "ctrl-t": "editor::Transpose",
-      "ctrl-k": "editor::KillRingCut",
       "ctrl-y": "editor::KillRingYank",
       "cmd-k cmd-q": "editor::Rewrap",
       "cmd-k q": "editor::Rewrap",

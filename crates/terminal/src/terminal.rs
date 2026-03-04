@@ -130,7 +130,7 @@ use terminal_hyperlinks::RegexSearches;
 use terminal_settings::{AlternateScroll, CursorShape, TerminalSettings};
 use theme::{ActiveTheme, Theme};
 use urlencoding;
-use util::{paths::PathStyle, truncate_and_trailoff};
+use util::{paths::PathStyle, truncate_and_trailoff, ResultExt};
 
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
@@ -2283,7 +2283,9 @@ impl Terminal {
                     log::debug!("Writing to connection: {:?}", input);
                 }
             }
-            connection.write(input).ok();
+            connection.write(input).log_err();
+        } else {
+            log::debug!("terminal_key: write_to_pty dropped, terminal not connected");
         }
     }
 
@@ -2407,6 +2409,7 @@ impl Terminal {
         cx: &mut Context<Self>,
     ) -> bool {
         if self.vi_mode_enabled {
+            log::debug!("terminal_key: try_keystroke consumed by vi_mode, key={:?}", keystroke);
             self.vi_motion(keystroke);
             return true;
         }
@@ -2460,8 +2463,10 @@ impl Terminal {
             }
 
             self.input(input_bytes.to_vec());
+            log::debug!("terminal_key: try_keystroke sent to input, key={:?}", keystroke);
             true
         } else {
+            log::debug!("terminal_key: try_keystroke input_str=None (not convertible), key={:?}", keystroke);
             false
         }
     }

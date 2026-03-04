@@ -3629,7 +3629,9 @@ impl TerminalView {
         self.clear_bell(cx);
         self.pause_cursor_blinking(window, cx);
 
-        if self.process_keystroke(&event.keystroke, cx) {
+        let handled = self.process_keystroke(&event.keystroke, cx);
+        log::debug!("terminal_key: key_down process_keystroke={}, key={:?}", handled, event.keystroke);
+        if handled {
             cx.stop_propagation();
         }
     }
@@ -3641,6 +3643,7 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         if !self.focus_handle.is_focused(window) {
+            log::debug!("terminal_key: interceptor discarding keystroke, terminal not focused, key={:?}", event.keystroke);
             return;
         }
 
@@ -3661,10 +3664,13 @@ impl TerminalView {
         let settings = TerminalSettings::get_global(cx);
 
         if self.should_skip_shell(&event.keystroke, &settings, &event.context_stack, window, cx) {
+            log::debug!("terminal_key: interceptor skip_shell=true, key={:?}, pending={:?}",
+                event.keystroke, window.pending_input_keystrokes());
             return;
         }
 
         if self.context_menu.is_some() {
+            log::debug!("terminal_key: interceptor discarding keystroke, context menu open, key={:?}", event.keystroke);
             return;
         }
 
@@ -3674,7 +3680,9 @@ impl TerminalView {
         // Only stop propagation if we successfully processed the keystroke.
         // For plain text input, process_keystroke returns false (to_esc_str returns None),
         // so we let the normal on_key_down handler process it instead.
-        if self.process_keystroke(&event.keystroke, cx) {
+        let handled = self.process_keystroke(&event.keystroke, cx);
+        log::debug!("terminal_key: interceptor process_keystroke={}, key={:?}", handled, event.keystroke);
+        if handled {
             cx.stop_propagation();
         }
     }
@@ -3692,13 +3700,16 @@ impl TerminalView {
             if let Ok(skip_ks) = Keystroke::parse(pattern) {
                 let skip_keybinding = KeybindingKeystroke::from_keystroke(skip_ks);
                 if keystroke.should_match(&skip_keybinding) {
+                    log::debug!("terminal_key: should_skip_shell matched keybindings_to_skip_shell pattern={:?}, key={:?}", pattern, keystroke);
                     return true;
                 }
             }
         }
 
         // 2. Check if keystroke has a Terminal-context keybinding (NOT SendKeystroke/SendText)
-        Self::keystroke_has_zed_action_binding(keystroke, context_stack, window, cx)
+        let result = Self::keystroke_has_zed_action_binding(keystroke, context_stack, window, cx);
+        log::debug!("terminal_key: should_skip_shell keystroke_has_zed_action_binding={}, key={:?}", result, keystroke);
+        result
     }
 
     /// Check if a keystroke has a Terminal-context keybinding that should NOT be sent to shell.
@@ -3722,6 +3733,8 @@ impl TerminalView {
 
         // If there's a pending multi-keystroke sequence, intercept to let GPUI wait for more keys
         if pending {
+            log::debug!("terminal_key: keystroke_has_zed_action_binding pending=true, key={:?}, pending_keystrokes={:?}",
+                keystroke, window.pending_input_keystrokes());
             return true;
         }
 
@@ -3736,6 +3749,8 @@ impl TerminalView {
             // Only skip shell for bindings that explicitly target Terminal context
             if let Some(predicate) = binding.predicate() {
                 if Self::predicate_contains_terminal(&predicate) {
+                    log::debug!("terminal_key: keystroke_has_zed_action_binding found Terminal-context binding, action={}, key={:?}",
+                        action_name, keystroke);
                     return true;
                 }
             }
@@ -3775,6 +3790,7 @@ impl TerminalView {
     }
 
     fn focus_in(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        log::debug!("terminal_key: focus_in, interceptor_registered={}", self.keystroke_intercept_subscription.is_some());
         if self.has_new_output {
             self.has_new_output = false;
             cx.emit(ItemEvent::UpdateTab);
@@ -3806,6 +3822,7 @@ impl TerminalView {
     }
 
     fn focus_out(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        log::debug!("terminal_key: focus_out, dropping interceptor");
         self.blink_manager.update(cx, BlinkManager::disable);
         self.terminal.update(cx, |terminal, _| {
             terminal.focus_out();
