@@ -492,7 +492,7 @@ pub struct TerminalGutterContent {
 pub struct SessionLoggingContent {
     /// Whether session logging is enabled by default for new terminals.
     ///
-    /// Default: false
+    /// Default: true
     pub enabled: Option<bool>,
 
     /// Directory where session logs are saved.

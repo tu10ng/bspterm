@@ -1822,7 +1822,7 @@
     // Saves terminal output to files in real-time with timestamps.
     "session_logging": {
       // Whether session logging is enabled by default for new terminals.
-      "enabled": false,
+      "enabled": true,
       // Directory where session logs are saved.
       // Supports ~ expansion for home directory.
       "log_directory": "~/.config/bspterm/session_logs",

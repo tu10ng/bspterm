@@ -56,7 +56,7 @@ pub struct SessionLoggingSettings {
 impl Default for SessionLoggingSettings {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             log_directory: paths::config_dir().join("session_logs"),
             filename_pattern: "${session_name}_%Y%m%d_%H%M%S.log".to_string(),
             timestamp_format: "[%Y-%m-%d %H:%M:%S] ".to_string(),
