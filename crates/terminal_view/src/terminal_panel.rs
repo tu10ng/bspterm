@@ -316,9 +316,6 @@ impl TerminalPanel {
 
     pub fn register_item_group(&mut self, item_id: gpui::EntityId, group_key: GroupKey) {
         self.group_overrides.insert(item_id, group_key);
-        if !self.group_order.contains(&self.group_overrides[&item_id]) {
-            self.group_order.push(self.group_overrides[&item_id].clone());
-        }
     }
 
     fn serialization_key(workspace: &Workspace) -> Option<String> {
@@ -1337,27 +1334,32 @@ impl TerminalPanel {
             }
         }
 
-        // Order groups according to self.group_order
+        // Order groups according to self.group_order, keeping Other always at the bottom
         let mut result = Vec::new();
+        let mut other_group = None;
+
         for key in &self.group_order {
             if let Some(group) = groups.remove(key) {
+                if group.key == GroupKey::Other {
+                    other_group = Some(group);
+                } else {
+                    result.push(group);
+                }
+            }
+        }
+
+        // Append any new groups not yet in order (preserving encounter order from pane items)
+        for group in groups.into_values() {
+            if group.key == GroupKey::Other {
+                other_group = Some(group);
+            } else {
                 result.push(group);
             }
         }
 
-        // Append any new groups not yet in order (sorted by key for consistency)
-        let mut remaining: Vec<_> = groups.into_values().collect();
-        remaining.sort_by(|a, b| {
-            match (&a.key, &b.key) {
-                (GroupKey::SessionGroup(a_id), GroupKey::SessionGroup(b_id)) => a_id.cmp(b_id),
-                (GroupKey::SessionGroup(_), _) => std::cmp::Ordering::Less,
-                (_, GroupKey::SessionGroup(_)) => std::cmp::Ordering::Greater,
-                (GroupKey::Ungrouped, GroupKey::Local) => std::cmp::Ordering::Less,
-                (GroupKey::Local, GroupKey::Ungrouped) => std::cmp::Ordering::Greater,
-                _ => std::cmp::Ordering::Equal,
-            }
-        });
-        result.extend(remaining);
+        if let Some(group) = other_group {
+            result.push(group);
+        }
 
         result
     }
