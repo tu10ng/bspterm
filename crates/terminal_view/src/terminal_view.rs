@@ -1575,6 +1575,127 @@ print(output)
         cx.notify();
     }
 
+    fn execute_function_from_bar(
+        &mut self,
+        function_id: uuid::Uuid,
+        function_name: String,
+        script_path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let expanded_path =
+            shellexpand::tilde(&script_path.to_string_lossy()).into_owned();
+
+        // Check if script has @params
+        let has_params = std::fs::read_to_string(&expanded_path)
+            .ok()
+            .and_then(|content| {
+                script_panel::script_params::ScriptParams::parse_from_script(&content)
+            })
+            .is_some_and(|params| !params.is_empty());
+
+        if has_params {
+            let workspace = self.workspace.clone();
+            let terminal_view = cx.entity().downgrade();
+            let script_path_for_modal = script_path.clone();
+            let function_name_for_modal = function_name.clone();
+
+            if let Some(workspace) = workspace.upgrade() {
+                workspace.update(cx, |workspace, cx| {
+                    workspace.toggle_modal(window, cx, move |window, cx| {
+                        let content =
+                            std::fs::read_to_string(
+                                shellexpand::tilde(
+                                    &script_path_for_modal.to_string_lossy(),
+                                )
+                                .as_ref(),
+                            )
+                            .unwrap_or_default();
+                        let params = script_panel::script_params::ScriptParams::parse_from_script(
+                            &content,
+                        )
+                        .unwrap_or_default();
+
+                        let on_run = Box::new(
+                            move |script_path: PathBuf,
+                                  env_params: std::collections::HashMap<String, String>,
+                                  cx: &mut App| {
+                                if let Some(view) = terminal_view.upgrade() {
+                                    view.update(cx, |this, cx| {
+                                        let invocation = FunctionInvocation {
+                                            function_id,
+                                            function_name: function_name.clone(),
+                                            script_path,
+                                            arguments: Vec::new(),
+                                            raw_args: String::new(),
+                                        };
+                                        this.execute_function_with_env(invocation, env_params, cx);
+                                    });
+                                }
+                            },
+                        );
+
+                        script_panel::script_params_modal::ScriptParamsModal::new(
+                            function_name_for_modal,
+                            script_path_for_modal,
+                            params,
+                            on_run,
+                            window,
+                            cx,
+                        )
+                    });
+                });
+            }
+        } else {
+            let invocation = FunctionInvocation {
+                function_id,
+                function_name,
+                script_path,
+                arguments: Vec::new(),
+                raw_args: String::new(),
+            };
+            self.execute_function(invocation, cx);
+        }
+    }
+
+    fn execute_function_with_env(
+        &mut self,
+        invocation: FunctionInvocation,
+        env_params: std::collections::HashMap<String, String>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(connection_info) = ScriptingServer::get(cx) else {
+            log::warn!("Cannot execute function: scripting server not available");
+            return;
+        };
+
+        if let Some(runner) = &mut self.function_runner {
+            runner.stop();
+        }
+
+        let terminal_id = self.scripting_id.map(|id| id.to_string());
+        let script_path =
+            shellexpand::tilde(&invocation.script_path.to_string_lossy()).into_owned();
+
+        let mut runner = ButtonBarScriptRunner::new_with_params(
+            PathBuf::from(&script_path),
+            connection_info.to_env_string(),
+            terminal_id,
+            env_params,
+        );
+
+        if let Err(err) = runner.start() {
+            log::error!("Failed to start function script: {}", err);
+            self.show_script_error(&err.to_string(), cx);
+            return;
+        }
+
+        log::info!("Function '{}' started with env params", invocation.function_name);
+
+        self.function_runner = Some(runner);
+        cx.notify();
+    }
+
     fn update_button_bar_runner(&mut self, cx: &mut Context<Self>) {
         let Some(runner) = &mut self.button_bar_runner else {
             return;
@@ -1985,7 +2106,6 @@ print(output)
             .cloned()
             .collect();
         let function_enabled = store.read(cx).function_enabled();
-        let terminal = self.terminal.clone();
         let terminal_view_handle = cx.entity().downgrade();
 
         h_flex()
@@ -2029,7 +2149,7 @@ print(output)
                 let func_id = func.id;
                 let func_name = func.name.clone();
                 let func_name_display = func_name.clone();
-                let terminal = terminal.clone();
+                let func_script_path = func.script_path.clone();
                 let terminal_view_handle = terminal_view_handle.clone();
                 let terminal_view_handle_for_menu = terminal_view_handle.clone();
                 let drag_data = DraggedFunction {
@@ -2116,13 +2236,19 @@ print(output)
                                     .border_color(cx.theme().colors().border)
                                     .hover(|s| s.bg(cx.theme().colors().element_hover))
                                     .cursor_pointer()
-                                    .on_click(move |_, _window, cx| {
-                                        // Insert function name into terminal input
-                                        terminal.update(cx, |term, _| {
-                                            term.input(func_name.as_bytes().to_vec());
-                                            term.input(b" ".to_vec());
-                                        });
-                                    })
+                                    .on_click(cx.listener({
+                                        let func_name = func_name.clone();
+                                        let func_script_path = func_script_path.clone();
+                                        move |this, _, window, cx| {
+                                            this.execute_function_from_bar(
+                                                func_id,
+                                                func_name.clone(),
+                                                func_script_path.clone(),
+                                                window,
+                                                cx,
+                                            );
+                                        }
+                                    }))
                                     .child(
                                         div()
                                             .text_xs()

@@ -4,20 +4,21 @@ use std::path::PathBuf;
 use editor::Editor;
 use gpui::{
     AnyElement, App, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable,
-    IntoElement, ParentElement, Render, Styled, WeakEntity, Window, px,
+    IntoElement, ParentElement, Render, Styled, Window, px,
 };
 use i18n::t;
 use ui::{prelude::*, Button, ButtonStyle, Checkbox, Label, LabelSize, h_flex, v_flex};
 use workspace::ModalView;
 
 use crate::script_params::{ParamType, ScriptParam, ScriptParams};
-use crate::ScriptPanel;
+
+pub type OnRunCallback = Box<dyn FnOnce(PathBuf, HashMap<String, String>, &mut App)>;
 
 pub struct ScriptParamsModal {
     script_name: String,
     script_path: PathBuf,
     script_params: ScriptParams,
-    script_panel: WeakEntity<ScriptPanel>,
+    on_run: Option<OnRunCallback>,
     editors: Vec<Entity<Editor>>,
     checkbox_states: Vec<bool>,
     choice_selections: Vec<usize>,
@@ -29,7 +30,7 @@ impl ScriptParamsModal {
         script_name: String,
         script_path: PathBuf,
         script_params: ScriptParams,
-        script_panel: WeakEntity<ScriptPanel>,
+        on_run: OnRunCallback,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -88,7 +89,7 @@ impl ScriptParamsModal {
             script_name,
             script_path,
             script_params,
-            script_panel,
+            on_run: Some(on_run),
             editors,
             checkbox_states,
             choice_selections,
@@ -151,10 +152,8 @@ impl ScriptParamsModal {
         let env_params = self.script_params.to_env_map(&values);
         let script_path = self.script_path.clone();
 
-        if let Some(panel) = self.script_panel.upgrade() {
-            panel.update(cx, |panel, cx| {
-                panel.execute_script_with_path(&script_path, env_params, cx);
-            });
+        if let Some(on_run) = self.on_run.take() {
+            on_run(script_path, env_params, cx);
         }
 
         cx.emit(DismissEvent);

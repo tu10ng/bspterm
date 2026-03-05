@@ -170,6 +170,14 @@ impl ScriptPanel {
         let workspace = self.workspace.clone();
         let script_panel = cx.entity().downgrade();
 
+        let on_run = Box::new(move |script_path: PathBuf, env_params: HashMap<String, String>, cx: &mut App| {
+            if let Some(panel) = script_panel.upgrade() {
+                panel.update(cx, |panel, cx| {
+                    panel.execute_script_with_path(&script_path, env_params, cx);
+                });
+            }
+        });
+
         if let Some(workspace) = workspace.upgrade() {
             workspace.update(cx, |workspace, cx| {
                 workspace.toggle_modal(window, cx, move |window, cx| {
@@ -177,7 +185,7 @@ impl ScriptPanel {
                         script_name.clone(),
                         script_path,
                         params,
-                        script_panel,
+                        on_run,
                         window,
                         cx,
                     )
