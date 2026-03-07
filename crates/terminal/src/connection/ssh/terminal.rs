@@ -231,7 +231,11 @@ fn spawn_channel_task(
                             break;
                         }
                         None => {
+                            if pending_wakeup_deadline.is_some() {
+                                event_tx.unbounded_send(AlacTermEvent::Wakeup).ok();
+                            }
                             *state.write() = ConnectionState::Disconnected;
+                            event_tx.unbounded_send(AlacTermEvent::Exit).ok();
                             break;
                         }
                         _ => {}

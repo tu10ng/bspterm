@@ -5,7 +5,7 @@
     {
       "id": "00000000-0000-0000-0000-000000000001",
       "name": "Error",
-      "pattern": "(?i)\\b(error|fail(ed)?|fatal|critical|exception|panic)\\b",
+      "pattern": "(?i)\\b(error|fail(ed)?|fatal|critical|exception|panic|reset)\\b",
       "token_type": "error",
       "modifiers": 1,
       "enabled": true,
@@ -60,7 +60,7 @@
     {
       "id": "00000000-0000-0000-0000-000000000006",
       "name": "ISO Timestamp",
-      "pattern": "\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}",
+      "pattern": "\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|[+-]\\d{2}:\\d{2})?",
       "token_type": "timestamp",
       "modifiers": 0,
       "enabled": true,
