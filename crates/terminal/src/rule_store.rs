@@ -1,10 +1,11 @@
-use std::fs;
 use std::path::Path;
 
 use anyhow::Result;
 use gpui::{App, AppContext as _, Context, Entity, EventEmitter, Global, Task};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::config_store::{ConfigItem, JsonConfigStore, default_true};
 
 /// Events that can trigger rule evaluation.
 #[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -75,10 +76,6 @@ pub enum RuleAction {
     },
 }
 
-fn default_true() -> bool {
-    true
-}
-
 /// An automation rule for terminal connections.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AutomationRule {
@@ -91,6 +88,12 @@ pub struct AutomationRule {
     pub max_triggers: Option<u32>,
     pub condition: RuleCondition,
     pub action: RuleAction,
+}
+
+impl ConfigItem for AutomationRule {
+    fn id(&self) -> Uuid {
+        self.id
+    }
 }
 
 impl AutomationRule {
@@ -124,6 +127,30 @@ pub struct RuleStore {
     pub rules: Vec<AutomationRule>,
 }
 
+impl JsonConfigStore for RuleStore {
+    type Item = AutomationRule;
+
+    fn items(&self) -> &[AutomationRule] {
+        &self.rules
+    }
+
+    fn items_mut(&mut self) -> &mut Vec<AutomationRule> {
+        &mut self.rules
+    }
+
+    fn new_empty() -> Self {
+        Self::new()
+    }
+
+    fn load_from_file(path: &Path) -> Result<Self> {
+        if !path.exists() {
+            return Ok(Self::with_defaults());
+        }
+        let content = std::fs::read_to_string(path)?;
+        Ok(serde_json::from_str(&content)?)
+    }
+}
+
 impl RuleStore {
     pub const CURRENT_VERSION: u32 = 1;
 
@@ -135,20 +162,11 @@ impl RuleStore {
     }
 
     pub fn load_from_file(path: &Path) -> Result<Self> {
-        if !path.exists() {
-            return Ok(Self::with_defaults());
-        }
-        let content = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&content)?)
+        <Self as JsonConfigStore>::load_from_file(path)
     }
 
     pub fn save_to_file(&self, path: &Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let json = serde_json::to_string_pretty(self)?;
-        fs::write(path, json)?;
-        Ok(())
+        <Self as JsonConfigStore>::save_to_file(self, path)
     }
 
     pub fn with_defaults() -> Self {
@@ -158,24 +176,19 @@ impl RuleStore {
     }
 
     pub fn add_rule(&mut self, rule: AutomationRule) {
-        self.rules.push(rule);
+        self.add_item(rule);
     }
 
     pub fn remove_rule(&mut self, id: Uuid) -> bool {
-        if let Some(pos) = self.rules.iter().position(|r| r.id == id) {
-            self.rules.remove(pos);
-            true
-        } else {
-            false
-        }
+        self.remove_item(id)
     }
 
     pub fn find_rule(&self, id: Uuid) -> Option<&AutomationRule> {
-        self.rules.iter().find(|r| r.id == id)
+        self.find_item(id)
     }
 
     pub fn find_rule_mut(&mut self, id: Uuid) -> Option<&mut AutomationRule> {
-        self.rules.iter_mut().find(|r| r.id == id)
+        self.find_item_mut(id)
     }
 
     pub fn enabled_rules(&self) -> impl Iterator<Item = &AutomationRule> {

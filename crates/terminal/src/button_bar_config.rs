@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
@@ -6,9 +5,7 @@ use gpui::{App, AppContext as _, Context, Entity, EventEmitter, Global, Task};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-fn default_enabled() -> bool {
-    true
-}
+use crate::config_store::{ConfigItem, JsonConfigStore, default_true};
 
 /// Configuration for a single button in the button bar.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -20,8 +17,14 @@ pub struct ButtonConfig {
     pub tooltip: Option<String>,
     #[serde(default)]
     pub icon: Option<String>,
-    #[serde(default = "default_enabled")]
+    #[serde(default = "default_true")]
     pub enabled: bool,
+}
+
+impl ConfigItem for ButtonConfig {
+    fn id(&self) -> Uuid {
+        self.id
+    }
 }
 
 impl ButtonConfig {
@@ -47,18 +50,30 @@ impl ButtonConfig {
     }
 }
 
-fn default_show_button_bar() -> bool {
-    true
-}
-
 /// The button bar store containing all button configurations.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ButtonBarStore {
     pub version: u32,
     #[serde(default)]
     pub buttons: Vec<ButtonConfig>,
-    #[serde(default = "default_show_button_bar")]
+    #[serde(default = "default_true")]
     pub show_button_bar: bool,
+}
+
+impl JsonConfigStore for ButtonBarStore {
+    type Item = ButtonConfig;
+
+    fn items(&self) -> &[ButtonConfig] {
+        &self.buttons
+    }
+
+    fn items_mut(&mut self) -> &mut Vec<ButtonConfig> {
+        &mut self.buttons
+    }
+
+    fn new_empty() -> Self {
+        Self::new()
+    }
 }
 
 impl ButtonBarStore {
@@ -73,59 +88,31 @@ impl ButtonBarStore {
     }
 
     pub fn load_from_file(path: &Path) -> Result<Self> {
-        if !path.exists() {
-            return Ok(Self::new());
-        }
-        let content = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&content)?)
+        <Self as JsonConfigStore>::load_from_file(path)
     }
 
     pub fn save_to_file(&self, path: &Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let json = serde_json::to_string_pretty(self)?;
-        fs::write(path, json)?;
-        Ok(())
+        <Self as JsonConfigStore>::save_to_file(self, path)
     }
 
     pub fn add_button(&mut self, button: ButtonConfig) {
-        self.buttons.push(button);
+        self.add_item(button);
     }
 
     pub fn remove_button(&mut self, id: Uuid) -> bool {
-        if let Some(pos) = self.buttons.iter().position(|b| b.id == id) {
-            self.buttons.remove(pos);
-            return true;
-        }
-        false
+        self.remove_item(id)
     }
 
     pub fn find_button(&self, id: Uuid) -> Option<&ButtonConfig> {
-        self.buttons.iter().find(|b| b.id == id)
+        self.find_item(id)
     }
 
     pub fn find_button_mut(&mut self, id: Uuid) -> Option<&mut ButtonConfig> {
-        self.buttons.iter_mut().find(|b| b.id == id)
+        self.find_item_mut(id)
     }
 
     pub fn move_button(&mut self, id: Uuid, new_index: usize) -> bool {
-        let Some(current_index) = self.buttons.iter().position(|b| b.id == id) else {
-            return false;
-        };
-
-        if current_index == new_index {
-            return true;
-        }
-
-        let button = self.buttons.remove(current_index);
-        let insert_index = if new_index > current_index {
-            new_index.saturating_sub(1).min(self.buttons.len())
-        } else {
-            new_index.min(self.buttons.len())
-        };
-        self.buttons.insert(insert_index, button);
-        true
+        self.move_item(id, new_index)
     }
 }
 

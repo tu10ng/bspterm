@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::abbr_store::AbbreviationProtocol;
+use crate::config_store::ConfigItem;
 
 fn default_true() -> bool {
     true
@@ -246,6 +247,12 @@ pub struct HighlightRule {
     /// Optional background color override (hex format)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_color: Option<String>,
+}
+
+impl ConfigItem for HighlightRule {
+    fn id(&self) -> Uuid {
+        self.id
+    }
 }
 
 impl HighlightRule {

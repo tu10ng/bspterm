@@ -165,7 +165,7 @@ Gutter in `terminal_element.rs` and `row_decorator.rs`. Content only on lines wi
 
 ## Remote Explorer Panel
 
-`crates/remote_explorer` — tree view of sessions using `UniformList`. Action: `bspterm_actions::remote_explorer::ToggleFocus`. Default position: Left dock. Quick Add (`src/quick_add/`): auto-recognizes IP with credentials from flexible input formats. Recognition config: `~/.config/bspterm/recognize_config.json` (auto-installed from `crates/terminal/src/recognize_config.rs`).
+`crates/remote_explorer` — tree view of sessions using `UniformList`. Action: `bspterm_actions::remote_explorer::ToggleFocus`. Default position: Left dock. Quick Add (`src/quick_add/`): auto-recognizes IP with credentials from flexible input formats. Recognition config: `~/.config/bspterm/recognize_config.json` (version-aware: only overwritten when app version is newer, user edits preserved).
 
 ## Terminal Reconnection
 
@@ -194,6 +194,21 @@ Regex-based highlighting in `crates/terminal/src/highlight_rule.rs`, `highlight_
 ## Terminal Abbreviations
 
 Command expansion in `crates/terminal/src/abbr_store.rs` and `crates/terminal_view/src/abbr_bar.rs`. Trigger word + space/Enter at command position → expansion. Protocol-scoped (All/Ssh/Telnet). Persistence: `~/.config/bspterm/abbreviations.json`.
+
+## Terminal Config Store Pattern
+
+Multiple stores share a common pattern via `crates/terminal/src/config_store.rs`:
+
+- **`ConfigItem` trait**: Items with `fn id(&self) -> Uuid`
+- **`JsonConfigStore` trait**: Default impls for `load_from_file()`, `save_to_file()`, CRUD (`add_item`, `remove_item`, `find_item`, `find_item_mut`), and `move_item()` reordering
+
+Stores using this pattern: `AbbreviationStore`, `FunctionStore`, `RuleStore`, `HighlightStore`, `ButtonBarStore`. Each has a GPUI Entity wrapper (`*StoreEntity`) with Global marker, event emission, and async save scheduling. `ShortcutBarStore` has unique keybinding registration logic and is not yet migrated.
+
+When adding a new config store:
+1. Define the item type implementing `ConfigItem`
+2. Define the store struct implementing `JsonConfigStore`
+3. Add domain-specific methods (protocol filtering, etc.) on the store
+4. Create a `*StoreEntity` wrapper with Global marker, events, and `schedule_save()`
 
 ## Agent Connection Fallback
 

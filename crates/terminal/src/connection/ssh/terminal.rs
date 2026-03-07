@@ -188,7 +188,9 @@ fn spawn_channel_task(
                             }
                         }
                         Some(ChannelCommand::Close) | None => {
-                            let _ = channel.close().await;
+                            if let Err(error) = channel.close().await {
+                                log::debug!("Failed to close SSH channel: {}", error);
+                            }
                             *state.write() = ConnectionState::Disconnected;
                             break;
                         }

@@ -19,7 +19,7 @@ src/
 
 ## Dependencies
 
-- `terminal` - HighlightStore, HighlightRule, TerminalTokenType, TerminalTokenModifiers
+- `terminal` - HighlightStore (implements JsonConfigStore), HighlightRule (implements ConfigItem), TerminalTokenType, TerminalTokenModifiers
 - `workspace` - Panel, ModalView, DockPosition
 - `editor` - Text input fields
 - `ui` - Button, ListItem, Checkbox, Label

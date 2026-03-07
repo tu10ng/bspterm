@@ -170,9 +170,12 @@ impl SshSession {
     pub async fn close(&self) {
         *self.state.write() = ConnectionState::Disconnected;
         if let Some(handle) = self.handle.write().await.take() {
-            let _ = handle
+            if let Err(error) = handle
                 .disconnect(russh::Disconnect::ByApplication, "", "en")
-                .await;
+                .await
+            {
+                log::debug!("Failed to disconnect SSH session: {}", error);
+            }
         }
     }
 }

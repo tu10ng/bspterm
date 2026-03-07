@@ -223,7 +223,9 @@ fn spawn_channel_task(
                         log::warn!("[TELNET] Failed to send keepalive to {}: {}", stats.target_addr, error);
                         stats.log_disconnect(&format!("keepalive failed: {}", error));
                         *state.write() = ConnectionState::Error(error.to_string());
-                        let _ = write_half.shutdown().await;
+                        if let Err(error) = write_half.shutdown().await {
+                            log::debug!("[TELNET] Failed to shutdown write half after keepalive failure: {}", error);
+                        }
                         break;
                     }
                     let count = stats.keepalive_count.fetch_add(1, Ordering::Relaxed) + 1;
@@ -238,7 +240,9 @@ fn spawn_channel_task(
                                 log::error!("[TELNET] Failed to write to {}: {}", stats.target_addr, error);
                                 stats.log_disconnect(&format!("write failed: {}", error));
                                 *state.write() = ConnectionState::Error(error.to_string());
-                                let _ = write_half.shutdown().await;
+                                if let Err(error) = write_half.shutdown().await {
+                                    log::debug!("[TELNET] Failed to shutdown write half after write failure: {}", error);
+                                }
                                 break;
                             }
                             last_activity = Instant::now();
@@ -262,7 +266,9 @@ fn spawn_channel_task(
                         Some(TelnetChannelCommand::Close) | None => {
                             stats.log_disconnect("user closed");
                             *state.write() = ConnectionState::Disconnected;
-                            let _ = write_half.shutdown().await;
+                            if let Err(error) = write_half.shutdown().await {
+                                log::debug!("[TELNET] Failed to shutdown write half on close: {}", error);
+                            }
                             break;
                         }
                     }
@@ -275,7 +281,9 @@ fn spawn_channel_task(
                             }
                             stats.log_disconnect("remote closed");
                             *state.write() = ConnectionState::Disconnected;
-                            let _ = write_half.shutdown().await;
+                            if let Err(error) = write_half.shutdown().await {
+                                log::debug!("[TELNET] Failed to shutdown write half after remote close: {}", error);
+                            }
                             event_tx.unbounded_send(AlacTermEvent::Exit).ok();
                             break;
                         }
@@ -289,7 +297,9 @@ fn spawn_channel_task(
                                     log::error!("[TELNET] Failed to send protocol responses to {}: {}", stats.target_addr, error);
                                     stats.log_disconnect(&format!("protocol response failed: {}", error));
                                     *state.write() = ConnectionState::Error(error.to_string());
-                                    let _ = write_half.shutdown().await;
+                                    if let Err(error) = write_half.shutdown().await {
+                                        log::debug!("[TELNET] Failed to shutdown write half after protocol response failure: {}", error);
+                                    }
                                     break;
                                 }
 
@@ -323,7 +333,9 @@ fn spawn_channel_task(
                             log::error!("[TELNET] Read error from {}: {}", stats.target_addr, error);
                             stats.log_disconnect(&format!("read error: {}", error));
                             *state.write() = ConnectionState::Error(error.to_string());
-                            let _ = write_half.shutdown().await;
+                            if let Err(error) = write_half.shutdown().await {
+                                log::debug!("[TELNET] Failed to shutdown write half after read error: {}", error);
+                            }
                             event_tx.unbounded_send(AlacTermEvent::Exit).ok();
                             break;
                         }

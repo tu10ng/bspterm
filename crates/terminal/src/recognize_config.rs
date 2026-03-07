@@ -12,7 +12,7 @@ use anyhow::Result;
 use gpui::{App, AppContext as _, Context, Entity, EventEmitter, Global, Task};
 use serde::{Deserialize, Serialize};
 
-/// Embedded default config JSON (always overwritten on startup to stay in sync with app version).
+/// Embedded default config JSON (only written when file is missing or has an older version).
 const DEFAULT_RECOGNIZE_CONFIG: &[u8] =
     include_bytes!("../../../assets/settings/default_recognize_config.json");
 
@@ -386,21 +386,53 @@ pub struct RecognizeConfigEntity {
 impl EventEmitter<RecognizeConfigEvent> for RecognizeConfigEntity {}
 
 /// Ensure default config is installed to user directory.
-/// Always overwrites to keep in sync with app version.
+/// Only writes the default config if the file doesn't exist or has an older version.
 fn ensure_default_config() {
     let config_path = paths::recognize_config_file();
 
     // Ensure parent directory exists
     if let Some(parent) = config_path.parent() {
-        if let Err(e) = fs::create_dir_all(parent) {
-            log::error!("Failed to create config directory: {}", e);
+        if let Err(error) = fs::create_dir_all(parent) {
+            log::error!("Failed to create config directory: {}", error);
             return;
         }
     }
 
-    // Always overwrite to keep in sync with app version
-    if let Err(e) = fs::write(config_path, DEFAULT_RECOGNIZE_CONFIG) {
-        log::error!("Failed to write default recognize config: {}", e);
+    // Check if the file already exists and has a current version
+    if config_path.exists() {
+        match fs::read_to_string(&config_path) {
+            Ok(content) => {
+                // Try to parse just the version field to decide whether to overwrite
+                #[derive(Deserialize)]
+                struct VersionOnly {
+                    #[serde(default)]
+                    version: u32,
+                }
+                match serde_json::from_str::<VersionOnly>(&content) {
+                    Ok(existing) if existing.version >= RecognizeConfig::CURRENT_VERSION => {
+                        log::debug!("Recognize config is up to date (version {})", existing.version);
+                        return;
+                    }
+                    Ok(existing) => {
+                        log::info!(
+                            "Upgrading recognize config from version {} to {}",
+                            existing.version,
+                            RecognizeConfig::CURRENT_VERSION
+                        );
+                    }
+                    Err(error) => {
+                        log::warn!("Failed to parse existing recognize config version: {}", error);
+                    }
+                }
+            }
+            Err(error) => {
+                log::warn!("Failed to read existing recognize config: {}", error);
+            }
+        }
+    }
+
+    if let Err(error) = fs::write(&config_path, DEFAULT_RECOGNIZE_CONFIG) {
+        log::error!("Failed to write default recognize config: {}", error);
     } else {
         log::info!("Installed default recognize config to {:?}", config_path);
     }

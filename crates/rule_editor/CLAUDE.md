@@ -20,7 +20,7 @@ src/
 
 ## Dependencies
 
-- `terminal` - RuleStore, AutomationRule, TriggerEvent, RuleCondition, RuleAction
+- `terminal` - RuleStore (implements JsonConfigStore), AutomationRule (implements ConfigItem), TriggerEvent, RuleCondition, RuleAction
 - `workspace` - Panel, ModalView, DockPosition
 - `editor` - Text input fields
 - `ui` - Button, ListItem, Checkbox

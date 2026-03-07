@@ -64,7 +64,7 @@ All quick-add sessions are automatically placed in a group named after the IP ad
 
 ## Dependencies
 
-- `terminal` - SessionStore, SessionConfig, AuthMethod
+- `terminal` - SessionStore, SessionConfig, AuthMethod, RecognizeConfig
 - `workspace` - Panel, ModalView, DockPosition
 - `editor` - Text input editors
 - `ui` - ListItem, ContextMenu, Button, Icon
@@ -99,6 +99,7 @@ cargo test -p remote_explorer
 - Ping refresh loop runs every 5 seconds - be mindful of network load
 - Icons: `FolderOpen`/`Folder` for groups, `Server` for sessions
 - Auto-recognize uses heuristics - passwords with only alphanumeric chars may be misclassified as usernames
+- Recognition config (`~/.config/bspterm/recognize_config.json`) is version-aware: user edits are preserved across upgrades, only overwritten when app ships a newer config version
 - Multi-line detection requires IP only on first line; if multiple lines have IPs, treated as separate connections
 - Title bar has single toggle button (`ToggleCollapseAll` action) that switches between collapse/expand based on current state
 - `has_any_expanded_group()` checks if any group is expanded to determine toggle behavior

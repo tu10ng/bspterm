@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
@@ -6,9 +5,7 @@ use gpui::{App, AppContext as _, Context, Entity, EventEmitter, Global, Task};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-fn default_true() -> bool {
-    true
-}
+use crate::config_store::{ConfigItem, JsonConfigStore, default_true};
 
 /// Protocol type for function filtering.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,6 +39,12 @@ pub struct FunctionConfig {
     pub protocol: FunctionProtocol,
     #[serde(default)]
     pub description: Option<String>,
+}
+
+impl ConfigItem for FunctionConfig {
+    fn id(&self) -> Uuid {
+        self.id
+    }
 }
 
 impl FunctionConfig {
@@ -84,6 +87,22 @@ pub struct FunctionStore {
     pub show_function_bar: bool,
 }
 
+impl JsonConfigStore for FunctionStore {
+    type Item = FunctionConfig;
+
+    fn items(&self) -> &[FunctionConfig] {
+        &self.functions
+    }
+
+    fn items_mut(&mut self) -> &mut Vec<FunctionConfig> {
+        &mut self.functions
+    }
+
+    fn new_empty() -> Self {
+        Self::new()
+    }
+}
+
 impl FunctionStore {
     pub const CURRENT_VERSION: u32 = 1;
 
@@ -97,40 +116,27 @@ impl FunctionStore {
     }
 
     pub fn load_from_file(path: &Path) -> Result<Self> {
-        if !path.exists() {
-            return Ok(Self::new());
-        }
-        let content = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&content)?)
+        <Self as JsonConfigStore>::load_from_file(path)
     }
 
     pub fn save_to_file(&self, path: &Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let json = serde_json::to_string_pretty(self)?;
-        fs::write(path, json)?;
-        Ok(())
+        <Self as JsonConfigStore>::save_to_file(self, path)
     }
 
     pub fn add_function(&mut self, func: FunctionConfig) {
-        self.functions.push(func);
+        self.add_item(func);
     }
 
     pub fn remove_function(&mut self, id: Uuid) -> bool {
-        if let Some(pos) = self.functions.iter().position(|f| f.id == id) {
-            self.functions.remove(pos);
-            return true;
-        }
-        false
+        self.remove_item(id)
     }
 
     pub fn find_function(&self, id: Uuid) -> Option<&FunctionConfig> {
-        self.functions.iter().find(|f| f.id == id)
+        self.find_item(id)
     }
 
     pub fn find_function_mut(&mut self, id: Uuid) -> Option<&mut FunctionConfig> {
-        self.functions.iter_mut().find(|f| f.id == id)
+        self.find_item_mut(id)
     }
 
     pub fn find_by_name(
@@ -166,22 +172,7 @@ impl FunctionStore {
     }
 
     pub fn move_function(&mut self, id: Uuid, new_index: usize) -> bool {
-        let Some(current_index) = self.functions.iter().position(|f| f.id == id) else {
-            return false;
-        };
-
-        if current_index == new_index {
-            return true;
-        }
-
-        let func = self.functions.remove(current_index);
-        let insert_index = if new_index > current_index {
-            new_index.saturating_sub(1).min(self.functions.len())
-        } else {
-            new_index.min(self.functions.len())
-        };
-        self.functions.insert(insert_index, func);
-        true
+        self.move_item(id, new_index)
     }
 }
 

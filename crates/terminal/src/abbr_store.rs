@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::Path;
 
 use anyhow::Result;
@@ -6,9 +5,7 @@ use gpui::{App, AppContext as _, Context, Entity, EventEmitter, Global, Task};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-fn default_true() -> bool {
-    true
-}
+use crate::config_store::{ConfigItem, JsonConfigStore, default_true};
 
 /// Protocol type for abbreviation filtering.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,6 +37,12 @@ pub struct Abbreviation {
     pub enabled: bool,
     #[serde(default)]
     pub protocol: AbbreviationProtocol,
+}
+
+impl ConfigItem for Abbreviation {
+    fn id(&self) -> Uuid {
+        self.id
+    }
 }
 
 impl Abbreviation {
@@ -80,6 +83,22 @@ pub struct AbbreviationStore {
     pub show_abbr_bar: bool,
 }
 
+impl JsonConfigStore for AbbreviationStore {
+    type Item = Abbreviation;
+
+    fn items(&self) -> &[Abbreviation] {
+        &self.abbreviations
+    }
+
+    fn items_mut(&mut self) -> &mut Vec<Abbreviation> {
+        &mut self.abbreviations
+    }
+
+    fn new_empty() -> Self {
+        Self::new()
+    }
+}
+
 impl AbbreviationStore {
     pub const CURRENT_VERSION: u32 = 1;
 
@@ -93,40 +112,27 @@ impl AbbreviationStore {
     }
 
     pub fn load_from_file(path: &Path) -> Result<Self> {
-        if !path.exists() {
-            return Ok(Self::new());
-        }
-        let content = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&content)?)
+        <Self as JsonConfigStore>::load_from_file(path)
     }
 
     pub fn save_to_file(&self, path: &Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let json = serde_json::to_string_pretty(self)?;
-        fs::write(path, json)?;
-        Ok(())
+        <Self as JsonConfigStore>::save_to_file(self, path)
     }
 
     pub fn add_abbreviation(&mut self, abbr: Abbreviation) {
-        self.abbreviations.push(abbr);
+        self.add_item(abbr);
     }
 
     pub fn remove_abbreviation(&mut self, id: Uuid) -> bool {
-        if let Some(pos) = self.abbreviations.iter().position(|a| a.id == id) {
-            self.abbreviations.remove(pos);
-            return true;
-        }
-        false
+        self.remove_item(id)
     }
 
     pub fn find_abbreviation(&self, id: Uuid) -> Option<&Abbreviation> {
-        self.abbreviations.iter().find(|a| a.id == id)
+        self.find_item(id)
     }
 
     pub fn find_abbreviation_mut(&mut self, id: Uuid) -> Option<&mut Abbreviation> {
-        self.abbreviations.iter_mut().find(|a| a.id == id)
+        self.find_item_mut(id)
     }
 
     pub fn find_by_trigger(
@@ -162,22 +168,7 @@ impl AbbreviationStore {
     }
 
     pub fn move_abbreviation(&mut self, id: Uuid, new_index: usize) -> bool {
-        let Some(current_index) = self.abbreviations.iter().position(|a| a.id == id) else {
-            return false;
-        };
-
-        if current_index == new_index {
-            return true;
-        }
-
-        let abbr = self.abbreviations.remove(current_index);
-        let insert_index = if new_index > current_index {
-            new_index.saturating_sub(1).min(self.abbreviations.len())
-        } else {
-            new_index.min(self.abbreviations.len())
-        };
-        self.abbreviations.insert(insert_index, abbr);
-        true
+        self.move_item(id, new_index)
     }
 }
 

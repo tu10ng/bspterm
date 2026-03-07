@@ -2,6 +2,7 @@ pub mod abbr_store;
 pub mod active_session_tracker;
 pub mod button_bar_config;
 pub mod command_history;
+pub mod config_store;
 pub mod connection;
 pub mod function_store;
 pub mod highlight_rule;
@@ -1692,7 +1693,9 @@ impl Terminal {
                     if let Some(data) = connection.read() {
                         if let Some(ref mut logger) = self.session_logger {
                             log::trace!("Logging {} bytes to session log", data.len());
-                            let _ = logger.log_output(&data, Local::now());
+                            if let Err(error) = logger.log_output(&data, Local::now()) {
+                                log::warn!("Failed to log session output: {}", error);
+                            }
                         }
                         self.process_ssh_input(&data);
                     }
@@ -4183,7 +4186,9 @@ unsafe fn append_text_to_term(term: &mut Term<ZedListener>, text_lines: &[&str])
 impl Drop for Terminal {
     fn drop(&mut self) {
         if let Some(ref mut logger) = self.session_logger {
-            let _ = logger.stop();
+            if let Err(error) = logger.stop() {
+                log::debug!("Failed to stop session logger: {}", error);
+            }
         }
 
         if let TerminalType::Connected { connection } =
