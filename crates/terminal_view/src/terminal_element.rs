@@ -726,7 +726,6 @@ impl TerminalElement {
     fn layout_gutter(
         terminal: &Terminal,
         visible_rows: std::ops::Range<i32>,
-        history_size: usize,
         display_offset: usize,
         cursor_line: i32,
         vi_mode: bool,
@@ -746,7 +745,7 @@ impl TerminalElement {
         let line_number_color = theme.colors().editor_line_number;
         let active_line_number_color = theme.colors().editor_active_line_number;
 
-        let total_lines = history_size + visible_rows.len();
+        let total_lines = terminal.total_logical_lines();
         let max_line_number_digits = total_lines.to_string().len();
         let padding = px(4.);
         let separator_width = px(8.);
@@ -821,8 +820,40 @@ impl TerminalElement {
 
         let mut entries = Vec::with_capacity(visible_rows.len());
 
+        // Pre-compute wrap continuation flags for all visible rows
+        let grid_lines: Vec<i32> = visible_rows
+            .clone()
+            .map(|row| row - display_offset as i32)
+            .collect();
+        let continuation_flags = terminal.wrapped_continuation_flags(&grid_lines);
+        let first_grid_line = grid_lines.first().copied().unwrap_or(0);
+        let mut logical_line_number = terminal.count_logical_lines_before(first_grid_line);
+
+        // For vi mode relative line numbers, compute cursor's logical line number
+        let cursor_logical = if vi_mode && gutter_settings.relative_line_numbers {
+            let cursor_count = terminal.count_logical_lines_before(cursor_line);
+            if !terminal
+                .wrapped_continuation_flags(&[cursor_line])
+                .first()
+                .copied()
+                .unwrap_or(false)
+            {
+                cursor_count + 1
+            } else {
+                cursor_count
+            }
+        } else {
+            0
+        };
+
         for (row_index, screen_row) in visible_rows.enumerate() {
             let grid_line = screen_row - display_offset as i32;
+            let is_continuation = continuation_flags[row_index];
+
+            // Increment logical line number for non-continuation lines with content
+            if !is_continuation && terminal.get_line_timestamp(grid_line).is_some() {
+                logical_line_number += 1;
+            }
 
             let is_cursor_line = vi_mode && grid_line == cursor_line;
             let color = if is_cursor_line {
@@ -832,16 +863,14 @@ impl TerminalElement {
             };
 
             let line_number = if gutter_settings.line_numbers {
-                // Only show line numbers on lines that have actual content (same as timestamps)
-                if terminal.get_line_timestamp(grid_line).is_some() {
-                    let absolute_line = (history_size as i32 + grid_line + 1) as usize;
+                if terminal.get_line_timestamp(grid_line).is_some() && !is_continuation {
                     let display_number = if vi_mode
                         && gutter_settings.relative_line_numbers
                         && !is_cursor_line
                     {
-                        (grid_line - cursor_line).unsigned_abs() as usize
+                        logical_line_number.abs_diff(cursor_logical)
                     } else {
-                        absolute_line
+                        logical_line_number
                     };
                     let number_str =
                         format!("{:>width$}", display_number, width = max_line_number_digits);
@@ -865,29 +894,33 @@ impl TerminalElement {
             };
 
             let timestamp = if gutter_settings.timestamps {
-                let display_time = if grid_line == cursor_line && display_offset == 0 {
-                    Some(Local::now())
-                } else {
-                    terminal.get_line_timestamp(grid_line)
-                };
-
-                if let Some(ts) = display_time {
-                    let ts_str = ts.format(&gutter_settings.timestamp_format).to_string();
-                    let ts_len = ts_str.len();
-                    let shaped = window.text_system().shape_line(
-                        ts_str.into(),
-                        font_size,
-                        &[TextRun {
-                            len: ts_len,
-                            font: font.clone(),
-                            color,
-                            ..Default::default()
-                        }],
-                        None,
-                    );
-                    Some(shaped)
-                } else {
+                if is_continuation {
                     None
+                } else {
+                    let display_time = if grid_line == cursor_line && display_offset == 0 {
+                        Some(Local::now())
+                    } else {
+                        terminal.get_line_timestamp(grid_line)
+                    };
+
+                    if let Some(ts) = display_time {
+                        let ts_str = ts.format(&gutter_settings.timestamp_format).to_string();
+                        let ts_len = ts_str.len();
+                        let shaped = window.text_system().shape_line(
+                            ts_str.into(),
+                            font_size,
+                            &[TextRun {
+                                len: ts_len,
+                                font: font.clone(),
+                                color,
+                                ..Default::default()
+                            }],
+                            None,
+                        );
+                        Some(shaped)
+                    } else {
+                        None
+                    }
                 }
             } else {
                 None
@@ -1490,7 +1523,6 @@ impl Element for TerminalElement {
                     });
 
                     let terminal = self.terminal.read(cx);
-                    let history_size = terminal.history_size();
                     let cursor_line = terminal.cursor_line();
                     let vi_mode = terminal.vi_mode_enabled();
                     let display_offset = terminal.last_content.display_offset;
@@ -1506,7 +1538,6 @@ impl Element for TerminalElement {
                     let (gutter_dims, gutter_entries) = Self::layout_gutter(
                         terminal,
                         visible_rows,
-                        history_size,
                         display_offset,
                         cursor_line,
                         vi_mode,

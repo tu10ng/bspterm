@@ -2929,6 +2929,74 @@ impl Terminal {
         self.line_timestamps.get(&line).copied()
     }
 
+    /// Returns whether each grid line is a wrapped continuation of the previous line.
+    pub fn wrapped_continuation_flags(&self, grid_lines: &[i32]) -> Vec<bool> {
+        let term = self.term.lock();
+        let grid = term.grid();
+        let topmost = grid.topmost_line().0;
+        let columns = grid.columns();
+        grid_lines
+            .iter()
+            .map(|&line| {
+                if columns == 0 || line <= topmost {
+                    return false;
+                }
+                let prev = Line(line - 1);
+                let last_cell = &grid[prev][Column(columns - 1)];
+                last_cell.flags.contains(Flags::WRAPLINE)
+            })
+            .collect()
+    }
+
+    /// Counts logical lines from topmost line up to (not including) `target_line`.
+    pub fn count_logical_lines_before(&self, target_line: i32) -> usize {
+        let term = self.term.lock();
+        let grid = term.grid();
+        let topmost = grid.topmost_line().0;
+        let columns = grid.columns();
+        if columns == 0 {
+            return 0;
+        }
+        let mut count: usize = 0;
+        for line in topmost..target_line {
+            if line == topmost {
+                count += 1;
+            } else {
+                let prev = Line(line - 1);
+                let last_cell = &grid[prev][Column(columns - 1)];
+                if !last_cell.flags.contains(Flags::WRAPLINE) {
+                    count += 1;
+                }
+            }
+        }
+        count
+    }
+
+    /// Returns total logical line count across the entire grid.
+    pub fn total_logical_lines(&self) -> usize {
+        let term = self.term.lock();
+        let grid = term.grid();
+        let topmost = grid.topmost_line().0;
+        let bottommost = grid.bottommost_line().0;
+        let columns = grid.columns();
+        if columns == 0 {
+            return 0;
+        }
+        let mut count: usize = 0;
+        for line in topmost..=bottommost {
+            if line == topmost {
+                count += 1;
+            } else {
+                let prev = Line(line - 1);
+                let last_cell = &grid[prev][Column(columns - 1)];
+                if !last_cell.flags.contains(Flags::WRAPLINE) {
+                    count += 1;
+                }
+            }
+        }
+        count
+    }
+
     /// Returns the command history extracted from terminal output.
     pub fn command_history(&self) -> &CommandHistory {
         &self.command_history
