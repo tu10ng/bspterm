@@ -199,6 +199,7 @@ remote_explorer:
   pin_group: "置顶分组"
   unpin_group: "取消置顶"
 
+  sessions: "会话列表"
   filter_placeholder: "筛选会话..."
 
   # Ping status

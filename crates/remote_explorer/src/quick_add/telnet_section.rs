@@ -183,12 +183,7 @@ impl TelnetSection {
                             .px_1()
                             .py_px()
                             .child(self.password_editor.clone()),
-                    ),
-            )
-            .child(
-                h_flex()
-                    .w_full()
-                    .justify_end()
+                    )
                     .child(
                         Button::new("telnet-connect", t("common.connect"))
                             .style(ButtonStyle::Filled)

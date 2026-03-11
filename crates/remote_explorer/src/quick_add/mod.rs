@@ -330,14 +330,11 @@ impl QuickAddArea {
         window: &mut Window,
         cx: &mut App,
     ) -> Option<(terminal::SshSessionConfig, Uuid, Entity<Workspace>, Entity<Pane>)> {
-        let host_input = self.ssh_section.get_host(cx);
-        if host_input.is_empty() {
+        let (host, port, username, password) = self.ssh_section.get_values(cx);
+
+        if host.is_empty() {
             return None;
         }
-
-        let (host, port, username) = parse_ssh_host_string(&host_input);
-        let username = username.unwrap_or_else(|| "root".to_string());
-        let password = "root".to_string();
 
         let ssh_config = terminal::SshSessionConfig::new(&host, port)
             .with_username(&username)
@@ -357,33 +354,13 @@ impl QuickAddArea {
             store.add_session(session_config, Some(group_id), cx);
         });
 
-        self.ssh_section.clear_host(window, cx);
+        self.ssh_section.clear_fields(window, cx);
 
         if let (Some(workspace), Some(pane)) = (workspace.upgrade(), pane) {
             Some((ssh_config, session_id, workspace, pane))
         } else {
             None
         }
-    }
-}
-
-fn parse_ssh_host_string(input: &str) -> (String, u16, Option<String>) {
-    let input = input.trim();
-
-    let (user_host, port) = if let Some((left, port_str)) = input.rsplit_once(':') {
-        if let Ok(port) = port_str.parse::<u16>() {
-            (left, port)
-        } else {
-            (input, 22)
-        }
-    } else {
-        (input, 22)
-    };
-
-    if let Some((username, host)) = user_host.split_once('@') {
-        (host.to_string(), port, Some(username.to_string()))
-    } else {
-        (user_host.to_string(), port, None)
     }
 }
 

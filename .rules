@@ -140,40 +140,20 @@ All entity/UI work on foreground thread.
 
 Persistent SSH/Telnet configs in `crates/terminal/src/session_store.rs`. Key types: `SessionNode` (Group|Session), `SessionConfig`, `ProtocolConfig` (Ssh|Telnet), `AuthMethod`. GPUI entity: `SessionStoreEntity::global(cx)`. Persistence: `~/.config/bspterm/sessions.json`.
 
-## Telnet Connection
+## Terminal Features
 
-Telnet protocol in `crates/terminal/src/connection/telnet/` — `protocol.rs` (IAC negotiation), `session.rs` (TCP), `terminal.rs` (implements `TerminalConnection`). Usage: `TerminalBuilder::new_with_telnet(config, ...)`.
-
-## Terminal Keybinding Interception
-
-In `terminal_view.rs`, when `send_keybindings_to_shell` is enabled:
-- `keybindings_to_skip_shell` list → always handled by Bspterm
-- Only `"context": "Terminal"` keybindings are intercepted; global bindings go to shell
-- `terminal::SendKeystroke` and `terminal::SendText` always go to shell
-- Key functions: `should_skip_shell()`, `keystroke_has_bspterm_action_binding()`
-
-## Terminal Grouped Tab Bar
-
-When `group_tabs_by_session = true` in `terminal_panel.rs`:
-- `GroupKey`: `SessionGroup(uuid)`, `Ungrouped`, `Local`, `Other`
-- `group_overrides: HashMap<EntityId, GroupKey>` for manual assignments (drag between groups)
-- `apply_grouped_tab_bar_to_center_panes()` applies renderer to workspace center panes
-
-## Terminal Gutter
-
-Gutter in `terminal_element.rs` and `row_decorator.rs`. Content only on lines with timestamps (`get_line_timestamp().is_some()`). `RowDecorator` trait for pluggable decorations. Settings: `gutter.line_numbers`, `gutter.timestamps`, `gutter.relative_line_numbers`, `gutter.timestamp_format`.
-
-## Remote Explorer Panel
-
-`crates/remote_explorer` — tree view of sessions using `UniformList`. Action: `bspterm_actions::remote_explorer::ToggleFocus`. Default position: Left dock. Quick Add (`src/quick_add/`): auto-recognizes IP with credentials from flexible input formats. Recognition config: `~/.config/bspterm/recognize_config.json` (version-aware: only overwritten when app version is newer, user edits preserved).
-
-## Terminal Reconnection
-
-Reconnects SSH/Telnet preserving scrollback. Reuses existing `Terminal` entity and `events_tx` sender — `Term` object (scrollback buffer) is never replaced. Key: `Terminal::reconnect()`, `Terminal::set_connection()`, `TerminalView::reconnect_terminal()`.
-
-## Editor Panel
-
-`crates/editor_panel` — dockable editor panel wrapping a `Pane`. Action: `editor_panel::ToggleFocus`. Auto-closes when last tab closes.
+- **Telnet**: Protocol in `crates/terminal/src/connection/telnet/` — IAC negotiation, TCP session, `TerminalConnection` impl
+- **Keybinding Interception**: `send_keybindings_to_shell` in `terminal_view.rs` — intercepts Terminal-context bindings, skip list for Bspterm-only keys
+- **Grouped Tab Bar**: `group_tabs_by_session` in `terminal_panel.rs` — groups tabs by session UUID, supports drag-based group reassignment
+- **Gutter**: `terminal_element.rs` + `row_decorator.rs` — line numbers, timestamps, relative line numbers, logic line numbers (wrapped lines share one number)
+- **Remote Explorer**: `crates/remote_explorer` — session tree with Quick Add (`src/quick_add/`), filter by name/tags/host/username (auto-expands groups when filtering)
+- **Reconnection**: Preserves scrollback by reusing `Terminal` entity and `events_tx` — `Term` buffer is never replaced
+- **Editor Panel**: `crates/editor_panel` — dockable editor wrapping a `Pane`, auto-closes when empty
+- **Abbreviations**: `abbr_store.rs` + `abbr_bar.rs` — trigger word expansion, protocol-scoped (All/Ssh/Telnet)
+- **Function Bar**: `function_store.rs` + `function_bar.rs` — custom buttons with parameter UI modal (string/number/boolean/choice/password types)
+- **Export with Timestamp**: Terminal content export supports optional timestamp prefix per line
+- **Multiline Command**: Command panel sends multi-line commands line by line with 50ms interval
+- **Session Log Indicator**: Terminal tab shows log file path at bottom-right, Ctrl+Click opens in file manager
 
 ## Terminal Python Scripting
 
@@ -191,24 +171,9 @@ Rule engine in `crates/terminal/src/rule_engine.rs` and `rule_store.rs`. Types: 
 
 Regex-based highlighting in `crates/terminal/src/highlight_rule.rs`, `highlight_store.rs`, `terminal_lsp.rs`. Key types: `HighlightRule`, `TerminalTokenType`, `HighlightProtocol` (All/Ssh/Telnet/Local). Engine: `compute_line_tokens()` with priority-based evaluation. Editor panel: `crates/highlight_editor/`. Persistence: `~/.config/bspterm/highlight_rules.json`. Defaults: `assets/settings/default_highlight_rules.json`.
 
-## Terminal Abbreviations
-
-Command expansion in `crates/terminal/src/abbr_store.rs` and `crates/terminal_view/src/abbr_bar.rs`. Trigger word + space/Enter at command position → expansion. Protocol-scoped (All/Ssh/Telnet). Persistence: `~/.config/bspterm/abbreviations.json`.
-
 ## Terminal Config Store Pattern
 
-Multiple stores share a common pattern via `crates/terminal/src/config_store.rs`:
-
-- **`ConfigItem` trait**: Items with `fn id(&self) -> Uuid`
-- **`JsonConfigStore` trait**: Default impls for `load_from_file()`, `save_to_file()`, CRUD (`add_item`, `remove_item`, `find_item`, `find_item_mut`), and `move_item()` reordering
-
-Stores using this pattern: `AbbreviationStore`, `FunctionStore`, `RuleStore`, `HighlightStore`, `ButtonBarStore`. Each has a GPUI Entity wrapper (`*StoreEntity`) with Global marker, event emission, and async save scheduling. `ShortcutBarStore` has unique keybinding registration logic and is not yet migrated.
-
-When adding a new config store:
-1. Define the item type implementing `ConfigItem`
-2. Define the store struct implementing `JsonConfigStore`
-3. Add domain-specific methods (protocol filtering, etc.) on the store
-4. Create a `*StoreEntity` wrapper with Global marker, events, and `schedule_save()`
+Common pattern via `crates/terminal/src/config_store.rs`: `ConfigItem` trait (`fn id() -> Uuid`) + `JsonConfigStore` trait (load/save/CRUD/move). Stores: `AbbreviationStore`, `FunctionStore`, `RuleStore`, `HighlightStore`, `ButtonBarStore`. Each has a GPUI Entity wrapper with Global marker, event emission, and async save scheduling.
 
 ## Agent Connection Fallback
 
@@ -220,11 +185,4 @@ Two options in `crates/settings/src/base_keymap_setting.rs`: `VSCode` (default) 
 
 ## Zed 遗留命名
 
-| 路径 | 说明 |
-|------|------|
-| `crates/client/src/zed_urls.rs` | URL 处理模块 |
-| `crates/zlog/` | 日志 crate（zlog 不是 zed_log） |
-| `crates/install_cli/src/register_zed_scheme.rs` | URL scheme 注册 |
-| `crates/docs_preprocessor/` | 文档预处理器 |
-
-这些不需要重命名，但在代码中应注意区分。
+以下路径保留了 Zed 时期的命名，无需重命名：`crates/client/src/zed_urls.rs`, `crates/zlog/`, `crates/install_cli/src/register_zed_scheme.rs`, `crates/docs_preprocessor/`.

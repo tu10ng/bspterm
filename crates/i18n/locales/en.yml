@@ -199,6 +199,7 @@ remote_explorer:
   pin_group: "Pin Group"
   unpin_group: "Unpin Group"
 
+  sessions: "Sessions"
   filter_placeholder: "Filter sessions..."
 
   # Ping status

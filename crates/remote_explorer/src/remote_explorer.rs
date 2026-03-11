@@ -446,17 +446,8 @@ impl RemoteExplorer {
     }
 
     fn render_title_bar(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let focus_handle = self.focus_handle.clone();
-        let has_expanded = self.has_any_expanded_group(cx);
-        let tooltip_text = if has_expanded {
-            t("remote_explorer.collapse_all")
-        } else {
-            t("remote_explorer.expand_all")
-        };
-
         self.panel_header_container(window, cx)
             .px_2()
-            .justify_between()
             .border_b_1()
             .border_color(cx.theme().colors().border_variant)
             .child(
@@ -465,60 +456,102 @@ impl RemoteExplorer {
                     .child(Icon::new(IconName::Server).color(Color::Muted).size(IconSize::Small))
                     .child(Label::new(t("remote_explorer.title")).size(LabelSize::Small)),
             )
-            .child(
-                h_flex()
-                    .gap_0p5()
-                    .child(self.render_sort_button(cx))
-                    .child({
-                        let icon = if has_expanded {
-                            IconName::CollapseAll
-                        } else {
-                            IconName::ExpandAll
-                        };
-                        panel_icon_button("toggle-collapse", icon)
-                            .icon_size(IconSize::Small)
-                            .tooltip(move |_window, cx| {
-                                Tooltip::for_action_in(
-                                    tooltip_text.clone(),
-                                    &ToggleCollapseAll,
-                                    &focus_handle,
-                                    cx,
-                                )
-                            })
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.toggle_collapse_all(&ToggleCollapseAll, window, cx);
-                            }))
-                    }),
-            )
     }
 
-    fn render_filter_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_remote_list_header(
+        &self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let focus_handle = self.focus_handle.clone();
+        let has_expanded = self.has_any_expanded_group(cx);
         let has_query = !self.filter_editor.read(cx).text(cx).is_empty();
+        let tooltip_text = if has_expanded {
+            t("remote_explorer.collapse_all")
+        } else {
+            t("remote_explorer.expand_all")
+        };
 
-        h_flex()
+        v_flex()
             .w_full()
-            .px_2()
-            .py_1()
-            .gap_1()
             .border_b_1()
             .border_color(cx.theme().colors().border_variant)
             .child(
-                Icon::new(IconName::MagnifyingGlass)
-                    .size(IconSize::Small)
-                    .color(Color::Muted),
+                h_flex()
+                    .w_full()
+                    .items_center()
+                    .px_2()
+                    .py_1()
+                    .child(
+                        div().flex_1().child(
+                            Label::new(t("remote_explorer.sessions"))
+                                .size(LabelSize::Small)
+                                .color(Color::Muted),
+                        ),
+                    )
+                    .child(
+                        h_flex()
+                            .flex_shrink_0()
+                            .items_center()
+                            .gap_0p5()
+                            .child(self.render_sort_button(cx))
+                            .child({
+                                let icon = if has_expanded {
+                                    IconName::CollapseAll
+                                } else {
+                                    IconName::ExpandAll
+                                };
+                                panel_icon_button("toggle-collapse", icon)
+                                    .icon_size(IconSize::Small)
+                                    .tooltip(move |_window, cx| {
+                                        Tooltip::for_action_in(
+                                            tooltip_text.clone(),
+                                            &ToggleCollapseAll,
+                                            &focus_handle,
+                                            cx,
+                                        )
+                                    })
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.toggle_collapse_all(
+                                            &ToggleCollapseAll,
+                                            window,
+                                            cx,
+                                        );
+                                    }))
+                            }),
+                    ),
             )
-            .child(self.filter_editor.clone())
-            .when(has_query, |this| {
-                this.child(
-                    panel_icon_button("clear-filter", IconName::Close)
-                        .icon_size(IconSize::Small)
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.filter_editor.update(cx, |editor, cx| {
-                                editor.set_text("", window, cx);
-                            });
-                        })),
-                )
-            })
+            .child(
+                h_flex()
+                    .w_full()
+                    .items_center()
+                    .px_2()
+                    .py_1()
+                    .gap_1()
+                    .child(
+                        Icon::new(IconName::MagnifyingGlass)
+                            .size(IconSize::Small)
+                            .color(Color::Muted),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_16()
+                            .overflow_hidden()
+                            .child(self.filter_editor.clone()),
+                    )
+                    .when(has_query, |this| {
+                        this.child(
+                            panel_icon_button("clear-filter", IconName::Close)
+                                .icon_size(IconSize::Small)
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.filter_editor.update(cx, |editor, cx| {
+                                        editor.set_text("", window, cx);
+                                    });
+                                })),
+                        )
+                    }),
+            )
     }
 
     fn render_sort_button(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1179,17 +1212,15 @@ impl RemoteExplorer {
                             .px_1()
                             .py_px()
                             .child(password_editor),
+                    )
+                    .child(
+                        ui::Button::new("telnet-connect", t("common.connect"))
+                            .style(ui::ButtonStyle::Filled)
+                            .size(ui::ButtonSize::Compact)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.handle_telnet_connect(window, cx);
+                            })),
                     ),
-            )
-            .child(
-                h_flex().w_full().justify_end().child(
-                    ui::Button::new("telnet-connect", t("common.connect"))
-                        .style(ui::ButtonStyle::Filled)
-                        .size(ui::ButtonSize::Compact)
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.handle_telnet_connect(window, cx);
-                        })),
-                ),
             )
     }
 
@@ -1199,7 +1230,10 @@ impl RemoteExplorer {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let theme = cx.theme();
+        let border_color = theme.colors().border;
         let host_editor = self.quick_add_area.ssh_section.editor().clone();
+        let username_editor = self.quick_add_area.ssh_section.username_editor().clone();
+        let password_editor = self.quick_add_area.ssh_section.password_editor().clone();
 
         v_flex()
             .w_full()
@@ -1226,7 +1260,7 @@ impl RemoteExplorer {
                         div()
                             .flex_1()
                             .border_1()
-                            .border_color(theme.colors().border)
+                            .border_color(border_color)
                             .rounded_sm()
                             .px_1()
                             .py_px()
@@ -1234,6 +1268,31 @@ impl RemoteExplorer {
                                 this.handle_ssh_connect(window, cx);
                             }))
                             .child(host_editor),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .gap_1()
+                    .child(
+                        div()
+                            .flex_1()
+                            .border_1()
+                            .border_color(border_color)
+                            .rounded_sm()
+                            .px_1()
+                            .py_px()
+                            .child(username_editor),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .border_1()
+                            .border_color(border_color)
+                            .rounded_sm()
+                            .px_1()
+                            .py_px()
+                            .child(password_editor),
                     )
                     .child(
                         ui::Button::new("ssh-connect", t("common.connect"))
@@ -1243,11 +1302,6 @@ impl RemoteExplorer {
                                 this.handle_ssh_connect(window, cx);
                             })),
                     ),
-            )
-            .child(
-                Label::new(t("remote_explorer.default_credentials"))
-                    .size(LabelSize::XSmall)
-                    .color(Color::Muted),
             )
     }
 
@@ -1671,7 +1725,6 @@ impl Render for RemoteExplorer {
             .track_focus(&self.focus_handle(cx))
             .on_action(cx.listener(Self::toggle_collapse_all))
             .child(self.render_title_bar(window, cx))
-            .child(self.render_filter_bar(cx))
             .child(
                 v_flex()
                     .w_full()
@@ -1683,6 +1736,7 @@ impl Render for RemoteExplorer {
                         this.child(self.render_quick_add_content(window, cx))
                     }),
             )
+            .child(self.render_remote_list_header(window, cx))
             .child(
                 v_flex()
                     .flex_grow()
