@@ -1795,11 +1795,13 @@ impl Terminal {
                     term.grid_mut().reset_region((new_cursor.line + 1)..);
                 }
 
+                self.line_timestamps.clear();
                 cx.emit(Event::Wakeup);
             }
             InternalEvent::ClearScrollback => {
                 trace!("Clearing scrollback only");
                 term.clear_screen(ClearMode::Saved);
+                self.line_timestamps.clear();
                 cx.emit(Event::Wakeup);
             }
             InternalEvent::Scroll(scroll) => {
@@ -3047,6 +3049,42 @@ impl Terminal {
         let start = AlacPoint::new(term.topmost_line(), Column(0));
         let end = AlacPoint::new(term.bottommost_line(), term.last_column());
         term.bounds_to_string(start, end)
+    }
+
+    pub fn get_content_with_timestamps(&self, format: &str) -> String {
+        let term = self.term.lock_unfair();
+        let grid = term.grid();
+        let topmost = grid.topmost_line().0;
+        let bottommost = grid.bottommost_line().0;
+        let columns = grid.columns();
+        let mut result = String::new();
+
+        for line in topmost..=bottommost {
+            let row = &grid[Line(line)];
+            let is_continuation = if columns > 0 && line > topmost {
+                let prev_row = &grid[Line(line - 1)];
+                prev_row[Column(columns - 1)]
+                    .flags
+                    .contains(Flags::WRAPLINE)
+            } else {
+                false
+            };
+
+            let line_text = row_to_string(row).trim_end().to_string();
+
+            if is_continuation {
+                result.push_str(&line_text);
+            } else {
+                if !result.is_empty() {
+                    result.push('\n');
+                }
+                if let Some(timestamp) = self.line_timestamps.get(&line) {
+                    result.push_str(&timestamp.format(format).to_string());
+                }
+                result.push_str(&line_text);
+            }
+        }
+        result
     }
 
     pub fn last_n_non_empty_lines(&self, n: usize) -> Vec<String> {

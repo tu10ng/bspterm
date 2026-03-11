@@ -2850,7 +2850,14 @@ print(output)
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let content = self.terminal.read(cx).get_content();
+        let timestamp_format = TerminalSettings::get_global(cx)
+            .session_logging
+            .timestamp_format
+            .clone();
+        let content = self
+            .terminal
+            .read(cx)
+            .get_content_with_timestamps(&timestamp_format);
         let terminal_title = self.terminal.read(cx).title(false);
         let now = chrono::Local::now();
         let weekday_cn = match now.weekday() {
@@ -4465,14 +4472,16 @@ impl Item for TerminalView {
             }
         }
 
-        let terminal_entity = self.terminal.clone();
+        let weak_view = weak_view.clone();
         actions.push((
-            t("terminal.clear_scrollback"),
-            Some(Box::new(ClearScrollback) as Box<dyn gpui::Action>),
-            Rc::new(move |_window, cx| {
-                terminal_entity.update(cx, |terminal, _cx| {
-                    terminal.clear_scrollback();
-                });
+            t("terminal.clear"),
+            Some(Box::new(Clear) as Box<dyn gpui::Action>),
+            Rc::new(move |window, cx| {
+                if let Some(view) = weak_view.upgrade() {
+                    view.update(cx, |this, cx| {
+                        this.clear(&Clear, window, cx);
+                    });
+                }
             }),
         ));
 
