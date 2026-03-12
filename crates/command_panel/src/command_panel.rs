@@ -228,7 +228,7 @@ impl CommandPanel {
             .py_1()
             .gap_2()
             .border_b_1()
-            .border_color(colors.border)
+            .border_color(colors.border_variant)
             .child(
                 Icon::new(IconName::Code)
                     .size(IconSize::Small)

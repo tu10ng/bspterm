@@ -1320,7 +1320,7 @@ print(output)
             .px_2()
             .py_1()
             .border_t_1()
-            .border_color(cx.theme().colors().border)
+            .border_color(cx.theme().colors().border_variant)
             .bg(cx.theme().colors().surface_background)
             .on_mouse_down(
                 MouseButton::Right,
@@ -2061,7 +2061,7 @@ print(output)
             .px_2()
             .py_1()
             .border_t_1()
-            .border_color(cx.theme().colors().border)
+            .border_color(cx.theme().colors().border_variant)
             .bg(cx.theme().colors().surface_background)
             .on_mouse_down(
                 MouseButton::Right,
@@ -2169,7 +2169,7 @@ print(output)
             .px_2()
             .py_1()
             .border_t_1()
-            .border_color(cx.theme().colors().border)
+            .border_color(cx.theme().colors().border_variant)
             .bg(cx.theme().colors().surface_background)
             .on_mouse_down(
                 MouseButton::Right,
@@ -2770,7 +2770,7 @@ print(output)
             .px_2()
             .py_1()
             .border_t_1()
-            .border_color(cx.theme().colors().border)
+            .border_color(cx.theme().colors().border_variant)
             .bg(cx.theme().colors().surface_background)
             .on_mouse_down(
                 MouseButton::Right,
