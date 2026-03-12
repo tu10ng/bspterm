@@ -49,9 +49,10 @@ use gpui::{
     Action, AnyEntity, AnyView, AnyWeakView, App, AsyncApp, AsyncWindowContext, Bounds, Context,
     CursorStyle, Decorations, DragMoveEvent, Entity, EntityId, EventEmitter, FocusHandle,
     Focusable, Global, HitboxBehavior, Hsla, KeyContext, Keystroke, ManagedView, MouseButton,
-    PathPromptOptions, Point, PromptLevel, Render, ResizeEdge, Size, Stateful, Subscription,
-    SystemWindowTabController, Task, Tiling, WeakEntity, WindowBounds, WindowHandle, WindowId,
-    WindowOptions, actions, canvas, point, relative, size, transparent_black,
+    PathPromptOptions, Point, PromptLevel, Render, ResizeEdge, ScrollDelta, ScrollWheelEvent, Size,
+    Stateful, Subscription, SystemWindowTabController, Task, Tiling, WeakEntity, WindowBounds,
+    WindowHandle, WindowId, WindowOptions, actions, canvas, point, px, relative, size,
+    transparent_black,
 };
 pub use history_manager::*;
 pub use item::{
@@ -7248,6 +7249,29 @@ impl Render for Workspace {
                 .items_start()
                 .text_color(colors.text)
                 .overflow_hidden()
+                .capture_scroll_wheel(cx.listener(
+                    |_this, event: &ScrollWheelEvent, _window, cx| {
+                        if event.modifiers.control {
+                            let delta_y = match event.delta {
+                                ScrollDelta::Lines(delta) => delta.y,
+                                ScrollDelta::Pixels(delta) => {
+                                    if delta.y > px(0.) {
+                                        1.0
+                                    } else if delta.y < px(0.) {
+                                        -1.0
+                                    } else {
+                                        0.0
+                                    }
+                                }
+                            };
+                            if delta_y != 0.0 {
+                                let step = if delta_y > 0.0 { px(1.0) } else { px(-1.0) };
+                                theme::adjust_buffer_font_size(cx, |size| size + step);
+                                cx.stop_propagation();
+                            }
+                        }
+                    },
+                ))
                 .children(self.titlebar_item.clone())
                 .on_modifiers_changed(move |_, _, cx| {
                     for &id in &notification_entities {
