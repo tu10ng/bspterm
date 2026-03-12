@@ -3969,6 +3969,7 @@ dependencies = [
  "i18n",
  "language",
  "log",
+ "menu",
  "multi_buffer",
  "paths",
  "serde",

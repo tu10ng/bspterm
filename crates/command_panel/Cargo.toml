@@ -22,6 +22,7 @@ multi_buffer.workspace = true
 text.workspace = true
 ui.workspace = true
 editor.workspace = true
+menu.workspace = true
 terminal.workspace = true
 terminal_view.workspace = true
 workspace.workspace = true

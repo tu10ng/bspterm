@@ -277,6 +277,7 @@ command_panel:
   cycle_stop: "停止"
   add_tab: "新建标签"
   rename_tab: "重命名"
+  close_tab: "关闭标签"
   default_tab_name: "标签"
   cycle_ms: "ms"
 

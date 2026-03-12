@@ -16,7 +16,8 @@ use terminal::Terminal;
 use terminal_view::TerminalView;
 use text::Point;
 use ui::{
-    Color, Icon, IconName, IconSize, Label, LabelSize, Tooltip, h_flex, prelude::*, v_flex,
+    Color, ContextMenu, Icon, IconName, IconSize, Label, LabelSize, Tooltip, h_flex, prelude::*,
+    right_click_menu, v_flex,
 };
 use uuid::Uuid;
 use workspace::{
@@ -633,7 +634,7 @@ impl CommandPanel {
                                     .on_action(cx.listener(|this, _: &editor::actions::Cancel, window, cx| {
                                         this.cancel_rename(window, cx);
                                     }))
-                                    .on_action(cx.listener(|this, _: &editor::actions::Newline, window, cx| {
+                                    .on_action(cx.listener(|this, _: &menu::Confirm, window, cx| {
                                         this.commit_rename(window, cx);
                                     })),
                             ),
@@ -678,26 +679,46 @@ impl CommandPanel {
                         }),
                     );
 
-                    // Close button for user tabs
-                    tab_button = tab_button.child(
-                        div()
-                            .id(("close-tab", index))
-                            .cursor_pointer()
-                            .child(
-                                Icon::new(IconName::Close)
-                                    .size(IconSize::XSmall)
-                                    .color(Color::Muted),
-                            )
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(move |this, _, window, cx| {
-                                    this.close_user_tab(index, window, cx);
-                                }),
-                            ),
-                    );
+                    let tab_element = tab_button.into_any_element();
+                    let panel_handle = cx.weak_entity();
+                    let menu = right_click_menu(("tab-menu", index))
+                        .trigger(|_, _, _| tab_element)
+                        .menu(move |window, cx| {
+                            let rename_handle = panel_handle.clone();
+                            let close_handle = panel_handle.clone();
+                            ContextMenu::build(window, cx, move |menu, _window, _cx| {
+                                menu.entry(
+                                    t("command_panel.rename_tab"),
+                                    None,
+                                    move |window, cx| {
+                                        if let Some(panel) = rename_handle.upgrade() {
+                                            window.defer(cx, move |window, cx| {
+                                                panel.update(cx, |this, cx| {
+                                                    this.start_rename_tab(index, window, cx);
+                                                });
+                                            });
+                                        }
+                                    },
+                                )
+                                .entry(
+                                    t("command_panel.close_tab"),
+                                    None,
+                                    move |window, cx| {
+                                        if let Some(panel) = close_handle.upgrade() {
+                                            window.defer(cx, move |window, cx| {
+                                                panel.update(cx, |this, cx| {
+                                                    this.close_user_tab(index, window, cx);
+                                                });
+                                            });
+                                        }
+                                    },
+                                )
+                            })
+                        });
+                    left_tabs = left_tabs.child(menu);
+                } else {
+                    left_tabs = left_tabs.child(tab_button);
                 }
-
-                left_tabs = left_tabs.child(tab_button);
             }
         }
 
