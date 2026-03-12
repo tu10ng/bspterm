@@ -184,6 +184,14 @@ Common pattern via `crates/terminal/src/config_store.rs`: `ConfigItem` trait (`f
 
 Two options in `crates/settings/src/base_keymap_setting.rs`: `VSCode` (default) and `None`. Keymap files: `assets/keymaps/default-{linux,macos,windows}.json`, `vim.json`, `initial.json`.
 
+## Windows 路径处理
+
+Windows 上 `std::fs::canonicalize()` 会给路径加 `\\?\` 前缀（Extended-Length Path），大多数 Windows Shell/COM API（`ParseDisplayName`, `SHOpenFolderAndSelectItems` 等）不接受此前缀，会返回 `E_INVALIDARG (0x80070057)`。
+
+* 在 `platform/windows/` 中，任何将 `Path` 传给 Shell/COM API 的地方，必须先用 `SanitizedPath::new(path)`（`crates/util/src/paths.rs`）去除 `\\?\` 前缀，该调用在 Linux 上是 no-op
+* 排查方法：搜索 `HSTRING::from` + `ParseDisplayName` / `ShellExecuteW` 等调用点，检查路径是否经过 sanitize；与同文件中其他调用点对比一致性
+* Windows Shell API 不稳定，精确操作（如 select file in explorer）应 wrap 在 fallback 中，任何失败都降级到粗粒度操作（如仅打开父目录）
+
 ## Zed 遗留命名
 
 以下路径保留了 Zed 时期的命名，无需重命名：`crates/client/src/zed_urls.rs`, `crates/zlog/`, `crates/install_cli/src/register_zed_scheme.rs`, `crates/docs_preprocessor/`.
