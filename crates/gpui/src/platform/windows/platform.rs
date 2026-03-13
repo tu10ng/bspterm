@@ -1063,7 +1063,7 @@ fn open_target_in_explorer(target: &Path) -> Result<()> {
             desktop.ParseDisplayName(
                 HWND::default(),
                 None,
-                &HSTRING::from(dir),
+                &HSTRING::from(dir.as_path()),
                 None,
                 &mut dir_item,
                 std::ptr::null_mut(),
@@ -1089,7 +1089,7 @@ fn open_target_in_explorer(target: &Path) -> Result<()> {
 
     match result {
         Ok(()) => Ok(()),
-        Err(_) => open_target(dir).context("Opening target parent folder"),
+        Err(_) => open_target(dir.as_path()).context("Opening target parent folder"),
     }
 }
 

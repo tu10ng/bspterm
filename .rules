@@ -202,6 +202,9 @@ Windows 上 `std::fs::canonicalize()` 会给路径加 `\\?\` 前缀（Extended-L
 * 在 `platform/windows/` 中，任何将 `Path` 传给 Shell/COM API 的地方，必须先用 `SanitizedPath::new(path)`（`crates/util/src/paths.rs`）去除 `\\?\` 前缀，该调用在 Linux 上是 no-op
 * 排查方法：搜索 `HSTRING::from` + `ParseDisplayName` / `ShellExecuteW` 等调用点，检查路径是否经过 sanitize；与同文件中其他调用点对比一致性
 * Windows Shell API 不稳定，精确操作（如 select file in explorer）应 wrap 在 fallback 中，任何失败都降级到粗粒度操作（如仅打开父目录）
+* **`SanitizedPath` 不是 `Path` 的 drop-in 替代**：`SanitizedPath` 只实现了 `AsRef<Path>`，没有实现 `AsRef<OsStr>` 和 `From<&SanitizedPath> for HSTRING`。当把原本接受 `&Path` 的变量改为 `&SanitizedPath` 后，`HSTRING::from(path)` 和 `fn(impl AsRef<OsStr>)` 调用会在 Windows 上编译失败（Linux 上因条件编译不编译该文件，不会报错）。修复方式：在传入 Windows API 前调用 `.as_path()` 转回 `&Path`
+* **`SanitizedPath::parent()` 返回 `&SanitizedPath`** 而非 `&Path`，因此通过 `.parent()` 派生出的变量也会遇到同样的类型不匹配问题
+* **Linux 交叉编译盲区**：`platform/windows/` 下的代码在 Linux 上不会被编译（`#[cfg(target_os = "windows")]`），所以在 Linux 上 `cargo check` 无法发现这些类型错误。修改 `platform/windows/` 代码后，务必在 Windows CI 上验证，或使用 `cargo check --target x86_64-pc-windows-msvc`（需安装交叉编译工具链）
 
 ## Zed 遗留命名
 
