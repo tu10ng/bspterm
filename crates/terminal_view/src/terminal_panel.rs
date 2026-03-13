@@ -1228,12 +1228,6 @@ impl TerminalPanel {
             .collect()
     }
 
-    fn is_enabled(&self, cx: &App) -> bool {
-        self.workspace
-            .upgrade()
-            .is_some_and(|workspace| is_enabled_in_workspace(workspace.read(cx), cx))
-    }
-
     fn activate_pane_in_direction(
         &mut self,
         direction: SplitDirection,
@@ -2273,14 +2267,8 @@ impl Panel for TerminalPanel {
         TERMINAL_PANEL_KEY
     }
 
-    fn icon(&self, _window: &Window, cx: &App) -> Option<IconName> {
-        if (self.is_enabled(cx) || !self.has_no_terminals(cx))
-            && TerminalSettings::get_global(cx).button
-        {
-            Some(IconName::TerminalAlt)
-        } else {
-            None
-        }
+    fn icon(&self, _window: &Window, _cx: &App) -> Option<IconName> {
+        None
     }
 
     fn icon_tooltip(&self, _window: &Window, _cx: &App) -> Option<&'static str> {
