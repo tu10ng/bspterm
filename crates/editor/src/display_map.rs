@@ -148,6 +148,7 @@ pub enum HighlightKey {
     SemanticToken,
     // below is sorted lexicographically, as there is no relevant ordering for these aside from coming after the above
     BufferSearchHighlights,
+    CommentHighlight,
     ConsoleAnsiHighlight(usize),
     DebugStackFrameLine,
     DocumentHighlightRead,

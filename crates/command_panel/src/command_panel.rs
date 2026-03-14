@@ -3,10 +3,11 @@ use bspterm_actions::command_panel::{
     AddTab, Clear, CloseTab, Send, StartCycleSend, StopCycleSend, ToggleFocus,
 };
 use collections::HashMap;
-use editor::{Editor, EditorEvent, EditorMode, MultiBuffer, ToPoint};
+use editor::{Editor, EditorEvent, EditorMode, HighlightKey, MultiBuffer, ToPoint};
 use gpui::{
     Action, App, ClickEvent, Context, Entity, EntityId, EventEmitter, FocusHandle, Focusable,
-    IntoElement, MouseButton, Pixels, Render, Styled, Subscription, Task, WeakEntity, Window, px,
+    FontStyle, HighlightStyle, IntoElement, MouseButton, Pixels, Render, Styled, Subscription,
+    Task, WeakEntity, Window, px,
 };
 use i18n::t;
 use language::Buffer;
@@ -138,15 +139,30 @@ impl CommandPanel {
             vec![]
         };
 
-        // Subscribe to editor changes for debounced save (skip terminal-specific tab at index 0)
+        // Subscribe to editor changes for debounced save and comment highlights (skip terminal-specific tab at index 0)
         for tab in tabs.iter().skip(1) {
             let editor = &tab.editor;
-            subscriptions.push(cx.subscribe(editor, |this, _editor, event: &EditorEvent, cx| {
+            subscriptions.push(cx.subscribe(editor, |this, editor, event: &EditorEvent, cx| {
                 if matches!(event, EditorEvent::BufferEdited) {
                     this.schedule_debounced_save(cx);
+                    this.update_comment_highlights(&editor, cx);
                 }
             }));
         }
+
+        // Subscribe to terminal-specific tab (index 0) for comment highlights
+        subscriptions.push(cx.subscribe(&tabs[0].editor, |this, editor, event: &EditorEvent, cx| {
+            if matches!(event, EditorEvent::BufferEdited) {
+                this.update_comment_highlights(&editor, cx);
+            }
+        }));
+
+        // Apply comment highlights for tabs with initial content
+        cx.defer_in(window, |this, _window, cx| {
+            for tab in &this.tabs {
+                this.update_comment_highlights(&tab.editor.clone(), cx);
+            }
+        });
 
         Self {
             tabs,
@@ -241,6 +257,8 @@ impl CommandPanel {
                     self.tabs[0].editor.update(cx, |editor, cx| {
                         editor.set_text(content, window, cx);
                     });
+                    let editor = self.tabs[0].editor.clone();
+                    self.update_comment_highlights(&editor, cx);
                 }
             } else {
                 if let Some(old_id) = self.current_terminal {
@@ -282,6 +300,8 @@ impl CommandPanel {
                 self.tabs[0].editor.update(cx, |editor, cx| {
                     editor.set_text(content, window, cx);
                 });
+                let editor = self.tabs[0].editor.clone();
+                self.update_comment_highlights(&editor, cx);
             }
         }
 
@@ -312,7 +332,7 @@ impl CommandPanel {
             let line_text: String = snapshot
                 .text_for_range(Point::new(row, 0)..Point::new(row, line_len))
                 .collect();
-            if !line_text.is_empty() {
+            if !line_text.is_empty() && !line_text.starts_with('#') {
                 lines.push(line_text);
             }
         }
@@ -395,7 +415,7 @@ impl CommandPanel {
             let line_text: String = snapshot
                 .text_for_range(Point::new(row, 0)..Point::new(row, line_len))
                 .collect();
-            if !line_text.is_empty() {
+            if !line_text.is_empty() && !line_text.starts_with('#') {
                 lines.push(line_text);
             }
         }
@@ -484,7 +504,7 @@ impl CommandPanel {
                             let line_text: String = snapshot
                                 .text_for_range(Point::new(row, 0)..Point::new(row, line_len))
                                 .collect();
-                            if !line_text.is_empty() {
+                            if !line_text.is_empty() && !line_text.starts_with('#') {
                                 lines.push(line_text);
                             }
                         }
@@ -548,9 +568,10 @@ impl CommandPanel {
         let id = Uuid::new_v4();
         let editor = Self::create_tab_editor(window, cx);
 
-        self._subscriptions.push(cx.subscribe(&editor, |this, _editor, event: &EditorEvent, cx| {
+        self._subscriptions.push(cx.subscribe(&editor, |this, editor, event: &EditorEvent, cx| {
             if matches!(event, EditorEvent::BufferEdited) {
                 this.schedule_debounced_save(cx);
+                this.update_comment_highlights(&editor, cx);
             }
         }));
 
@@ -699,6 +720,44 @@ impl CommandPanel {
             })
             .ok();
         }));
+    }
+
+    fn update_comment_highlights(
+        &self,
+        editor: &Entity<Editor>,
+        cx: &mut Context<Self>,
+    ) {
+        let editor_read = editor.read(cx);
+        let snapshot = editor_read.buffer().read(cx).snapshot(cx);
+        let row_count = snapshot.max_point().row;
+
+        let mut ranges = Vec::new();
+        for row in 0..=row_count {
+            let line_len = snapshot.line_len(MultiBufferRow(row));
+            let line_text: String = snapshot
+                .text_for_range(Point::new(row, 0)..Point::new(row, line_len))
+                .collect();
+            if line_text.starts_with('#') {
+                let start = snapshot.anchor_before(Point::new(row, 0));
+                let end = snapshot.anchor_after(Point::new(row, line_len));
+                ranges.push(start..end);
+            }
+        }
+
+        let comment_color = cx.theme().syntax_color("comment");
+        let style = HighlightStyle {
+            color: Some(comment_color),
+            font_style: Some(FontStyle::Italic),
+            ..Default::default()
+        };
+
+        editor.update(cx, |editor, cx| {
+            if ranges.is_empty() {
+                editor.clear_highlights(HighlightKey::CommentHighlight, cx);
+            } else {
+                editor.highlight_text(HighlightKey::CommentHighlight, ranges, style, cx);
+            }
+        });
     }
 
     fn render_hint_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
