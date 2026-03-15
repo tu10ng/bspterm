@@ -16158,7 +16158,9 @@ dependencies = [
  "serde",
  "terminal_scripting",
  "ui",
+ "util",
  "uuid",
+ "which 6.0.3",
  "windows 0.61.3",
  "workspace",
 ]

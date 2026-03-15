@@ -229,29 +229,25 @@ impl ScriptPanel {
         let focused_terminal_id =
             terminal_scripting::TerminalRegistry::focused_id(cx).map(|id| id.to_string());
 
-        let connection_info = terminal_scripting::ScriptingServer::get(cx);
-
-        if connection_info.is_none() {
+        let Some(connection_info) = terminal_scripting::ScriptingServer::get(cx) else {
             self.output
                 .push_str("Error: Scripting server not running\n");
             cx.notify();
             return;
-        }
+        };
 
-        let connection_string = connection_info.unwrap().to_env_string();
-        let runner = ScriptRunner::new_with_params(
+        let connection_string = connection_info.to_env_string();
+        let mut runner = ScriptRunner::new_with_params(
             script_path.clone(),
             connection_string,
             focused_terminal_id,
             params,
         );
 
-        self.script_runner = Some(runner);
-
-        let script_runner = self.script_runner.as_mut().unwrap();
-        if let Err(e) = script_runner.start() {
+        if let Err(e) = runner.start() {
             self.output.push_str(&format!("Failed to start: {}\n", e));
-            self.script_runner = None;
+        } else {
+            self.script_runner = Some(runner);
         }
 
         cx.notify();

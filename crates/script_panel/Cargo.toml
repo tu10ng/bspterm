@@ -22,7 +22,9 @@ parking_lot.workspace = true
 serde.workspace = true
 terminal_scripting.workspace = true
 ui.workspace = true
+util.workspace = true
 uuid = { workspace = true, features = ["v4"] }
+which.workspace = true
 workspace.workspace = true
 bspterm_actions.workspace = true
 paths.workspace = true

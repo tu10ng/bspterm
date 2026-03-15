@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
@@ -9,8 +9,7 @@ use std::os::unix::io::AsRawFd;
 #[cfg(windows)]
 use std::os::windows::io::AsRawHandle;
 
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
+use util::command::new_std_command;
 
 pub enum ScriptStatus {
     NotStarted,
@@ -26,6 +25,37 @@ pub struct ScriptRunner {
     params: HashMap<String, String>,
     process: Option<Child>,
     status: ScriptStatus,
+}
+
+const PYTHON_CANDIDATES: &[&str] = &["python3", "python", "py"];
+
+#[allow(clippy::disallowed_methods)]
+pub fn find_python_executable() -> anyhow::Result<PathBuf> {
+    for candidate in PYTHON_CANDIDATES {
+        let Ok(path) = which::which(candidate) else {
+            continue;
+        };
+
+        let Ok(output) = new_std_command(&path)
+            .args(["-c", "print(1 + 2)"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+        else {
+            continue;
+        };
+
+        if output.stdout.trim_ascii() != b"3" {
+            continue;
+        }
+
+        return Ok(path);
+    }
+
+    anyhow::bail!(
+        "Python not found. Tried: {}. Please install Python and ensure it is in your PATH.",
+        PYTHON_CANDIDATES.join(", ")
+    )
 }
 
 impl ScriptRunner {
@@ -53,17 +83,17 @@ impl ScriptRunner {
         }
     }
 
-    // Script execution uses std::process::Command synchronously for simplicity.
-    // The script runs in a separate process, so blocking is acceptable here.
     #[allow(clippy::disallowed_methods)]
     pub fn start(&mut self) -> anyhow::Result<()> {
+        let python = find_python_executable()?;
+
         let bspterm_path = self
             .script_path
             .parent()
             .map(|p| p.join("bspterm.py"))
             .unwrap_or_else(|| PathBuf::from("bspterm.py"));
 
-        let mut command = Command::new("python3");
+        let mut command = new_std_command(&python);
         command
             .arg(&self.script_path)
             .env("BSPTERM_SOCKET", &self.connection_string)
@@ -75,15 +105,8 @@ impl ScriptRunner {
             command.env("BSPTERM_CURRENT_TERMINAL", terminal_id);
         }
 
-        // Add script parameters as environment variables
         for (key, value) in &self.params {
             command.env(key, value);
-        }
-
-        #[cfg(windows)]
-        {
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
-            command.creation_flags(CREATE_NO_WINDOW);
         }
 
         let child = command.spawn()?;
@@ -106,7 +129,9 @@ impl ScriptRunner {
 
     pub fn stop(&mut self) {
         if let Some(child) = &mut self.process {
-            child.kill().ok();
+            if let Err(error) = child.kill() {
+                log::warn!("Failed to kill script process: {}", error);
+            }
             self.status = ScriptStatus::Finished(-1);
         }
         self.process = None;
@@ -197,7 +222,13 @@ impl ScriptRunner {
 fn set_nonblocking(fd: i32) {
     unsafe {
         let flags = libc::fcntl(fd, libc::F_GETFL);
-        libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
+        if flags == -1 {
+            log::warn!("fcntl F_GETFL failed: {}", std::io::Error::last_os_error());
+            return;
+        }
+        if libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) == -1 {
+            log::warn!("fcntl F_SETFL failed: {}", std::io::Error::last_os_error());
+        }
     }
 }
 
@@ -208,14 +239,16 @@ fn peek_available(handle: std::os::windows::io::RawHandle) -> usize {
 
     let mut available: u32 = 0;
     unsafe {
-        let _ = PeekNamedPipe(
+        if let Err(error) = PeekNamedPipe(
             HANDLE(handle),
             None,
             0,
             None,
             Some(&mut available),
             None,
-        );
+        ) {
+            log::warn!("PeekNamedPipe failed: {}", error);
+        }
     }
     available as usize
 }
