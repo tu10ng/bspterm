@@ -1806,10 +1806,7 @@ impl Terminal {
                     }
                 }
 
-                let commands_changed = self.record_output_timestamps();
-                if commands_changed {
-                    cx.emit(Event::CommandHistoryChanged);
-                }
+                self.record_output_timestamps();
 
                 self.check_rules(rule_store::TriggerEvent::Wakeup, cx);
 
@@ -2629,23 +2626,37 @@ impl Terminal {
             // Check if this is Enter key
             let is_enter = input_bytes.iter().any(|&b| b == b'\r' || b == b'\n');
 
-            // For Enter, record command to suggestion history BEFORE buffers get cleared
+            // For Enter, record command to suggestion history and per-terminal
+            // command history BEFORE buffers get cleared
             if is_enter {
                 // Primary: read from grid (accurate even after Tab completion)
-                let command = if let Some((_prompt, input)) = self.read_user_input_from_grid() {
-                    if input.trim().is_empty() { None } else { Some(input) }
+                let captured = if let Some((prompt, input)) = self.read_user_input_from_grid() {
+                    if input.trim().is_empty() { None } else { Some((prompt, input)) }
                 } else if !self.current_line_buffer.trim().is_empty() {
-                    // Fallback: use current_line_buffer
-                    Some(self.current_line_buffer.trim().to_string())
+                    Some((String::new(), self.current_line_buffer.trim().to_string()))
                 } else {
                     None
                 };
-                if let Some(command) = command {
+                if let Some((prompt, command)) = captured {
+                    // 1. Add to global suggestion history (existing)
                     if let Some(history_entity) = SuggestionHistoryEntity::try_global(cx) {
                         history_entity.update(cx, |history, cx| {
-                            history.add_command(command, cx);
+                            history.add_command(command.clone(), cx);
                         });
                     }
+
+                    // 2. Add to per-terminal command history
+                    let cursor_line = {
+                        let term = self.term.lock();
+                        term.grid().cursor.point.line.0
+                    };
+                    self.command_history.add_command(
+                        command.trim().to_string(),
+                        prompt,
+                        cursor_line,
+                        Local::now(),
+                    );
+                    cx.emit(Event::CommandHistoryChanged);
                 }
             }
 
@@ -3449,8 +3460,7 @@ impl Terminal {
     /// When content scrolls (topmost_line becomes more negative), we adjust all
     /// timestamp keys by the scroll delta so they continue to match their content.
     ///
-    /// Returns true if new commands were detected.
-    fn record_output_timestamps(&mut self) -> bool {
+    fn record_output_timestamps(&mut self) {
         let term = self.term.lock();
         let grid = term.grid();
         let cursor_line = grid.cursor.point.line.0;
@@ -3472,7 +3482,7 @@ impl Terminal {
             self.command_history.adjust_for_scroll(scroll_delta, topmost_line);
         }
 
-        // Collect lines to process for command extraction
+        // Collect lines to record timestamps for
         let lines_to_check: Vec<i32> = if cursor_line != self.last_cursor_line {
             let (start, end) = if cursor_line > self.last_cursor_line {
                 (self.last_cursor_line, cursor_line)
@@ -3489,21 +3499,6 @@ impl Terminal {
             self.line_timestamps.insert(line, now);
         }
 
-        // Extract commands from newly updated lines
-        let mut commands_changed = false;
-        for &line in &lines_to_check {
-            if line >= topmost_line && line <= grid.bottommost_line().0 {
-                let row = &grid[Line(line)];
-                let content = row_to_string(row);
-                let trimmed = content.trim_end();
-                if !trimmed.is_empty() {
-                    if self.command_history.process_line(trimmed, line, Some(now)) {
-                        commands_changed = true;
-                    }
-                }
-            }
-        }
-
         // Update tracking state
         self.last_cursor_line = cursor_line;
         self.last_topmost_line = topmost_line;
@@ -3512,8 +3507,6 @@ impl Terminal {
         self.line_timestamps
             .retain(|&line, _| line >= topmost_line);
         self.command_history.cleanup_old_commands(topmost_line);
-
-        commands_changed
     }
 
     pub fn get_line_timestamp(&self, line: i32) -> Option<DateTime<Local>> {

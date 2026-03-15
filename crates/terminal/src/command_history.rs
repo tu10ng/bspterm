@@ -43,6 +43,22 @@ impl CommandHistory {
         self.commands.clear();
     }
 
+    /// Adds a command directly to the history (used when Enter is pressed).
+    pub fn add_command(
+        &mut self,
+        command_text: String,
+        prompt: String,
+        line: i32,
+        timestamp: DateTime<Local>,
+    ) {
+        self.commands.push(TerminalCommand {
+            command_text,
+            prompt,
+            line,
+            timestamp: Some(timestamp),
+        });
+    }
+
     /// Processes a line of terminal output, extracting any command if present.
     /// Returns true if a new command was extracted.
     pub fn process_line(

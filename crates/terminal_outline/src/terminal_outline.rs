@@ -42,7 +42,8 @@ pub struct TerminalOutline {
     scroll_handle: UniformListScrollHandle,
     selected_index: Option<usize>,
     width: Option<Pixels>,
-    _subscriptions: Vec<Subscription>,
+    _workspace_subscription: Subscription,
+    _terminal_subscription: Option<Subscription>,
 }
 
 impl TerminalOutline {
@@ -71,7 +72,8 @@ impl TerminalOutline {
             scroll_handle: UniformListScrollHandle::new(),
             selected_index: None,
             width: None,
-            _subscriptions: vec![workspace_subscription],
+            _workspace_subscription: workspace_subscription,
+            _terminal_subscription: None,
         };
 
         // Defer initial terminal check to after construction completes,
@@ -114,12 +116,14 @@ impl TerminalOutline {
             };
 
             if should_update {
-                let subscription = cx.subscribe(&terminal, |this, terminal, event, cx| {
-                    if let TerminalEvent::CommandHistoryChanged = event {
-                        this.update_entries_from_terminal(&terminal, cx);
-                    }
-                });
-                self._subscriptions.push(subscription);
+                self._terminal_subscription = Some(cx.subscribe(
+                    &terminal,
+                    |this, terminal, event, cx| {
+                        if let TerminalEvent::CommandHistoryChanged = event {
+                            this.update_entries_from_terminal(&terminal, cx);
+                        }
+                    },
+                ));
 
                 self.active_terminal = Some(terminal.clone());
                 self.update_entries_from_terminal(&terminal, cx);
