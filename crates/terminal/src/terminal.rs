@@ -83,8 +83,8 @@ pub use recognize_config::{
 };
 
 pub use terminal_lsp::{
-    CompiledRule, TerminalDocument, TerminalLanguageServer, default_token_color,
-    default_token_modifiers,
+    CompiledRule, TerminalDocument, TerminalLanguageServer, compute_hex_group_tokens,
+    default_token_color, default_token_modifiers,
 };
 
 pub use number_hover::{NumberFormat, ParsedNumber, find_number_at_position, parse_number_string};

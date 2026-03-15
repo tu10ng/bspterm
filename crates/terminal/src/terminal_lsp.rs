@@ -1,8 +1,22 @@
+use std::sync::LazyLock;
+
 use regex::Regex;
 
 use crate::highlight_rule::{
     HighlightProtocol, HighlightRule, SemanticToken, TerminalTokenModifiers, TerminalTokenType,
 };
+
+static HEX_GROUP_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\b0[xX]([0-9a-fA-F]{5,})\b").expect("hex group regex should compile")
+});
+
+const HEX_GROUP_COLORS: &[&str] = &[
+    "#b5cea8", // group 0 (rightmost) — light green
+    "#4ec9b0", // group 1 — teal
+    "#ce9178", // group 2 — salmon
+    "#dcdcaa", // group 3 — light yellow
+];
+const HEX_PREFIX_COLOR: &str = "#858585";
 
 /// A compiled highlight rule ready for matching.
 pub struct CompiledRule {
@@ -247,6 +261,76 @@ pub fn default_token_modifiers(token_type: &TerminalTokenType) -> TerminalTokenM
     }
 }
 
+/// Compute hex group coloring tokens for a single line of terminal output.
+///
+/// Groups hex digits by 4 from right-to-left (like comma-separated thousands),
+/// each group colored differently. Only matches `0x`/`0X` prefixed numbers with
+/// 5 or more hex digits.
+pub fn compute_hex_group_tokens(line_number: usize, line_content: &str) -> Vec<SemanticToken> {
+    let mut tokens = Vec::new();
+
+    for mat in HEX_GROUP_REGEX.find_iter(line_content) {
+        let prefix_byte_start = mat.start();
+        let prefix_char_start = line_content[..prefix_byte_start].chars().count();
+
+        // "0x" prefix token (2 chars)
+        tokens.push(
+            SemanticToken::new(line_number, prefix_char_start, 2, TerminalTokenType::Number)
+                .with_foreground_color(Some(HEX_PREFIX_COLOR.to_string())),
+        );
+
+        // Hex digits start after "0x" (2 chars)
+        let digits_byte_start = prefix_byte_start + 2; // "0x" is always 2 ASCII bytes
+        let digits_str = &line_content[digits_byte_start..mat.end()];
+        let digit_count = digits_str.len(); // all hex digits are ASCII, len == char count
+        let digits_char_start = prefix_char_start + 2;
+
+        // Split digits into groups of 4 from right to left
+        // e.g., "1A2B3C4D5E6F" (12 digits) -> ["1A2B", "3C4D", "5E6F"]
+        // e.g., "1234567" (7 digits) -> ["123", "4567"]
+        let remainder = digit_count % 4;
+        let mut pos = 0;
+        let mut group_index_from_left = 0;
+
+        // Total number of groups
+        let total_groups = digit_count.div_ceil(4);
+
+        // First group may be partial (< 4 digits)
+        if remainder > 0 {
+            let color_index = (total_groups - 1 - group_index_from_left) % HEX_GROUP_COLORS.len();
+            tokens.push(
+                SemanticToken::new(
+                    line_number,
+                    digits_char_start + pos,
+                    remainder,
+                    TerminalTokenType::Number,
+                )
+                .with_foreground_color(Some(HEX_GROUP_COLORS[color_index].to_string())),
+            );
+            pos += remainder;
+            group_index_from_left += 1;
+        }
+
+        // Full 4-digit groups
+        while pos < digit_count {
+            let color_index = (total_groups - 1 - group_index_from_left) % HEX_GROUP_COLORS.len();
+            tokens.push(
+                SemanticToken::new(
+                    line_number,
+                    digits_char_start + pos,
+                    4,
+                    TerminalTokenType::Number,
+                )
+                .with_foreground_color(Some(HEX_GROUP_COLORS[color_index].to_string())),
+            );
+            pos += 4;
+            group_index_from_left += 1;
+        }
+    }
+
+    tokens
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -433,5 +517,168 @@ mod tests {
         assert_eq!(tokens[0].start_col, 26);
         // "2026-02-28 09:46:21" = 19 characters
         assert_eq!(tokens[0].length, 19);
+    }
+
+    #[test]
+    fn test_hex_group_12_digits() {
+        // 12 digits = 3 full groups of 4
+        let tokens = compute_hex_group_tokens(0, "addr 0x1A2B3C4D5E6F end");
+
+        // prefix + 3 groups = 4 tokens
+        assert_eq!(tokens.len(), 4);
+
+        // "addr " = 5 chars, prefix at col 5
+        assert_eq!(tokens[0].start_col, 5);
+        assert_eq!(tokens[0].length, 2); // "0x"
+        assert_eq!(
+            tokens[0].foreground_color.as_deref(),
+            Some(HEX_PREFIX_COLOR)
+        );
+
+        // Group from left: "1A2B" at col 7, color index = (3-1-0)%4 = 2 => salmon
+        assert_eq!(tokens[1].start_col, 7);
+        assert_eq!(tokens[1].length, 4);
+        assert_eq!(
+            tokens[1].foreground_color.as_deref(),
+            Some(HEX_GROUP_COLORS[2])
+        );
+
+        // "3C4D" at col 11, color index = (3-1-1)%4 = 1 => teal
+        assert_eq!(tokens[2].start_col, 11);
+        assert_eq!(tokens[2].length, 4);
+        assert_eq!(
+            tokens[2].foreground_color.as_deref(),
+            Some(HEX_GROUP_COLORS[1])
+        );
+
+        // "5E6F" at col 15, color index = (3-1-2)%4 = 0 => light green
+        assert_eq!(tokens[3].start_col, 15);
+        assert_eq!(tokens[3].length, 4);
+        assert_eq!(
+            tokens[3].foreground_color.as_deref(),
+            Some(HEX_GROUP_COLORS[0])
+        );
+    }
+
+    #[test]
+    fn test_hex_group_odd_digit_count() {
+        // 7 digits -> partial first group (3) + full group (4)
+        let tokens = compute_hex_group_tokens(0, "0x1234567");
+
+        assert_eq!(tokens.len(), 3); // prefix + 2 groups
+
+        // prefix
+        assert_eq!(tokens[0].start_col, 0);
+        assert_eq!(tokens[0].length, 2);
+
+        // "123" (partial, 3 chars) at col 2, color index = (2-1-0)%4 = 1 => teal
+        assert_eq!(tokens[1].start_col, 2);
+        assert_eq!(tokens[1].length, 3);
+        assert_eq!(
+            tokens[1].foreground_color.as_deref(),
+            Some(HEX_GROUP_COLORS[1])
+        );
+
+        // "4567" at col 5, color index = (2-1-1)%4 = 0 => light green
+        assert_eq!(tokens[2].start_col, 5);
+        assert_eq!(tokens[2].length, 4);
+        assert_eq!(
+            tokens[2].foreground_color.as_deref(),
+            Some(HEX_GROUP_COLORS[0])
+        );
+    }
+
+    #[test]
+    fn test_hex_group_short_hex_no_tokens() {
+        // < 5 digits should not match
+        let tokens = compute_hex_group_tokens(0, "0xFF");
+        assert!(tokens.is_empty());
+
+        let tokens = compute_hex_group_tokens(0, "0x1234");
+        assert!(tokens.is_empty());
+    }
+
+    #[test]
+    fn test_hex_group_exactly_5_digits() {
+        // 5 digits = partial (1) + full (4) = 2 groups
+        let tokens = compute_hex_group_tokens(0, "0x12345");
+
+        assert_eq!(tokens.len(), 3); // prefix + 2 groups
+
+        // partial "1" at col 2, color index = (2-1-0)%4 = 1 => teal
+        assert_eq!(tokens[1].start_col, 2);
+        assert_eq!(tokens[1].length, 1);
+
+        // "2345" at col 3, color index = (2-1-1)%4 = 0 => light green
+        assert_eq!(tokens[2].start_col, 3);
+        assert_eq!(tokens[2].length, 4);
+    }
+
+    #[test]
+    fn test_hex_group_multiple_on_same_line() {
+        let tokens = compute_hex_group_tokens(0, "a=0xDEADBEEF b=0x1234567890");
+
+        // First: 0xDEADBEEF (8 digits) -> prefix + 2 groups = 3
+        // Second: 0x1234567890 (10 digits) -> prefix + 1 partial + 2 full = 4
+        assert_eq!(tokens.len(), 7);
+
+        // First number prefix at col 2
+        assert_eq!(tokens[0].start_col, 2);
+        assert_eq!(tokens[0].length, 2);
+    }
+
+    #[test]
+    fn test_hex_group_uppercase_prefix() {
+        let tokens = compute_hex_group_tokens(0, "0XABCDE");
+        assert_eq!(tokens.len(), 3); // prefix + 2 groups
+        assert_eq!(tokens[0].length, 2); // "0X"
+        assert_eq!(
+            tokens[0].foreground_color.as_deref(),
+            Some(HEX_PREFIX_COLOR)
+        );
+    }
+
+    #[test]
+    fn test_hex_group_utf8_before_hex() {
+        // Chinese text before hex number
+        let tokens = compute_hex_group_tokens(0, "地址：0xABCDEF");
+
+        assert_eq!(tokens.len(), 3); // prefix + 2 groups
+
+        // "地址：" = 3 chars
+        assert_eq!(tokens[0].start_col, 3);
+        assert_eq!(tokens[0].length, 2); // "0x"
+
+        // "AB" at col 5 (partial, 2 chars)
+        assert_eq!(tokens[1].start_col, 5);
+        assert_eq!(tokens[1].length, 2);
+
+        // "CDEF" at col 7 (full group)
+        assert_eq!(tokens[2].start_col, 7);
+        assert_eq!(tokens[2].length, 4);
+    }
+
+    #[test]
+    fn test_hex_group_8_digits() {
+        // 8 digits = 2 full groups, no partial
+        let tokens = compute_hex_group_tokens(0, "0xDEADBEEF");
+
+        assert_eq!(tokens.len(), 3); // prefix + 2 groups
+
+        // "DEAD" at col 2, color index = (2-1-0)%4 = 1 => teal
+        assert_eq!(tokens[1].start_col, 2);
+        assert_eq!(tokens[1].length, 4);
+        assert_eq!(
+            tokens[1].foreground_color.as_deref(),
+            Some(HEX_GROUP_COLORS[1])
+        );
+
+        // "BEEF" at col 6, color index = (2-1-1)%4 = 0 => light green
+        assert_eq!(tokens[2].start_col, 6);
+        assert_eq!(tokens[2].length, 4);
+        assert_eq!(
+            tokens[2].foreground_color.as_deref(),
+            Some(HEX_GROUP_COLORS[0])
+        );
     }
 }

@@ -15,7 +15,7 @@ use settings::Settings;
 use std::time::Instant;
 use terminal::{
     HighlightProtocol, HighlightStoreEntity, IndexedCell, SemanticToken, Terminal, TerminalBounds,
-    TerminalContent, TerminalLanguageServer, default_token_color,
+    TerminalContent, TerminalLanguageServer, compute_hex_group_tokens, default_token_color,
     alacritty_terminal::{
         grid::Dimensions,
         index::Point as AlacPoint,
@@ -646,7 +646,9 @@ impl TerminalElement {
         }
 
         let rules = store.enabled_rules();
-        if rules.is_empty() {
+        let hex_group_coloring = store.hex_group_coloring_enabled();
+
+        if rules.is_empty() && !hex_group_coloring {
             return None;
         }
 
@@ -673,6 +675,26 @@ impl TerminalElement {
                     for token in &mut line_tokens {
                         token.start_col += leading_spaces;
                     }
+
+                    // Merge hex group tokens (skip those overlapping with user rules)
+                    if hex_group_coloring {
+                        let mut hex_tokens =
+                            compute_hex_group_tokens(line_number, &line_text);
+                        for token in &mut hex_tokens {
+                            token.start_col += leading_spaces;
+                        }
+                        for hex_token in hex_tokens {
+                            let overlaps = line_tokens.iter().any(|t| {
+                                let t_end = t.start_col + t.length;
+                                let h_end = hex_token.start_col + hex_token.length;
+                                !(h_end <= t.start_col || hex_token.start_col >= t_end)
+                            });
+                            if !overlaps {
+                                line_tokens.push(hex_token);
+                            }
+                        }
+                    }
+
                     tokens.extend(line_tokens);
                 }
                 line_text.clear();
@@ -701,6 +723,26 @@ impl TerminalElement {
             for token in &mut line_tokens {
                 token.start_col += leading_spaces;
             }
+
+            // Merge hex group tokens for the last line
+            if hex_group_coloring {
+                let mut hex_tokens =
+                    compute_hex_group_tokens(line_number, &line_text);
+                for token in &mut hex_tokens {
+                    token.start_col += leading_spaces;
+                }
+                for hex_token in hex_tokens {
+                    let overlaps = line_tokens.iter().any(|t| {
+                        let t_end = t.start_col + t.length;
+                        let h_end = hex_token.start_col + hex_token.length;
+                        !(h_end <= t.start_col || hex_token.start_col >= t_end)
+                    });
+                    if !overlaps {
+                        line_tokens.push(hex_token);
+                    }
+                }
+            }
+
             tokens.extend(line_tokens);
         }
 

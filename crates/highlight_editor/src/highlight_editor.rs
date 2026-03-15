@@ -96,6 +96,12 @@ impl HighlightEditor {
         });
     }
 
+    fn toggle_hex_group_coloring(&mut self, cx: &mut Context<Self>) {
+        self.highlight_store.update(cx, |store, cx| {
+            store.toggle_hex_group_coloring(cx);
+        });
+    }
+
     fn toggle_rule_enabled(&mut self, id: Uuid, cx: &mut Context<Self>) {
         self.highlight_store.update(cx, |store, cx| {
             store.toggle_rule_enabled(id, cx);
@@ -344,6 +350,7 @@ impl Render for HighlightEditor {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let rule_count = self.rules.len();
         let highlighting_enabled = self.highlight_store.read(cx).highlighting_enabled();
+        let hex_group_coloring = self.highlight_store.read(cx).hex_group_coloring_enabled();
 
         v_flex()
             .key_context("HighlightEditor")
@@ -392,6 +399,7 @@ impl Render for HighlightEditor {
                     .py_1()
                     .border_b_1()
                     .border_color(cx.theme().colors().border)
+                    .justify_between()
                     .child(
                         Button::new(
                             "reset-highlight-defaults",
@@ -403,6 +411,21 @@ impl Render for HighlightEditor {
                         .on_click(cx.listener(|this, _, _window, cx| {
                             this.reset_to_defaults(cx);
                         })),
+                    )
+                    .child(
+                        h_flex()
+                            .gap_1()
+                            .child(
+                                Checkbox::new("hex-group-toggle", hex_group_coloring.into())
+                                    .on_click(cx.listener(|this, _, _window, cx| {
+                                        this.toggle_hex_group_coloring(cx);
+                                    })),
+                            )
+                            .child(
+                                Label::new("Hex Groups")
+                                    .size(LabelSize::Small)
+                                    .color(Color::Muted),
+                            ),
                     ),
             )
             .child(

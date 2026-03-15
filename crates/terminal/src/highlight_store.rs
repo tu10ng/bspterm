@@ -16,6 +16,8 @@ pub struct HighlightStore {
     pub rules: Vec<HighlightRule>,
     #[serde(default = "default_true")]
     pub highlighting_enabled: bool,
+    #[serde(default = "default_true")]
+    pub hex_group_coloring: bool,
 }
 
 impl JsonConfigStore for HighlightStore {
@@ -50,6 +52,7 @@ impl HighlightStore {
             version: Self::CURRENT_VERSION,
             rules: Vec::new(),
             highlighting_enabled: true,
+            hex_group_coloring: true,
         }
     }
 
@@ -245,6 +248,29 @@ impl HighlightStoreEntity {
             self.store.highlighting_enabled = enabled;
             self.schedule_save(cx);
             cx.emit(HighlightStoreEvent::HighlightingToggled(enabled));
+            cx.notify();
+        }
+    }
+
+    /// Get whether hex group coloring is enabled.
+    pub fn hex_group_coloring_enabled(&self) -> bool {
+        self.store.hex_group_coloring
+    }
+
+    /// Toggle hex group coloring enabled state.
+    pub fn toggle_hex_group_coloring(&mut self, cx: &mut Context<Self>) {
+        self.store.hex_group_coloring = !self.store.hex_group_coloring;
+        self.schedule_save(cx);
+        cx.emit(HighlightStoreEvent::Changed);
+        cx.notify();
+    }
+
+    /// Set hex group coloring enabled state.
+    pub fn set_hex_group_coloring(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        if self.store.hex_group_coloring != enabled {
+            self.store.hex_group_coloring = enabled;
+            self.schedule_save(cx);
+            cx.emit(HighlightStoreEvent::Changed);
             cx.notify();
         }
     }
