@@ -4,7 +4,6 @@ mod banner;
 mod button;
 mod callout;
 mod chip;
-mod collab;
 mod content_group;
 mod context_menu;
 mod data_table;
@@ -42,6 +41,7 @@ mod thread_item;
 mod toggle;
 mod tooltip;
 mod tree_view_item;
+mod update_button;
 
 #[cfg(feature = "stories")]
 mod stories;
@@ -52,7 +52,6 @@ pub use banner::*;
 pub use button::*;
 pub use callout::*;
 pub use chip::*;
-pub use collab::*;
 pub use content_group::*;
 pub use context_menu::*;
 pub use data_table::*;
@@ -90,6 +89,7 @@ pub use thread_item::*;
 pub use toggle::*;
 pub use tooltip::*;
 pub use tree_view_item::*;
+pub use update_button::*;
 
 #[cfg(feature = "stories")]
 pub use stories::*;

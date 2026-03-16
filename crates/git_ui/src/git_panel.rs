@@ -23,9 +23,8 @@ use editor::{EditorStyle, RewrapOptions};
 use futures::StreamExt as _;
 use git::commit::ParsedCommitMessage;
 use git::repository::{
-    Branch, CommitDetails, CommitOptions, CommitSummary, DiffType, FetchOptions, GitCommitter,
-    PushOptions, Remote, RemoteCommandOutput, ResetMode, Upstream, UpstreamTracking,
-    UpstreamTrackingStatus, get_git_committer,
+    Branch, CommitDetails, CommitOptions, CommitSummary, DiffType, FetchOptions, PushOptions,
+    Remote, RemoteCommandOutput, ResetMode, Upstream, UpstreamTracking, UpstreamTrackingStatus,
 };
 use git::stash::GitStash;
 use git::status::StageStatus;
@@ -619,8 +618,6 @@ pub struct GitPanel {
     context_menu: Option<(Entity<ContextMenu>, Point<Pixels>, Subscription)>,
     modal_open: bool,
     show_placeholders: bool,
-    local_committer: Option<GitCommitter>,
-    local_committer_task: Option<Task<()>>,
     bulk_staging: Option<BulkStaging>,
     stash_entries: GitStash,
     _settings_subscription: Subscription,
@@ -781,8 +778,6 @@ impl GitPanel {
                 update_visible_entries_task: Task::ready(()),
                 width: None,
                 show_placeholders: false,
-                local_committer: None,
-                local_committer_task: None,
                 context_menu: None,
                 workspace: workspace.weak_handle(),
                 modal_open: false,
@@ -3208,72 +3203,8 @@ impl GitPanel {
         }
     }
 
-    pub fn load_local_committer(&mut self, cx: &Context<Self>) {
-        if self.local_committer_task.is_none() {
-            self.local_committer_task = Some(cx.spawn(async move |this, cx| {
-                let committer = get_git_committer(cx).await;
-                this.update(cx, |this, cx| {
-                    this.local_committer = Some(committer);
-                    cx.notify()
-                })
-                .ok();
-            }));
-        }
-    }
-
-    fn potential_co_authors(&self, cx: &App) -> Vec<(String, String)> {
-        let mut new_co_authors = Vec::new();
-        let project = self.project.read(cx);
-
-        let Some(room) = self
-            .workspace
-            .upgrade()
-            .and_then(|workspace| workspace.read(cx).active_call()?.read(cx).room().cloned())
-        else {
-            return Vec::default();
-        };
-
-        let room = room.read(cx);
-
-        for (peer_id, collaborator) in project.collaborators() {
-            if collaborator.is_host {
-                continue;
-            }
-
-            let Some(participant) = room.remote_participant_for_peer_id(*peer_id) else {
-                continue;
-            };
-            if !participant.can_write() {
-                continue;
-            }
-            if let Some(email) = &collaborator.committer_email {
-                let name = collaborator
-                    .committer_name
-                    .clone()
-                    .or_else(|| participant.user.name.clone())
-                    .unwrap_or_else(|| participant.user.github_login.clone().to_string());
-                new_co_authors.push((name.clone(), email.clone()))
-            }
-        }
-        if !project.is_local()
-            && !project.is_read_only(cx)
-            && let Some(local_committer) = self.local_committer(room, cx)
-        {
-            new_co_authors.push(local_committer);
-        }
-        new_co_authors
-    }
-
-    fn local_committer(&self, room: &call::Room, cx: &App) -> Option<(String, String)> {
-        let user = room.local_participant_user(cx)?;
-        let committer = self.local_committer.as_ref()?;
-        let email = committer.email.clone()?;
-        let name = committer
-            .name
-            .clone()
-            .or_else(|| user.name.clone())
-            .unwrap_or_else(|| user.github_login.clone().to_string());
-        Some((name, email))
+    fn potential_co_authors(&self, _cx: &App) -> Vec<(String, String)> {
+        Vec::new()
     }
 
     fn toggle_fill_co_authors(
@@ -5432,20 +5363,7 @@ impl Render for GitPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let project = self.project.read(cx);
         let has_entries = !self.entries.is_empty();
-        let room = self
-            .workspace
-            .upgrade()
-            .and_then(|workspace| workspace.read(cx).active_call()?.read(cx).room().cloned());
-
         let has_write_access = self.has_write_access(cx);
-
-        let has_co_authors = room.is_some_and(|room| {
-            self.load_local_committer(cx);
-            let room = room.read(cx);
-            room.remote_participants()
-                .values()
-                .any(|remote_participant| remote_participant.can_write())
-        });
 
         v_flex()
             .id("git_panel")
@@ -5486,9 +5404,7 @@ impl Render for GitPanel {
             .on_action(cx.listener(Self::focus_changes_list))
             .on_action(cx.listener(Self::focus_editor))
             .on_action(cx.listener(Self::expand_commit_editor))
-            .when(has_write_access && has_co_authors, |git_panel| {
-                git_panel.on_action(cx.listener(Self::toggle_fill_co_authors))
-            })
+            .on_action(cx.listener(Self::toggle_fill_co_authors))
             .on_action(cx.listener(Self::toggle_sort_by_path))
             .on_action(cx.listener(Self::toggle_tree_view))
             .size_full()

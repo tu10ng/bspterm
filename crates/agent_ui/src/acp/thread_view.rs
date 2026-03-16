@@ -12,7 +12,6 @@ use agent_servers::{AgentServer, AgentServerDelegate};
 use agent_settings::{AgentProfileId, AgentSettings};
 use anyhow::{Result, anyhow};
 use arrayvec::ArrayVec;
-use audio::{Audio, Sound};
 use buffer_diff::BufferDiff;
 use client::zed_urls;
 use collections::{HashMap, HashSet};
@@ -2157,15 +2156,7 @@ impl AcpServerView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.play_notification_sound(window, cx);
         self.show_notification(caption, icon, window, cx);
-    }
-
-    fn play_notification_sound(&self, window: &Window, cx: &mut App) {
-        let settings = AgentSettings::get_global(cx);
-        if settings.play_sound_when_agent_done && !window.is_window_active() {
-            Audio::play_sound(Sound::AgentDone, cx);
-        }
     }
 
     fn show_notification(

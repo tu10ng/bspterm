@@ -174,12 +174,10 @@ fn run_visual_tests(project_path: PathBuf, update_baseline: bool) -> Result<()> 
         gpui_tokio::init(cx);
         theme::init(theme::LoadThemes::JustBase, cx);
         client::init(&app_state.client, cx);
-        audio::init(cx);
         workspace::init(app_state.clone(), cx);
         release_channel::init(semver::Version::new(0, 0, 0), cx);
         command_palette::init(cx);
         editor::init(cx);
-        call::init(app_state.client.clone(), app_state.user_store.clone(), cx);
         title_bar::init(cx);
         project_panel::init(cx);
         outline_panel::init(cx);
