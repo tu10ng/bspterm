@@ -15,7 +15,6 @@ path = "src/edit_prediction.rs"
 cli-support = []
 
 [dependencies]
-ai_onboarding.workspace = true
 anyhow.workspace = true
 arrayvec.workspace = true
 brotli.workspace = true

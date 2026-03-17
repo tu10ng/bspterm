@@ -2316,8 +2316,6 @@ pub fn init(cx: &mut App) {
             move |workspace, _: &bspterm_actions::OpenZedPredictOnboarding, window, cx| {
                 ZedPredictModal::toggle(
                     workspace,
-                    workspace.user_store().clone(),
-                    workspace.client().clone(),
                     window,
                     cx,
                 )

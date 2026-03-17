@@ -121,10 +121,6 @@ actions!(
         RejectOnce,
         /// Follows the agent's suggestions.
         Follow,
-        /// Resets the trial upsell notification.
-        ResetTrialUpsell,
-        /// Resets the trial end upsell notification.
-        ResetTrialEndUpsell,
         /// Opens the "Add Context" menu in the message editor.
         OpenAddContextMenu,
         /// Continues the current thread.

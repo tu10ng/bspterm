@@ -4,7 +4,7 @@ use acp_thread::{AcpThread, AgentSessionInfo};
 use agent::{ContextServerRegistry, SharedThread, ThreadStore};
 use agent_client_protocol as acp;
 use agent_servers::AgentServer;
-use db::kvp::{Dismissable, KEY_VALUE_STORE};
+use db::kvp::KEY_VALUE_STORE;
 use project::{
     ExternalAgentServerName,
     agent_server_store::{CLAUDE_CODE_NAME, CODEX_NAME, GEMINI_NAME},
@@ -12,20 +12,18 @@ use project::{
 use serde::{Deserialize, Serialize};
 use settings::{LanguageModelProviderSetting, LanguageModelSelection};
 
-use bspterm_actions::agent::{OpenClaudeCodeOnboardingModal, ReauthenticateAgent};
+use bspterm_actions::agent::ReauthenticateAgent;
 
 use crate::ManageProfiles;
-use crate::ui::{AcpOnboardingModal, ClaudeCodeOnboardingModal};
 use crate::{
     AddContextServer, AgentDiffPane, CopyThreadToClipboard, Follow, InlineAssistant,
     LoadThreadFromClipboard, NewTextThread, NewThread, OpenActiveThreadAsMarkdown, OpenAgentDiff,
-    OpenHistory, ResetTrialEndUpsell, ResetTrialUpsell, ToggleNavigationMenu, ToggleNewThreadMenu,
+    OpenHistory, ToggleNavigationMenu, ToggleNewThreadMenu,
     ToggleOptionsMenu,
     acp::AcpServerView,
     agent_configuration::{AgentConfiguration, AssistantConfigurationEvent},
     slash_command::SlashCommandCompletionProvider,
     text_thread_editor::{AgentPanelDelegate, TextThreadEditor, make_lsp_adapter_delegate},
-    ui::{AgentOnboardingModal, EndTrialUpsell},
 };
 use crate::{
     ExpandMessageEditor,
@@ -37,12 +35,10 @@ use crate::{
     NewNativeAgentThreadFromSummary,
 };
 use agent_settings::AgentSettings;
-use ai_onboarding::AgentPanelOnboarding;
 use anyhow::{Result, anyhow};
 use assistant_slash_command::SlashCommandWorkingSet;
 use assistant_text_thread::{TextThread, TextThreadEvent, TextThreadSummary};
 use client::UserStore;
-use cloud_api_types::Plan;
 use editor::{Anchor, AnchorRangeExt as _, Editor, EditorEvent, MultiBuffer};
 use extension::ExtensionEvents;
 use extension_host::ExtensionStore;
@@ -72,7 +68,7 @@ use workspace::{
 use bspterm_actions::{
     DecreaseBufferFontSize, IncreaseBufferFontSize, ResetBufferFontSize,
     agent::{
-        OpenAcpOnboardingModal, OpenOnboardingModal, OpenSettings, ResetAgentZoom, ResetOnboarding,
+        OpenSettings, ResetAgentZoom,
     },
     assistant::{OpenRulesLibrary, ToggleFocus},
 };
@@ -188,25 +184,6 @@ pub fn init(cx: &mut App) {
                             panel.toggle_new_thread_menu(&ToggleNewThreadMenu, window, cx);
                         });
                     }
-                })
-                .register_action(|workspace, _: &OpenOnboardingModal, window, cx| {
-                    AgentOnboardingModal::toggle(workspace, window, cx)
-                })
-                .register_action(|workspace, _: &OpenAcpOnboardingModal, window, cx| {
-                    AcpOnboardingModal::toggle(workspace, window, cx)
-                })
-                .register_action(|workspace, _: &OpenClaudeCodeOnboardingModal, window, cx| {
-                    ClaudeCodeOnboardingModal::toggle(workspace, window, cx)
-                })
-                .register_action(|_workspace, _: &ResetOnboarding, window, cx| {
-                    window.dispatch_action(workspace::RestoreBanner.boxed_clone(), cx);
-                    window.refresh();
-                })
-                .register_action(|_workspace, _: &ResetTrialUpsell, _window, cx| {
-                    OnboardingUpsell::set_dismissed(false, cx);
-                })
-                .register_action(|_workspace, _: &ResetTrialEndUpsell, _window, cx| {
-                    TrialEndUpsell::set_dismissed(false, cx);
                 })
                 .register_action(|workspace, _: &ResetAgentZoom, window, cx| {
                     if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
@@ -413,7 +390,7 @@ impl ActiveView {
 
 pub struct AgentPanel {
     workspace: WeakEntity<Workspace>,
-    user_store: Entity<UserStore>,
+    _user_store: Entity<UserStore>,
     project: Entity<Project>,
     fs: Arc<dyn Fs>,
     language_registry: Arc<LanguageRegistry>,
@@ -437,7 +414,6 @@ pub struct AgentPanel {
     height: Option<Pixels>,
     zoomed: bool,
     pending_serialization: Option<Task<Result<()>>>,
-    onboarding: Entity<AgentPanelOnboarding>,
     selected_agent: AgentType,
     show_trust_workspace_message: bool,
     last_configuration_error_telemetry: Option<String>,
@@ -527,7 +503,7 @@ impl AgentPanel {
         let user_store = workspace.app_state().user_store.clone();
         let project = workspace.project();
         let language_registry = project.read(cx).languages().clone();
-        let client = workspace.client().clone();
+        let _client = workspace.client().clone();
         let workspace = workspace.weak_handle();
 
         let context_server_registry =
@@ -604,17 +580,6 @@ impl AgentPanel {
                 .ok();
         });
 
-        let onboarding = cx.new(|cx| {
-            AgentPanelOnboarding::new(
-                user_store.clone(),
-                client,
-                |_window, cx| {
-                    OnboardingUpsell::set_dismissed(true, cx);
-                },
-                cx,
-            )
-        });
-
         // Subscribe to extension events to sync agent servers when extensions change
         let extension_subscription = if let Some(extension_events) = ExtensionEvents::try_global(cx)
         {
@@ -635,7 +600,7 @@ impl AgentPanel {
         let mut panel = Self {
             active_view,
             workspace,
-            user_store,
+            _user_store: user_store,
             project: project.clone(),
             fs: fs.clone(),
             language_registry,
@@ -655,7 +620,6 @@ impl AgentPanel {
             height: None,
             zoomed: false,
             pending_serialization: None,
-            onboarding,
             acp_history,
             text_thread_history,
             thread_store,
@@ -2578,88 +2542,6 @@ impl AgentPanel {
             )
     }
 
-    fn should_render_trial_end_upsell(&self, cx: &mut Context<Self>) -> bool {
-        if TrialEndUpsell::dismissed() {
-            return false;
-        }
-
-        match &self.active_view {
-            ActiveView::TextThread { .. } => {
-                if LanguageModelRegistry::global(cx)
-                    .read(cx)
-                    .default_model()
-                    .is_some_and(|model| {
-                        model.provider.id() != language_model::ZED_CLOUD_PROVIDER_ID
-                    })
-                {
-                    return false;
-                }
-            }
-            ActiveView::Uninitialized
-            | ActiveView::AgentThread { .. }
-            | ActiveView::History { .. }
-            | ActiveView::Configuration => return false,
-        }
-
-        let plan = self.user_store.read(cx).plan();
-        let has_previous_trial = self.user_store.read(cx).trial_started_at().is_some();
-
-        plan.is_some_and(|plan| plan == Plan::ZedFree) && has_previous_trial
-    }
-
-    fn should_render_onboarding(&self, _cx: &mut Context<Self>) -> bool {
-        false
-    }
-
-    fn render_onboarding(
-        &self,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Option<impl IntoElement> {
-        if !self.should_render_onboarding(cx) {
-            return None;
-        }
-
-        let text_thread_view = matches!(&self.active_view, ActiveView::TextThread { .. });
-
-        Some(
-            div()
-                .when(text_thread_view, |this| {
-                    this.bg(cx.theme().colors().editor_background)
-                })
-                .child(self.onboarding.clone()),
-        )
-    }
-
-    fn render_trial_end_upsell(
-        &self,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Option<impl IntoElement> {
-        if !self.should_render_trial_end_upsell(cx) {
-            return None;
-        }
-
-        Some(
-            v_flex()
-                .absolute()
-                .inset_0()
-                .size_full()
-                .bg(cx.theme().colors().panel_background)
-                .opacity(0.85)
-                .block_mouse_except_scroll()
-                .child(EndTrialUpsell::new(Arc::new({
-                    let this = cx.entity();
-                    move |_, cx| {
-                        this.update(cx, |_this, cx| {
-                            TrialEndUpsell::set_dismissed(true, cx);
-                            cx.notify();
-                        });
-                    }
-                }))),
-        )
-    }
-
     fn emit_configuration_error_telemetry_if_needed(
         &mut self,
         configuration_error: Option<&ConfigurationError>,
@@ -2970,7 +2852,6 @@ impl Render for AgentPanel {
             }))
             .child(self.render_toolbar(window, cx))
             .children(self.render_workspace_trust_message(cx))
-            .children(self.render_onboarding(window, cx))
             .map(|parent| {
                 // Emit configuration error telemetry before entering the match to avoid borrow conflicts
                 if matches!(&self.active_view, ActiveView::TextThread { .. }) {
@@ -3000,8 +2881,7 @@ impl Render for AgentPanel {
 
                         parent
                             .map(|this| {
-                                if !self.should_render_onboarding(cx)
-                                    && let Some(err) = configuration_error.as_ref()
+                                if let Some(err) = configuration_error.as_ref()
                                 {
                                     this.child(self.render_configuration_error(
                                         true,
@@ -3022,8 +2902,7 @@ impl Render for AgentPanel {
                     }
                     ActiveView::Configuration => parent.children(self.configuration.clone()),
                 }
-            })
-            .children(self.render_trial_end_upsell(window, cx));
+            });
 
         match self.active_view.which_font_size_used() {
             WhichFontSize::AgentFont => {
@@ -3199,18 +3078,6 @@ impl AgentPanelDelegate for ConcreteAssistantPanelDelegate {
             });
         });
     }
-}
-
-struct OnboardingUpsell;
-
-impl Dismissable for OnboardingUpsell {
-    const KEY: &'static str = "dismissed-trial-upsell";
-}
-
-struct TrialEndUpsell;
-
-impl Dismissable for TrialEndUpsell {
-    const KEY: &'static str = "dismissed-trial-end-upsell";
 }
 
 #[cfg(feature = "test-support")]

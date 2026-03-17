@@ -1,5 +1,4 @@
 mod application_menu;
-mod onboarding_banner;
 mod project_dropdown;
 mod title_bar_settings;
 mod update_version;
@@ -26,7 +25,6 @@ use gpui::{
     StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window, actions, div,
 };
 use local_user::{LocalUserStoreEntity, LocalUserStoreEvent};
-use onboarding_banner::OnboardingBanner;
 use project::{Project, git_store::GitStoreEvent, trusted_worktrees::TrustedWorktrees};
 use project_dropdown::ProjectDropdown;
 use remote::RemoteConnectionOptions;
@@ -43,8 +41,6 @@ use update_version::UpdateVersion;
 use util::ResultExt;
 use workspace::{SwitchProject, ToggleWorktreeSecurity, Workspace};
 use bspterm_actions::OpenRemote;
-
-pub use onboarding_banner::restore_banner;
 
 #[cfg(feature = "stories")]
 pub use stories::*;
@@ -168,7 +164,6 @@ pub struct TitleBar {
     workspace: WeakEntity<Workspace>,
     application_menu: Option<Entity<ApplicationMenu>>,
     _subscriptions: Vec<Subscription>,
-    banner: Entity<OnboardingBanner>,
     update_version: Entity<UpdateVersion>,
     project_dropdown_handle: PopoverMenuHandle<ProjectDropdown>,
 }
@@ -207,10 +202,6 @@ impl Render for TitleBar {
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .into_any_element(),
         );
-
-        if title_bar_settings.show_onboarding_banner {
-            children.push(self.banner.clone().into_any_element())
-        }
 
         let status = self.client.status();
         let status = &*status.borrow();
@@ -321,19 +312,6 @@ impl TitleBar {
             }));
         }
 
-        let banner = cx.new(|cx| {
-            OnboardingBanner::new(
-                "ACP Claude Code Onboarding",
-                IconName::AiClaude,
-                "Claude Code",
-                Some("Introducing:".into()),
-                bspterm_actions::agent::OpenClaudeCodeOnboardingModal.boxed_clone(),
-                cx,
-            )
-            // When updating this to a non-AI feature release, remove this line.
-            .visible_when(|cx| !project::DisableAiSettings::get_global(cx).disable_ai)
-        });
-
         log::info!("[TitleBar::new] Creating update_version...");
         let update_version = cx.new(|cx| UpdateVersion::new(cx));
         log::info!("[TitleBar::new] Creating platform_titlebar...");
@@ -349,7 +327,6 @@ impl TitleBar {
             local_user_store,
             client,
             _subscriptions: subscriptions,
-            banner,
             update_version,
             project_dropdown_handle: PopoverMenuHandle::default(),
         }

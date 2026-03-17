@@ -1,13 +1,11 @@
 use std::sync::Arc;
 
 use crate::{EditPredictionStore, ZedPredictUpsell};
-use ai_onboarding::EditPredictionOnboarding;
-use client::{Client, UserStore};
 use db::kvp::Dismissable;
 use fs::Fs;
 use gpui::{
-    ClickEvent, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable, MouseDownEvent, Render,
-    linear_color_stop, linear_gradient,
+    ClickEvent, DismissEvent, EventEmitter, FocusHandle, Focusable, FontWeight, MouseDownEvent,
+    Render, linear_color_stop, linear_gradient,
 };
 use language::language_settings::EditPredictionProvider;
 use settings::update_settings_file;
@@ -24,9 +22,10 @@ macro_rules! onboarding_event {
     };
 }
 
-/// Introduces user to Zed's Edit Prediction feature
+/// Introduces user to Edit Prediction feature
 pub struct ZedPredictModal {
-    onboarding: Entity<EditPredictionOnboarding>,
+    copilot_is_configured: bool,
+    continue_with_copilot: Arc<dyn Fn(&mut Window, &mut App)>,
     focus_handle: FocusHandle,
 }
 
@@ -45,8 +44,6 @@ pub(crate) fn set_edit_prediction_provider(provider: EditPredictionProvider, cx:
 impl ZedPredictModal {
     pub fn toggle(
         workspace: &mut Workspace,
-        user_store: Entity<UserStore>,
-        client: Arc<Client>,
         window: &mut Window,
         cx: &mut Context<Workspace>,
     ) {
@@ -55,35 +52,21 @@ impl ZedPredictModal {
             let weak_entity = cx.weak_entity();
             let copilot = EditPredictionStore::try_global(cx)
                 .and_then(|store| store.read(cx).copilot_for_project(&project));
+            let copilot_is_configured = copilot
+                .as_ref()
+                .is_some_and(|copilot| copilot.read(cx).status().is_configured());
             Self {
-                onboarding: cx.new(|cx| {
-                    EditPredictionOnboarding::new(
-                        user_store.clone(),
-                        client.clone(),
-                        copilot
-                            .as_ref()
-                            .is_some_and(|copilot| copilot.read(cx).status().is_configured()),
-                        Arc::new({
-                            let this = weak_entity.clone();
-                            move |_window, cx| {
-                                ZedPredictUpsell::set_dismissed(true, cx);
-                                set_edit_prediction_provider(EditPredictionProvider::Zed, cx);
-                                this.update(cx, |_, cx| cx.emit(DismissEvent)).ok();
-                            }
-                        }),
-                        Arc::new({
-                            let this = weak_entity.clone();
-                            move |window, cx| {
-                                ZedPredictUpsell::set_dismissed(true, cx);
-                                set_edit_prediction_provider(EditPredictionProvider::Copilot, cx);
-                                this.update(cx, |_, cx| cx.emit(DismissEvent)).ok();
-                                if let Some(copilot) = copilot.clone() {
-                                    copilot_ui::initiate_sign_in(copilot, window, cx);
-                                }
-                            }
-                        }),
-                        cx,
-                    )
+                copilot_is_configured,
+                continue_with_copilot: Arc::new({
+                    let this = weak_entity.clone();
+                    move |window, cx| {
+                        ZedPredictUpsell::set_dismissed(true, cx);
+                        set_edit_prediction_provider(EditPredictionProvider::Copilot, cx);
+                        this.update(cx, |_, cx| cx.emit(DismissEvent)).ok();
+                        if let Some(copilot) = copilot.clone() {
+                            copilot_ui::initiate_sign_in(copilot, window, cx);
+                        }
+                    }
                 }),
                 focus_handle: cx.focus_handle(),
             }
@@ -175,6 +158,49 @@ impl Render for ZedPredictModal {
                     },
                 )),
             ))
-            .child(self.onboarding.clone())
+            .child(self.render_content(cx))
+    }
+}
+
+impl ZedPredictModal {
+    fn render_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let copilot_label = if self.copilot_is_configured {
+            "You can use GitHub Copilot as your edit prediction provider."
+        } else {
+            "Configure GitHub Copilot as your edit prediction provider."
+        };
+
+        let copilot_button_label = if self.copilot_is_configured {
+            "Use Copilot"
+        } else {
+            "Configure Copilot"
+        };
+
+        v_flex()
+            .gap_2()
+            .child(
+                Label::new("Edit Prediction")
+                    .size(LabelSize::Large)
+                    .weight(FontWeight::BOLD),
+            )
+            .child(Label::new(copilot_label))
+            .child(
+                Button::new("configure-copilot", copilot_button_label)
+                    .full_width()
+                    .style(ButtonStyle::Filled)
+                    .on_click({
+                        let callback = self.continue_with_copilot.clone();
+                        move |_, window, cx| callback(window, cx)
+                    }),
+            )
+            .child(
+                Button::new("dismiss", "Dismiss")
+                    .full_width()
+                    .style(ButtonStyle::Outlined)
+                    .on_click(cx.listener(|_, _, _window, cx| {
+                        ZedPredictUpsell::set_dismissed(true, cx);
+                        cx.emit(DismissEvent);
+                    })),
+            )
     }
 }

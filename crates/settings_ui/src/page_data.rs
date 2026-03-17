@@ -3440,7 +3440,7 @@ fn window_and_layout_page() -> SettingsPage {
         ]
     }
 
-    fn title_bar_section() -> [SettingsPageItem; 9] {
+    fn title_bar_section() -> [SettingsPageItem; 8] {
         [
             SettingsPageItem::SectionHeader("Title Bar"),
             SettingsPageItem::SettingItem(SettingItem {
@@ -3504,28 +3504,6 @@ fn window_and_layout_page() -> SettingsPage {
                             .title_bar
                             .get_or_insert_default()
                             .show_project_items = value;
-                    },
-                }),
-                metadata: None,
-                files: USER,
-            }),
-            SettingsPageItem::SettingItem(SettingItem {
-                title: "Show Onboarding Banner",
-                description: "Show banners announcing new features in the titlebar.",
-                field: Box::new(SettingField {
-                    json_path: Some("title_bar.show_onboarding_banner"),
-                    pick: |settings_content| {
-                        settings_content
-                            .title_bar
-                            .as_ref()?
-                            .show_onboarding_banner
-                            .as_ref()
-                    },
-                    write: |settings_content, value| {
-                        settings_content
-                            .title_bar
-                            .get_or_insert_default()
-                            .show_onboarding_banner = value;
                     },
                 }),
                 metadata: None,

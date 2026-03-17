@@ -5,7 +5,7 @@ use crate::{
 use anyhow::Result;
 use assistant_slash_command::{SlashCommand, SlashCommandOutputSection, SlashCommandWorkingSet};
 use assistant_slash_commands::{DefaultSlashCommand, FileSlashCommand, selections_creases};
-use client::{proto, zed_urls};
+use client::proto;
 use collections::{BTreeSet, HashMap, HashSet, hash_map};
 use editor::{
     Anchor, Editor, EditorEvent, MenuEditPredictionsPolicy, MultiBuffer, MultiBufferOffset,
@@ -2318,53 +2318,15 @@ impl TextThreadEditor {
                 .elevation_2(cx)
                 .occlude()
                 .child(match last_error {
-                    AssistError::PaymentRequired => self.render_payment_required_error(cx),
+                    AssistError::PaymentRequired => {
+                        self.render_assist_error(&"Payment required.".into(), cx)
+                    }
                     AssistError::Message(error_message) => {
                         self.render_assist_error(error_message, cx)
                     }
                 })
                 .into_any(),
         )
-    }
-
-    fn render_payment_required_error(&self, cx: &mut Context<Self>) -> AnyElement {
-        const ERROR_MESSAGE: &str = "Free tier exceeded. Subscribe and add payment to continue using Zed LLMs. You'll be billed at cost for tokens used.";
-
-        v_flex()
-            .gap_0p5()
-            .child(
-                h_flex()
-                    .gap_1p5()
-                    .items_center()
-                    .child(Icon::new(IconName::XCircle).color(Color::Error))
-                    .child(Label::new("Free Usage Exceeded").weight(FontWeight::MEDIUM)),
-            )
-            .child(
-                div()
-                    .id("error-message")
-                    .max_h_24()
-                    .overflow_y_scroll()
-                    .child(Label::new(ERROR_MESSAGE)),
-            )
-            .child(
-                h_flex()
-                    .justify_end()
-                    .mt_1()
-                    .child(Button::new("subscribe", "Subscribe").on_click(cx.listener(
-                        |this, _, _window, cx| {
-                            this.last_error = None;
-                            cx.open_url(&zed_urls::account_url(cx));
-                            cx.notify();
-                        },
-                    )))
-                    .child(Button::new("dismiss", "Dismiss").on_click(cx.listener(
-                        |this, _, _window, cx| {
-                            this.last_error = None;
-                            cx.notify();
-                        },
-                    ))),
-            )
-            .into_any()
     }
 
     fn render_assist_error(

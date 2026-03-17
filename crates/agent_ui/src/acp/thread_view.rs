@@ -13,7 +13,6 @@ use agent_settings::{AgentProfileId, AgentSettings};
 use anyhow::{Result, anyhow};
 use arrayvec::ArrayVec;
 use buffer_diff::BufferDiff;
-use client::zed_urls;
 use collections::{HashMap, HashSet};
 use editor::scroll::Autoscroll;
 use editor::{

@@ -656,14 +656,6 @@ pub mod agent {
             /// Opens the agent settings panel.
             #[action(deprecated_aliases = ["agent::OpenConfiguration"])]
             OpenSettings,
-            /// Opens the agent onboarding modal.
-            OpenOnboardingModal,
-            /// Opens the ACP onboarding modal.
-            OpenAcpOnboardingModal,
-            /// Opens the Claude Code onboarding modal.
-            OpenClaudeCodeOnboardingModal,
-            /// Resets the agent onboarding state.
-            ResetOnboarding,
             /// Starts a chat conversation with the agent.
             Chat,
             /// Toggles the language model selector dropdown.

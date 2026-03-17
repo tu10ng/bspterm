@@ -6628,7 +6628,9 @@ impl AcpThreadView {
             ThreadError::AuthenticationRequired(error) => {
                 self.render_authentication_required_error(error.clone(), cx)
             }
-            ThreadError::PaymentRequired => self.render_payment_required_error(cx),
+            ThreadError::PaymentRequired => {
+                self.render_any_thread_error("Payment required.".into(), window, cx)
+            }
         };
 
         Some(div().child(content))
@@ -6669,36 +6671,6 @@ impl AcpThreadView {
                     .child(self.create_copy_button(error)),
             )
             .dismiss_action(self.dismiss_error_button(cx))
-    }
-
-    fn render_payment_required_error(&self, cx: &mut Context<Self>) -> Callout {
-        const ERROR_MESSAGE: &str =
-            "You reached your free usage limit. Upgrade to Zed Pro for more prompts.";
-
-        Callout::new()
-            .severity(Severity::Error)
-            .icon(IconName::XCircle)
-            .title("Free Usage Exceeded")
-            .description(ERROR_MESSAGE)
-            .actions_slot(
-                h_flex()
-                    .gap_0p5()
-                    .child(self.upgrade_button(cx))
-                    .child(self.create_copy_button(ERROR_MESSAGE)),
-            )
-            .dismiss_action(self.dismiss_error_button(cx))
-    }
-
-    fn upgrade_button(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        Button::new("upgrade", "Upgrade")
-            .label_size(LabelSize::Small)
-            .style(ButtonStyle::Tinted(ui::TintColor::Accent))
-            .on_click(cx.listener({
-                move |this, _, _, cx| {
-                    this.clear_thread_error(cx);
-                    cx.open_url(&zed_urls::upgrade_to_zed_pro_url(cx));
-                }
-            }))
     }
 
     fn authenticate_button(&self, cx: &mut Context<Self>) -> impl IntoElement {

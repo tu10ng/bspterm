@@ -95,7 +95,7 @@ use workspace::{
     open_new,
 };
 use workspace::{
-    CloseIntent, CloseProject, CloseWindow, RestoreBanner,
+    CloseIntent, CloseProject, CloseWindow,
     with_active_or_new_workspace,
 };
 use workspace::{Pane, notifications::DetachAndPromptErr};
@@ -159,7 +159,6 @@ pub fn init(cx: &mut App) {
     cx.on_action(|_: &ShowAll, cx| cx.unhide_other_apps());
     cx.on_action(quit);
 
-    cx.on_action(|_: &RestoreBanner, cx| title_bar::restore_banner(cx));
     let flag = cx.wait_for_flag::<PanicFeatureFlag>();
     cx.spawn(async |cx| {
         if cx.update(|cx| ReleaseChannel::global(cx) == ReleaseChannel::Dev) || flag.await {

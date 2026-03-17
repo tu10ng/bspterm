@@ -116,7 +116,6 @@ To disable this behavior use:
     "show_branch_icon": false,      // Show/hide branch icon beside branch switcher
     "show_branch_name": true,       // Show/hide branch name
     "show_project_items": true,     // Show/hide project host and name
-    "show_onboarding_banner": true, // Show/hide onboarding banners
     "show_user_picture": true,      // Show/hide user avatar
     "show_user_menu": true,         // Show/hide app user button
     "show_sign_in": true,           // Show/hide sign-in button

@@ -362,7 +362,6 @@ dependencies = [
  "agent-client-protocol",
  "agent_servers",
  "agent_settings",
- "ai_onboarding",
  "anyhow",
  "arrayvec",
  "assistant_slash_command",
@@ -503,22 +502,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8e60d3430d3a69478ad0993f19238d2df97c507009a52b3c10addcd7f6bcb916"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "ai_onboarding"
-version = "0.1.0"
-dependencies = [
- "bspterm_actions",
- "client",
- "cloud_api_types",
- "component",
- "gpui",
- "language_model",
- "serde",
- "smallvec",
- "telemetry",
- "ui",
 ]
 
 [[package]]
@@ -5014,7 +4997,6 @@ dependencies = [
 name = "edit_prediction"
 version = "0.1.0"
 dependencies = [
- "ai_onboarding",
  "anyhow",
  "arrayvec",
  "brotli",
@@ -8691,7 +8673,6 @@ dependencies = [
 name = "language_models"
 version = "0.1.0"
 dependencies = [
- "ai_onboarding",
  "anthropic",
  "anyhow",
  "aws-config",
