@@ -9,6 +9,7 @@ src/
 ├── terminal_view.rs        # Main TerminalView entity (implements Item, Render)
 ├── terminal_element.rs     # Low-level GPUI element for terminal grid
 ├── terminal_panel.rs       # Dockable panel for terminal panes
+├── function_bar.rs         # Function bar modals (AddFunctionModal, EditAbbreviationModal, etc.)
 ├── button_bar.rs           # Custom button bar with script execution (@params modal support)
 ├── shortcut_bar.rs         # System action shortcuts panel
 ├── ssh_connect_modal.rs    # SSH connection setup dialog
@@ -33,6 +34,8 @@ src/
 | `SshConnectModal` | SSH connection dialog |
 | `SendText` / `SendKeystroke` | Actions to send input to terminal |
 | `HighlightWord` / `ClearWordHighlights` | Actions for persistent word highlighting |
+| `AddFunctionModal` | Modal for adding new function (script or abbreviation) |
+| `EditAbbreviationModal` | Modal for editing abbreviation trigger/expansion/protocol |
 
 ## Dependencies
 

@@ -307,6 +307,8 @@ session_edit:
   auth_private_key: "私钥"
   auth_agent: "SSH Agent"
   private_key_path: "私钥路径"
+  title_edit_protocol: "编辑 {} 会话"
+  terminal_type: "终端类型"
 
 # Group Edit Modal
 group_edit:
@@ -341,11 +343,6 @@ rule_edit:
   action_run_python: "运行 Python"
   action_sequence: "序列 ({} 个动作)"
   action_delay: "延迟 {}ms"
-
-# Session Edit Modal (additional keys)
-session_edit:
-  title_edit_protocol: "编辑 {} 会话"
-  terminal_type: "终端类型"
 
 # Quick Add - Multi Connection Modal
 multi_connection:
@@ -408,6 +405,14 @@ function:
   no_scripts_available: "暂无可用脚本"
   select_script: "选择脚本"
   new_function_script: "新建函数脚本"
+  new_abbreviation: "新建缩写"
+  abbr_trigger_word: "触发词"
+  abbr_trigger_placeholder: "触发词 (如: g)"
+  abbr_expansion_text: "展开文本"
+  abbr_expansion_placeholder: "展开文本 (如: git)"
+  edit_abbreviation: "编辑缩写"
+  abbr_label: "缩写"
+  enable_abbreviation: "启用缩写展开"
 
 # Button Bar
 button_bar:

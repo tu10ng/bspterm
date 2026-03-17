@@ -307,6 +307,8 @@ session_edit:
   auth_private_key: "Private Key"
   auth_agent: "SSH Agent"
   private_key_path: "Private Key Path"
+  title_edit_protocol: "Edit {} Session"
+  terminal_type: "Terminal Type"
 
 # Group Edit Modal
 group_edit:
@@ -341,11 +343,6 @@ rule_edit:
   action_run_python: "Run Python"
   action_sequence: "Sequence ({} actions)"
   action_delay: "Delay {}ms"
-
-# Session Edit Modal (additional keys)
-session_edit:
-  title_edit_protocol: "Edit {} Session"
-  terminal_type: "Terminal Type"
 
 # Quick Add - Multi Connection Modal
 multi_connection:
@@ -408,6 +405,14 @@ function:
   no_scripts_available: "No scripts available"
   select_script: "Select Script"
   new_function_script: "New Function Script"
+  new_abbreviation: "New Abbreviation"
+  abbr_trigger_word: "Trigger Word"
+  abbr_trigger_placeholder: "Trigger (e.g., g)"
+  abbr_expansion_text: "Expansion Text"
+  abbr_expansion_placeholder: "Expansion (e.g., git)"
+  edit_abbreviation: "Edit Abbreviation"
+  abbr_label: "Abbr"
+  enable_abbreviation: "Enable Abbreviation Expansion"
 
 # Button Bar
 button_bar:

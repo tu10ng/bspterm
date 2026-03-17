@@ -7,6 +7,28 @@ use uuid::Uuid;
 
 use crate::config_store::{ConfigItem, JsonConfigStore, default_true};
 
+/// Kind of function: script-based or simple abbreviation.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum FunctionKind {
+    #[default]
+    Script,
+    Abbreviation {
+        trigger: String,
+        expansion: String,
+    },
+}
+
+impl FunctionKind {
+    pub fn is_abbreviation(&self) -> bool {
+        matches!(self, FunctionKind::Abbreviation { .. })
+    }
+
+    pub fn is_script(&self) -> bool {
+        matches!(self, FunctionKind::Script)
+    }
+}
+
 /// Protocol type for function filtering.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -39,6 +61,8 @@ pub struct FunctionConfig {
     pub protocol: FunctionProtocol,
     #[serde(default)]
     pub description: Option<String>,
+    #[serde(flatten, default)]
+    pub kind: FunctionKind,
 }
 
 impl ConfigItem for FunctionConfig {
@@ -56,6 +80,7 @@ impl FunctionConfig {
             enabled: true,
             protocol: FunctionProtocol::All,
             description: None,
+            kind: FunctionKind::Script,
         }
     }
 
@@ -71,7 +96,37 @@ impl FunctionConfig {
             enabled: true,
             protocol,
             description: None,
+            kind: FunctionKind::Script,
         }
+    }
+
+    pub fn new_abbreviation(
+        trigger: impl Into<String>,
+        expansion: impl Into<String>,
+        protocol: FunctionProtocol,
+    ) -> Self {
+        let trigger = trigger.into();
+        let name = trigger.clone();
+        Self {
+            id: Uuid::new_v4(),
+            name,
+            script_path: PathBuf::new(),
+            enabled: true,
+            protocol,
+            description: None,
+            kind: FunctionKind::Abbreviation {
+                trigger,
+                expansion: expansion.into(),
+            },
+        }
+    }
+
+    pub fn is_abbreviation(&self) -> bool {
+        self.kind.is_abbreviation()
+    }
+
+    pub fn is_script(&self) -> bool {
+        self.kind.is_script()
     }
 }
 
@@ -85,6 +140,8 @@ pub struct FunctionStore {
     pub function_enabled: bool,
     #[serde(default = "default_true")]
     pub show_function_bar: bool,
+    #[serde(default = "default_true")]
+    pub abbreviation_enabled: bool,
 }
 
 impl JsonConfigStore for FunctionStore {
@@ -112,6 +169,7 @@ impl FunctionStore {
             functions: Vec::new(),
             function_enabled: true,
             show_function_bar: true,
+            abbreviation_enabled: true,
         }
     }
 
@@ -174,6 +232,24 @@ impl FunctionStore {
     pub fn move_function(&mut self, id: Uuid, new_index: usize) -> bool {
         self.move_item(id, new_index)
     }
+
+    pub fn find_abbreviation_by_trigger(
+        &self,
+        trigger: &str,
+        protocol: Option<&FunctionProtocol>,
+    ) -> Option<&FunctionConfig> {
+        self.functions.iter().find(|f| {
+            f.enabled
+                && matches!(
+                    &f.kind,
+                    FunctionKind::Abbreviation {
+                        trigger: t,
+                        ..
+                    } if t == trigger
+                )
+                && Self::protocol_matches(&f.protocol, protocol)
+        })
+    }
 }
 
 /// Events emitted by the function store for UI subscription.
@@ -183,6 +259,7 @@ pub enum FunctionStoreEvent {
     FunctionAdded(Uuid),
     FunctionRemoved(Uuid),
     FunctionEnabledToggled(bool),
+    AbbreviationEnabledToggled(bool),
 }
 
 /// Global marker for cx.global access.
@@ -282,6 +359,30 @@ impl FunctionStoreEntity {
         }
     }
 
+    /// Get whether abbreviation expansion is enabled.
+    pub fn abbreviation_enabled(&self) -> bool {
+        self.store.abbreviation_enabled
+    }
+
+    /// Toggle abbreviation enabled state.
+    pub fn toggle_abbreviation_enabled(&mut self, cx: &mut Context<Self>) {
+        self.store.abbreviation_enabled = !self.store.abbreviation_enabled;
+        self.schedule_save(cx);
+        cx.emit(FunctionStoreEvent::AbbreviationEnabledToggled(
+            self.store.abbreviation_enabled,
+        ));
+        cx.notify();
+    }
+
+    /// Find an abbreviation by its trigger word, optionally filtered by protocol.
+    pub fn find_abbreviation_by_trigger(
+        &self,
+        trigger: &str,
+        protocol: Option<&FunctionProtocol>,
+    ) -> Option<&FunctionConfig> {
+        self.store.find_abbreviation_by_trigger(trigger, protocol)
+    }
+
     /// Add a function and trigger save.
     pub fn add_function(&mut self, func: FunctionConfig, cx: &mut Context<Self>) {
         let id = func.id;
@@ -358,6 +459,14 @@ impl FunctionStoreEntity {
         protocol: Option<&FunctionProtocol>,
     ) -> Vec<&FunctionConfig> {
         self.store.functions_for_protocol(protocol)
+    }
+
+    #[cfg(test)]
+    pub fn new_for_test(store: FunctionStore) -> Self {
+        Self {
+            store,
+            save_task: None,
+        }
     }
 
     fn schedule_save(&mut self, cx: &mut Context<Self>) {

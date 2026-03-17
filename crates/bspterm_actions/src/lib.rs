@@ -499,7 +499,11 @@ pub mod terminal_function_bar {
             /// Deletes the selected function.
             DeleteFunction,
             /// Toggles whether function invocation is enabled.
-            ToggleFunctionEnabled
+            ToggleFunctionEnabled,
+            /// Opens a dialog to edit an abbreviation in the function bar.
+            EditAbbreviationInBar,
+            /// Toggles whether abbreviation expansion is enabled.
+            ToggleAbbreviationEnabled
         ]
     );
 }

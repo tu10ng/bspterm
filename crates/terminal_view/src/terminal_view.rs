@@ -85,18 +85,19 @@ use bspterm_actions::{
     log_tracer::TraceCallGraph,
     terminal_button_bar::{ConfigureButtonBar, ToggleButtonBar},
     terminal_function_bar::{
-        AddFunction, ConfigureFunctionBar, DeleteFunction, EditFunctionScript,
-        RenameFunctionButton, ToggleFunctionBar, ToggleFunctionEnabled,
+        AddFunction, ConfigureFunctionBar, DeleteFunction, EditAbbreviationInBar,
+        EditFunctionScript, RenameFunctionButton, ToggleAbbreviationEnabled,
+        ToggleFunctionBar, ToggleFunctionEnabled,
     },
     terminal_shortcut_bar::{ConfigureShortcutBar, RunScriptShortcut, ToggleShortcutBar},
 };
 use call_graph_panel::TraceConfigModal;
 use button_bar::ButtonBarScriptRunner;
-use function_bar::{FunctionBarConfigModal, AddFunctionModal, RenameFunctionModal};
+use function_bar::{FunctionBarConfigModal, AddFunctionModal, EditAbbreviationModal, RenameFunctionModal};
 use shortcut_bar::{AddShortcutModal, EditShortcutModal, ShortcutBarConfigModal};
 use terminal::{
     SessionStoreEntity, get_action_label,
-    ButtonBarStoreEntity, ButtonBarStoreEvent, FunctionProtocol,
+    ButtonBarStoreEntity, ButtonBarStoreEvent, FunctionKind, FunctionProtocol,
     FunctionStoreEntity, RuleStoreEntity, RuleStoreEvent,
     ShortcutBarStoreEntity, ShortcutBarStoreEvent, SuggestionHistoryEntity,
     ALL_SYSTEM_ACTIONS,
@@ -1878,12 +1879,25 @@ print(output)
     ) {
         self.selected_function = Some((func_id, script_path));
 
+        // Check if this is an abbreviation item
+        let is_abbreviation = FunctionStoreEntity::try_global(cx)
+            .and_then(|store| {
+                store.read(cx).find_function(func_id).map(|f| f.is_abbreviation())
+            })
+            .unwrap_or(false);
+
         let context_menu = ContextMenu::build(window, cx, |menu, _, _| {
-            menu.context(self.focus_handle.clone())
-                .action(t("function.edit_script"), Box::new(EditFunctionScript))
-                .action(t("function.edit_name_title"), Box::new(RenameFunctionButton))
-                .separator()
-                .action(t("common.delete"), Box::new(DeleteFunction))
+            let menu = menu.context(self.focus_handle.clone());
+            if is_abbreviation {
+                menu.action(t("function.edit_abbreviation"), Box::new(EditAbbreviationInBar))
+                    .separator()
+                    .action(t("common.delete"), Box::new(DeleteFunction))
+            } else {
+                menu.action(t("function.edit_script"), Box::new(EditFunctionScript))
+                    .action(t("function.edit_name_title"), Box::new(RenameFunctionButton))
+                    .separator()
+                    .action(t("common.delete"), Box::new(DeleteFunction))
+            }
         });
 
         window.focus(&context_menu.focus_handle(cx), cx);
@@ -1946,6 +1960,7 @@ print(output)
             .cloned()
             .collect();
         let function_enabled = store.read(cx).function_enabled();
+        let abbreviation_enabled = store.read(cx).abbreviation_enabled();
         let terminal_view_handle = cx.entity().downgrade();
 
         h_flex()
@@ -1988,8 +2003,19 @@ print(output)
             .children(functions.iter().map(|func| {
                 let func_id = func.id;
                 let func_name = func.name.clone();
-                let func_name_display = func_name.clone();
                 let func_script_path = func.script_path.clone();
+                let is_abbreviation = func.is_abbreviation();
+                let abbr_expansion = match &func.kind {
+                    FunctionKind::Abbreviation { trigger, expansion } => {
+                        Some((trigger.clone(), expansion.clone()))
+                    }
+                    _ => None,
+                };
+                let func_name_display = if let Some((ref trigger, ref expansion)) = abbr_expansion {
+                    format!("{} → {}", trigger, expansion)
+                } else {
+                    func_name.clone()
+                };
                 let terminal_view_handle = terminal_view_handle.clone();
                 let terminal_view_handle_for_menu = terminal_view_handle.clone();
                 let drag_data = DraggedFunction {
@@ -2075,7 +2101,12 @@ print(output)
                                     .px_1p5()
                                     .py_0p5()
                                     .rounded_sm()
-                                    .bg(cx.theme().colors().element_background)
+                                    .when(is_abbreviation, |this| {
+                                        this.bg(cx.theme().colors().ghost_element_background)
+                                    })
+                                    .when(!is_abbreviation, |this| {
+                                        this.bg(cx.theme().colors().element_background)
+                                    })
                                     .border_1()
                                     .border_color(cx.theme().colors().border)
                                     .hover(|s| s.bg(cx.theme().colors().element_hover))
@@ -2083,14 +2114,22 @@ print(output)
                                     .on_click(cx.listener({
                                         let func_name = func_name.clone();
                                         let func_script_path = func_script_path.clone();
+                                        let abbr_expansion = abbr_expansion.clone();
                                         move |this, _, window, cx| {
-                                            this.execute_function_from_bar(
-                                                func_id,
-                                                func_name.clone(),
-                                                func_script_path.clone(),
-                                                window,
-                                                cx,
-                                            );
+                                            if let Some((_, ref expansion)) = abbr_expansion {
+                                                // Abbreviation: send expansion text directly
+                                                this.terminal.update(cx, |term, _| {
+                                                    term.input(expansion.as_bytes().to_vec());
+                                                });
+                                            } else {
+                                                this.execute_function_from_bar(
+                                                    func_id,
+                                                    func_name.clone(),
+                                                    func_script_path.clone(),
+                                                    window,
+                                                    cx,
+                                                );
+                                            }
                                         }
                                     }))
                                     .child(
@@ -2143,6 +2182,30 @@ print(output)
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.toggle_function_enabled(&ToggleFunctionEnabled, window, cx);
                         })),
+                    )
+                    .child(
+                        h_flex()
+                            .gap_0p5()
+                            .items_center()
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().colors().text_muted)
+                                    .child(t("function.abbr_label")),
+                            )
+                            .child(
+                                Switch::new(
+                                    "abbreviation-enabled-switch",
+                                    if abbreviation_enabled {
+                                        ToggleState::Selected
+                                    } else {
+                                        ToggleState::Unselected
+                                    },
+                                )
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.toggle_abbreviation_enabled(&ToggleAbbreviationEnabled, window, cx);
+                                })),
+                            ),
                     ),
             )
             .into_any_element()
@@ -2286,6 +2349,38 @@ print(output)
                 store.toggle_function_enabled(cx);
             });
         }
+    }
+
+    fn toggle_abbreviation_enabled(
+        &mut self,
+        _: &ToggleAbbreviationEnabled,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(store) = FunctionStoreEntity::try_global(cx) {
+            store.update(cx, |store, cx| {
+                store.toggle_abbreviation_enabled(cx);
+            });
+        }
+    }
+
+    fn edit_abbreviation_in_bar(
+        &mut self,
+        _: &EditAbbreviationInBar,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((func_id, _)) = self.selected_function.take() else {
+            return;
+        };
+
+        self.workspace
+            .update(cx, |workspace, cx| {
+                workspace.toggle_modal(window, cx, |window, cx| {
+                    EditAbbreviationModal::new(func_id, window, cx)
+                });
+            })
+            .ok();
     }
 
     fn toggle_shortcut_bar(
@@ -2680,6 +2775,7 @@ print(output)
                 term.try_keystroke(
                     &Keystroke::parse("ctrl-cmd-space").unwrap(),
                     TerminalSettings::get_global(cx).option_as_meta,
+                    false,
                     false,
                     cx,
                 )
@@ -3742,9 +3838,12 @@ impl TerminalView {
     /// updates the cursor locally without sending data to the shell, so there's no
     /// shell output to automatically trigger a re-render.
     fn process_keystroke(&mut self, keystroke: &Keystroke, cx: &mut Context<Self>) -> bool {
-        let function_enabled = FunctionStoreEntity::try_global(cx)
-            .map(|store| store.read(cx).function_enabled())
-            .unwrap_or(false);
+        let (function_enabled, abbr_enabled) = FunctionStoreEntity::try_global(cx)
+            .map(|store| {
+                let s = store.read(cx);
+                (s.function_enabled(), s.abbreviation_enabled())
+            })
+            .unwrap_or((false, false));
 
         let (handled, vi_mode_enabled) = self.terminal.update(cx, |term, cx| {
             (
@@ -3752,6 +3851,7 @@ impl TerminalView {
                     keystroke,
                     TerminalSettings::get_global(cx).option_as_meta,
                     function_enabled,
+                    abbr_enabled,
                     cx,
                 ),
                 term.vi_mode_enabled(),
@@ -4056,6 +4156,8 @@ impl Render for TerminalView {
             .on_action(cx.listener(Self::rename_function_button))
             .on_action(cx.listener(Self::delete_function))
             .on_action(cx.listener(Self::toggle_function_enabled))
+            .on_action(cx.listener(Self::toggle_abbreviation_enabled))
+            .on_action(cx.listener(Self::edit_abbreviation_in_bar))
             .on_action(cx.listener(Self::toggle_shortcut_bar))
             .on_action(cx.listener(Self::configure_shortcut_bar))
             .on_action(cx.listener(Self::run_script_shortcut))

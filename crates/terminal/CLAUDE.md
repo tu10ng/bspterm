@@ -47,7 +47,9 @@ src/
 | `RuleStore` / `RuleEngine` | Automation rules with pattern matching |
 | `AutomationRule` | Trigger + condition + action definition |
 | `RecognizeConfig` / `RecognizeConfigEntity` | Quick Add auto-recognition rules (version-aware defaults) |
-| `FunctionStore` | Function bar configurations with protocol filtering |
+| `FunctionStore` | Function bar configurations with protocol filtering (Script + Abbreviation kinds) |
+| `FunctionKind` | Enum: `Script` (default) or `Abbreviation { trigger, expansion }` |
+| `AbbreviationExpansion` | Result of abbreviation trigger check (trigger_len + expansion text) |
 | `HighlightStore` | Highlight rules with priority sorting |
 | `ButtonBarStore` | Button bar configurations |
 | `Event` | Terminal events (title changed, disconnected, login complete) |

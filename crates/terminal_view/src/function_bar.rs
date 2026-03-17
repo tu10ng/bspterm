@@ -8,7 +8,7 @@ use gpui::{
 };
 use i18n::t;
 use terminal::{
-    FunctionConfig, FunctionProtocol, FunctionStoreEntity, FunctionStoreEvent,
+    FunctionConfig, FunctionKind, FunctionProtocol, FunctionStoreEntity, FunctionStoreEvent,
 };
 use ui::Tooltip;
 use ui::{
@@ -126,6 +126,13 @@ impl Render for FunctionBarConfigModal {
         let store = FunctionStoreEntity::global(cx);
         let functions = store.read(cx).functions().to_vec();
         let function_enabled = store.read(cx).function_enabled();
+        let abbreviation_enabled = store.read(cx).abbreviation_enabled();
+
+        let abbreviation_items: Vec<_> = functions
+            .iter()
+            .filter(|f| f.is_abbreviation())
+            .cloned()
+            .collect();
 
         let scripts_dir = paths::config_dir().join("scripts");
         let all_scripts = Self::scan_scripts(&scripts_dir);
@@ -183,6 +190,92 @@ impl Render for FunctionBarConfigModal {
                         }),
                     ),
             )
+            .child(
+                h_flex()
+                    .py_1()
+                    .px_2()
+                    .rounded_sm()
+                    .justify_between()
+                    .bg(cx.theme().colors().element_background)
+                    .child(div().text_sm().child(t("function.enable_abbreviation")))
+                    .child(
+                        Switch::new(
+                            "abbreviation-enabled-switch",
+                            if abbreviation_enabled {
+                                ToggleState::Selected
+                            } else {
+                                ToggleState::Unselected
+                            },
+                        )
+                        .on_click(move |_state, _window, cx| {
+                            if let Some(store) = FunctionStoreEntity::try_global(cx) {
+                                store.update(cx, |store, cx| {
+                                    store.toggle_abbreviation_enabled(cx);
+                                });
+                            }
+                        }),
+                    ),
+            )
+            .when(!abbreviation_items.is_empty(), |this| {
+                this.child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().colors().text_muted)
+                        .child(t("function.abbr_label")),
+                )
+                .child(
+                    v_flex().gap_1().children(abbreviation_items.iter().map(|func| {
+                        let func_id = func.id;
+                        let (trigger, expansion) = match &func.kind {
+                            FunctionKind::Abbreviation { trigger, expansion } => {
+                                (trigger.clone(), expansion.clone())
+                            }
+                            _ => (String::new(), String::new()),
+                        };
+                        let display = format!("{} → {}", trigger, expansion);
+
+                        h_flex()
+                            .py_1()
+                            .px_2()
+                            .rounded_sm()
+                            .justify_between()
+                            .hover(|s| s.bg(cx.theme().colors().element_hover))
+                            .child(
+                                h_flex()
+                                    .gap_2()
+                                    .items_center()
+                                    .flex_1()
+                                    .overflow_x_hidden()
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .font_weight(gpui::FontWeight::MEDIUM)
+                                            .child(display),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .px_1()
+                                            .rounded_sm()
+                                            .bg(cx.theme().colors().element_background)
+                                            .text_color(cx.theme().colors().text_muted)
+                                            .child(func.protocol.label()),
+                                    ),
+                            )
+                            .child(
+                                IconButton::new(
+                                    SharedString::from(format!("delete-abbr-{}", func_id)),
+                                    IconName::Trash,
+                                )
+                                .icon_size(IconSize::Small)
+                                .tooltip(Tooltip::text(t("common.delete")))
+                                .on_click(move |_, _window, cx| {
+                                    Self::delete_function(func_id, cx);
+                                }),
+                            )
+                    })),
+                )
+            })
             .child(
                 div()
                     .text_xs()
@@ -324,6 +417,7 @@ pub enum AddFunctionMode {
     SelectType,
     NewScript,
     SelectExisting,
+    NewAbbreviation,
 }
 
 /// Modal dialog for adding a new function.
@@ -332,6 +426,8 @@ pub struct AddFunctionModal {
     workspace: WeakEntity<Workspace>,
     mode: AddFunctionMode,
     name_editor: Entity<Editor>,
+    trigger_editor: Entity<Editor>,
+    expansion_editor: Entity<Editor>,
     protocol: FunctionProtocol,
     selected_script: Option<PathBuf>,
     available_scripts: Vec<PathBuf>,
@@ -363,6 +459,18 @@ impl AddFunctionModal {
             editor
         });
 
+        let trigger_editor = cx.new(|cx| {
+            let mut editor = Editor::single_line(window, cx);
+            editor.set_placeholder_text(&t("function.abbr_trigger_placeholder"), window, cx);
+            editor
+        });
+
+        let expansion_editor = cx.new(|cx| {
+            let mut editor = Editor::single_line(window, cx);
+            editor.set_placeholder_text(&t("function.abbr_expansion_placeholder"), window, cx);
+            editor
+        });
+
         let available_scripts = scan_available_scripts();
 
         Self {
@@ -370,6 +478,8 @@ impl AddFunctionModal {
             workspace,
             mode: AddFunctionMode::SelectType,
             name_editor,
+            trigger_editor,
+            expansion_editor,
             protocol: default_protocol,
             selected_script: None,
             available_scripts,
@@ -390,6 +500,12 @@ impl AddFunctionModal {
         self.selected_script = None;
 
         self.name_editor.update(cx, |editor, cx| {
+            editor.set_text(String::new(), window, cx);
+        });
+        self.trigger_editor.update(cx, |editor, cx| {
+            editor.set_text(String::new(), window, cx);
+        });
+        self.expansion_editor.update(cx, |editor, cx| {
             editor.set_text(String::new(), window, cx);
         });
 
@@ -512,6 +628,121 @@ term = current_terminal()
         self.dismiss(window, cx);
     }
 
+    fn create_abbreviation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let trigger = self.trigger_editor.read(cx).text(cx).trim().to_string();
+        let expansion = self.expansion_editor.read(cx).text(cx).trim().to_string();
+
+        if trigger.is_empty() || expansion.is_empty() {
+            return;
+        }
+
+        let protocol = self.protocol.clone();
+        if let Some(store) = FunctionStoreEntity::try_global(cx) {
+            let function = FunctionConfig::new_abbreviation(trigger, expansion, protocol);
+            store.update(cx, |store, cx| {
+                store.add_function(function, cx);
+            });
+        }
+
+        self.dismiss(window, cx);
+    }
+
+    fn render_new_abbreviation(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        v_flex()
+            .gap_3()
+            .child(
+                v_flex()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().colors().text_muted)
+                            .child(t("function.abbr_trigger_word")),
+                    )
+                    .child(
+                        div()
+                            .w_full()
+                            .px_2()
+                            .py_1()
+                            .rounded_sm()
+                            .border_1()
+                            .border_color(cx.theme().colors().border)
+                            .child(self.trigger_editor.clone()),
+                    ),
+            )
+            .child(
+                v_flex()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().colors().text_muted)
+                            .child(t("function.abbr_expansion_text")),
+                    )
+                    .child(
+                        div()
+                            .w_full()
+                            .px_2()
+                            .py_1()
+                            .rounded_sm()
+                            .border_1()
+                            .border_color(cx.theme().colors().border)
+                            .child(self.expansion_editor.clone()),
+                    ),
+            )
+            .child(
+                v_flex()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().colors().text_muted)
+                            .child(t("function.applicable_protocol")),
+                    )
+                    .child(
+                        h_flex()
+                            .gap_1()
+                            .child(protocol_button(
+                                "protocol-all-abbr",
+                                FunctionProtocol::All,
+                                &self.protocol,
+                                cx,
+                            ))
+                            .child(protocol_button(
+                                "protocol-ssh-abbr",
+                                FunctionProtocol::Ssh,
+                                &self.protocol,
+                                cx,
+                            ))
+                            .child(protocol_button(
+                                "protocol-telnet-abbr",
+                                FunctionProtocol::Telnet,
+                                &self.protocol,
+                                cx,
+                            )),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .gap_2()
+                    .justify_end()
+                    .child(
+                        ui::Button::new("cancel-btn", t("common.cancel"))
+                            .style(ui::ButtonStyle::Subtle)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.set_mode(AddFunctionMode::SelectType, window, cx);
+                            })),
+                    )
+                    .child(
+                        ui::Button::new("create-btn", t("common.confirm"))
+                            .style(ui::ButtonStyle::Filled)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.create_abbreviation(window, cx);
+                            })),
+                    ),
+            )
+    }
+
     fn render_select_type(&self, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .gap_2()
@@ -539,6 +770,19 @@ term = current_terminal()
                     .child(t("function.select_existing_script"))
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.set_mode(AddFunctionMode::SelectExisting, window, cx);
+                    })),
+            )
+            .child(
+                ListItem::new("new-abbreviation-option")
+                    .spacing(ListItemSpacing::Sparse)
+                    .start_slot(
+                        ui::Icon::new(IconName::Replace)
+                            .size(IconSize::Small)
+                            .color(Color::Accent),
+                    )
+                    .child(t("function.new_abbreviation"))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.set_mode(AddFunctionMode::NewAbbreviation, window, cx);
                     })),
             )
     }
@@ -745,6 +989,7 @@ impl Render for AddFunctionModal {
             AddFunctionMode::SelectType => t("function.add_title"),
             AddFunctionMode::NewScript => t("function.new_function_script"),
             AddFunctionMode::SelectExisting => t("function.select_script"),
+            AddFunctionMode::NewAbbreviation => t("function.new_abbreviation"),
         };
 
         v_flex()
@@ -779,6 +1024,9 @@ impl Render for AddFunctionModal {
                 AddFunctionMode::NewScript => self.render_new_script(cx).into_any_element(),
                 AddFunctionMode::SelectExisting => {
                     self.render_select_existing(cx).into_any_element()
+                }
+                AddFunctionMode::NewAbbreviation => {
+                    self.render_new_abbreviation(cx).into_any_element()
                 }
             })
     }
@@ -934,6 +1182,204 @@ impl Render for RenameFunctionModal {
                                     ))
                                     .child(rename_protocol_button(
                                         "rename-telnet",
+                                        FunctionProtocol::Telnet,
+                                        &current_protocol,
+                                        cx,
+                                    )),
+                            ),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(
+                        ui::Button::new("cancel", t("common.cancel"))
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.dismiss(&menu::Cancel, window, cx)
+                            })),
+                    )
+                    .child(
+                        ui::Button::new("confirm", t("common.confirm"))
+                            .style(ui::ButtonStyle::Filled)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.confirm(&menu::Confirm, window, cx)
+                            })),
+                    ),
+            )
+    }
+}
+
+fn edit_abbr_protocol_button(
+    id: &str,
+    protocol: FunctionProtocol,
+    current: &FunctionProtocol,
+    cx: &mut Context<EditAbbreviationModal>,
+) -> impl IntoElement {
+    let is_selected = &protocol == current;
+    let label = protocol.label();
+    let protocol_clone = protocol.clone();
+
+    ui::Button::new(SharedString::from(id.to_string()), label)
+        .style(if is_selected {
+            ui::ButtonStyle::Tinted(TintColor::Accent)
+        } else {
+            ui::ButtonStyle::Subtle
+        })
+        .on_click(cx.listener(move |this, _, _window, cx| {
+            this.protocol = protocol_clone.clone();
+            cx.notify();
+        }))
+}
+
+/// Modal dialog for editing an abbreviation (trigger, expansion, protocol).
+pub struct EditAbbreviationModal {
+    focus_handle: FocusHandle,
+    func_id: Uuid,
+    trigger_editor: Entity<Editor>,
+    expansion_editor: Entity<Editor>,
+    protocol: FunctionProtocol,
+}
+
+impl ModalView for EditAbbreviationModal {}
+
+impl EventEmitter<DismissEvent> for EditAbbreviationModal {}
+
+impl Focusable for EditAbbreviationModal {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl EditAbbreviationModal {
+    pub fn new(func_id: Uuid, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let focus_handle = cx.focus_handle();
+        focus_handle.focus(window, cx);
+
+        let store = FunctionStoreEntity::global(cx);
+        let func = store.read(cx).find_function(func_id);
+
+        let (trigger_text, expansion_text, protocol) = func
+            .map(|f| {
+                let (trigger, expansion) = match &f.kind {
+                    FunctionKind::Abbreviation { trigger, expansion } => {
+                        (trigger.clone(), expansion.clone())
+                    }
+                    _ => (String::new(), String::new()),
+                };
+                (trigger, expansion, f.protocol.clone())
+            })
+            .unwrap_or_default();
+
+        let trigger_editor = cx.new(|cx| {
+            let mut editor = Editor::single_line(window, cx);
+            editor.set_text(trigger_text, window, cx);
+            editor
+        });
+
+        let expansion_editor = cx.new(|cx| {
+            let mut editor = Editor::single_line(window, cx);
+            editor.set_text(expansion_text, window, cx);
+            editor
+        });
+
+        Self {
+            focus_handle,
+            func_id,
+            trigger_editor,
+            expansion_editor,
+            protocol,
+        }
+    }
+
+    fn confirm(&mut self, _: &menu::Confirm, _window: &mut Window, cx: &mut Context<Self>) {
+        let trigger = self.trigger_editor.read(cx).text(cx).trim().to_string();
+        let expansion = self.expansion_editor.read(cx).text(cx).trim().to_string();
+
+        if trigger.is_empty() || expansion.is_empty() {
+            cx.emit(DismissEvent);
+            return;
+        }
+
+        if let Some(store) = FunctionStoreEntity::try_global(cx) {
+            let func_id = self.func_id;
+            let protocol = self.protocol.clone();
+            store.update(cx, |store, cx| {
+                store.update_function(
+                    func_id,
+                    move |func| {
+                        func.name = trigger.clone();
+                        func.protocol = protocol;
+                        func.kind = FunctionKind::Abbreviation { trigger, expansion };
+                    },
+                    cx,
+                );
+            });
+        }
+
+        cx.emit(DismissEvent);
+    }
+
+    fn dismiss(&mut self, _: &menu::Cancel, _window: &mut Window, cx: &mut Context<Self>) {
+        cx.emit(DismissEvent);
+    }
+}
+
+impl Render for EditAbbreviationModal {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let current_protocol = self.protocol.clone();
+
+        v_flex()
+            .key_context("EditAbbreviationModal")
+            .elevation_3(cx)
+            .p_4()
+            .gap_3()
+            .w(px(400.0))
+            .track_focus(&self.focus_handle)
+            .on_action(cx.listener(Self::confirm))
+            .on_action(cx.listener(Self::dismiss))
+            .child(
+                div()
+                    .text_sm()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child(t("function.edit_abbreviation")),
+            )
+            .child(
+                v_flex()
+                    .gap_2()
+                    .child(
+                        v_flex()
+                            .gap_1()
+                            .child(Label::new(t("function.abbr_trigger_word")).size(LabelSize::Small))
+                            .child(self.trigger_editor.clone()),
+                    )
+                    .child(
+                        v_flex()
+                            .gap_1()
+                            .child(Label::new(t("function.abbr_expansion_text")).size(LabelSize::Small))
+                            .child(self.expansion_editor.clone()),
+                    )
+                    .child(
+                        v_flex()
+                            .gap_1()
+                            .child(Label::new(t("function.applicable_protocol")).size(LabelSize::Small))
+                            .child(
+                                h_flex()
+                                    .gap_2()
+                                    .child(edit_abbr_protocol_button(
+                                        "edit-abbr-all",
+                                        FunctionProtocol::All,
+                                        &current_protocol,
+                                        cx,
+                                    ))
+                                    .child(edit_abbr_protocol_button(
+                                        "edit-abbr-ssh",
+                                        FunctionProtocol::Ssh,
+                                        &current_protocol,
+                                        cx,
+                                    ))
+                                    .child(edit_abbr_protocol_button(
+                                        "edit-abbr-telnet",
                                         FunctionProtocol::Telnet,
                                         &current_protocol,
                                         cx,

@@ -30,8 +30,8 @@ pub use button_bar_config::{
 };
 
 pub use function_store::{
-    FunctionConfig, FunctionProtocol, FunctionStore, FunctionStoreEntity, FunctionStoreEvent,
-    GlobalFunctionStore,
+    FunctionConfig, FunctionKind, FunctionProtocol, FunctionStore, FunctionStoreEntity,
+    FunctionStoreEvent, GlobalFunctionStore,
 };
 
 pub use rule_store::{
@@ -249,6 +249,14 @@ pub struct FunctionInvocation {
     pub arguments: Vec<String>,
     /// The raw argument string (everything after the function name).
     pub raw_args: String,
+}
+
+/// Result of checking for abbreviation expansion.
+pub struct AbbreviationExpansion {
+    /// Number of bytes to erase (the trigger word length).
+    pub trigger_len: usize,
+    /// The text to insert as replacement.
+    pub expansion: String,
 }
 
 ///Upward flowing events, for changing the title and such
@@ -2601,6 +2609,7 @@ impl Terminal {
         keystroke: &Keystroke,
         option_as_meta: bool,
         function_enabled: bool,
+        abbr_enabled: bool,
         cx: &mut Context<Self>,
     ) -> bool {
         if self.vi_mode_enabled {
@@ -2781,6 +2790,14 @@ impl Terminal {
                 }
             }
 
+            // For Enter, check abbreviation expansion (lower priority than function invocation)
+            if abbr_enabled && is_enter {
+                if let Some(expansion) = self.try_expand_abbreviation_for_enter(cx) {
+                    self.apply_expansion_for_enter(expansion);
+                    // After expansion, fall through to send Enter normally
+                }
+            }
+
             let is_backward_kill_word = keystroke.key.as_str() == "backspace"
                 && keystroke.modifiers.alt
                 && !keystroke.modifiers.control
@@ -2849,6 +2866,17 @@ impl Terminal {
                 // the rendering guard hides/shows ghost text based on cursor position.
             } else {
                 self.update_input_buffers(input_bytes);
+            }
+
+            // Space - check abbreviation expansion before sending to PTY
+            let is_space = input_bytes == [b' '];
+            if abbr_enabled && is_space {
+                if let Some(expansion) = self.try_expand_abbreviation(cx) {
+                    self.apply_expansion(expansion);
+                    self.update_autosuggestion_from_buffer(cx);
+                    self.autosuggestion_needs_update = true;
+                    return true;
+                }
             }
 
             self.input(input_bytes.to_vec());
@@ -2928,7 +2956,7 @@ impl Terminal {
                     0x1b => {
                         escape_state = EscapeState::Escape;
                     }
-                    // Space - triggers abbreviation check (handled separately)
+                    // Space - pushed to buffers; abbreviation check is done in try_keystroke
                     b' ' => {
                         self.current_word_buffer.push(' ');
                         self.current_line_buffer.push(' ');
@@ -3036,6 +3064,11 @@ impl Terminal {
         }
         let func = func?;
 
+        // Skip abbreviation items — they are handled by try_expand_abbreviation_for_enter
+        if func.is_abbreviation() {
+            return None;
+        }
+
         // Parse arguments (simple space-separated, respecting quotes)
         let arguments = Self::parse_function_arguments(&raw_args);
 
@@ -3079,6 +3112,148 @@ impl Terminal {
         // If there's a separator, we're not at a function position
         // (functions are only invoked when they're the sole command)
         last_command_sep.is_none()
+    }
+
+    /// Check abbreviation expansion after Space is typed.
+    /// At this point, `current_word_buffer` contains the trigger word + trailing space.
+    fn try_expand_abbreviation(&self, cx: &App) -> Option<AbbreviationExpansion> {
+        if !self.is_at_function_position() {
+            return None;
+        }
+
+        // word buffer has trigger + trailing space from update_input_buffers
+        let word = self.current_word_buffer.trim_end();
+        if word.is_empty() {
+            return None;
+        }
+
+        let Some(store_entity) = FunctionStoreEntity::try_global(cx) else {
+            return None;
+        };
+        let store = store_entity.read(cx);
+        if !store.abbreviation_enabled() {
+            return None;
+        }
+
+        let protocol = self.get_current_function_protocol();
+        let func = store.find_abbreviation_by_trigger(word, protocol.as_ref())?;
+
+        let expansion = match &func.kind {
+            FunctionKind::Abbreviation { expansion, .. } => expansion.clone(),
+            _ => return None,
+        };
+
+        log::info!(
+            "[abbr] Space expansion: trigger={:?} -> expansion={:?}",
+            word,
+            expansion
+        );
+
+        Some(AbbreviationExpansion {
+            trigger_len: word.len(),
+            expansion,
+        })
+    }
+
+    /// Apply abbreviation expansion for Space: erase trigger from terminal, send expansion + space.
+    fn apply_expansion(&mut self, expansion: AbbreviationExpansion) {
+        // Erase the trigger word from the terminal (backspace for each byte)
+        // The space hasn't been sent to PTY yet, so only erase the trigger
+        for _ in 0..expansion.trigger_len {
+            self.input(vec![0x7f]);
+        }
+
+        // Send expansion text + space
+        let mut output = expansion.expansion.clone().into_bytes();
+        output.push(b' ');
+        self.input(output);
+
+        // Update internal buffers to reflect the expansion
+        // Remove trigger + space from buffers, add expansion + space
+        self.current_word_buffer.clear();
+        self.current_word_buffer.push_str(&expansion.expansion);
+        self.current_word_buffer.push(' ');
+
+        let trigger_plus_space_len = expansion.trigger_len + 1; // trigger + space in buffer
+        let line_len = self.current_line_buffer.len();
+        if line_len >= trigger_plus_space_len {
+            self.current_line_buffer
+                .truncate(line_len - trigger_plus_space_len);
+        } else {
+            self.current_line_buffer.clear();
+        }
+        self.current_line_buffer.push_str(&expansion.expansion);
+        self.current_line_buffer.push(' ');
+    }
+
+    /// Check abbreviation expansion when Enter is pressed (lower priority than function invocation).
+    fn try_expand_abbreviation_for_enter(&self, cx: &App) -> Option<AbbreviationExpansion> {
+        if !self.is_at_function_position() {
+            return None;
+        }
+
+        let word = self.current_line_buffer.trim();
+        if word.is_empty() {
+            return None;
+        }
+
+        // Only single-word triggers (no spaces in the trigger)
+        if word.contains(' ') {
+            return None;
+        }
+
+        let Some(store_entity) = FunctionStoreEntity::try_global(cx) else {
+            return None;
+        };
+        let store = store_entity.read(cx);
+        if !store.abbreviation_enabled() {
+            return None;
+        }
+
+        let protocol = self.get_current_function_protocol();
+        let func = store.find_abbreviation_by_trigger(word, protocol.as_ref())?;
+
+        let expansion = match &func.kind {
+            FunctionKind::Abbreviation { expansion, .. } => expansion.clone(),
+            _ => return None,
+        };
+
+        log::info!(
+            "[abbr] Enter expansion: trigger={:?} -> expansion={:?}",
+            word,
+            expansion
+        );
+
+        Some(AbbreviationExpansion {
+            trigger_len: word.len(),
+            expansion,
+        })
+    }
+
+    /// Apply abbreviation expansion for Enter: erase trigger from terminal, send expansion (no Enter).
+    /// The caller will proceed to send Enter normally after this.
+    fn apply_expansion_for_enter(&mut self, expansion: AbbreviationExpansion) {
+        // Erase the trigger word from the terminal
+        for _ in 0..expansion.trigger_len {
+            self.input(vec![0x7f]);
+        }
+
+        // Send expansion text (Enter will be sent by the normal flow after this)
+        self.input(expansion.expansion.clone().into_bytes());
+
+        // Update internal buffers
+        let line_len = self.current_line_buffer.len();
+        let trigger_len = expansion.trigger_len;
+        if line_len >= trigger_len {
+            self.current_line_buffer
+                .truncate(line_len - trigger_len);
+        } else {
+            self.current_line_buffer.clear();
+        }
+        self.current_line_buffer.push_str(&expansion.expansion);
+
+        self.current_word_buffer.clear();
+        self.current_word_buffer.push_str(&expansion.expansion);
     }
 
     /// Parse function arguments from a string.
@@ -6782,6 +6957,198 @@ mod tests {
                 assert!(term.is_cursor_at_end_of_input());
                 term.update_autosuggestion(cx);
                 assert_eq!(term.autosuggestion, None);
+            });
+        }
+    }
+
+    mod abbreviation_tests {
+        use super::super::*;
+        use crate::function_store::{
+            FunctionConfig, FunctionProtocol, FunctionStore, FunctionStoreEntity,
+            GlobalFunctionStore,
+        };
+        use gpui::{Entity, TestAppContext};
+        use std::path::PathBuf;
+
+        fn build_terminal_with_functions(
+            cx: &mut TestAppContext,
+            functions: Vec<FunctionConfig>,
+        ) -> Entity<Terminal> {
+            cx.update(|cx| {
+                let settings_store = settings::SettingsStore::test(cx);
+                cx.set_global(settings_store);
+
+                let mut store = FunctionStore::new();
+                for func in functions {
+                    store.add_function(func);
+                }
+                let entity = cx.new(|_| FunctionStoreEntity::new_for_test(store));
+                cx.set_global(GlobalFunctionStore(entity));
+            });
+
+            let window = cx.add_empty_window();
+            let builder = window.update(|_window, cx| {
+                TerminalBuilder::new_display_only(
+                    CursorShape::default(),
+                    AlternateScroll::On,
+                    None,
+                    0,
+                    cx.background_executor(),
+                    PathStyle::local(),
+                )
+                .unwrap()
+            });
+            window.new(|cx| builder.subscribe(cx))
+        }
+
+        fn build_terminal_with_functions_store(
+            cx: &mut TestAppContext,
+            store: FunctionStore,
+        ) -> Entity<Terminal> {
+            cx.update(|cx| {
+                let settings_store = settings::SettingsStore::test(cx);
+                cx.set_global(settings_store);
+
+                let entity = cx.new(|_| FunctionStoreEntity::new_for_test(store));
+                cx.set_global(GlobalFunctionStore(entity));
+            });
+
+            let window = cx.add_empty_window();
+            let builder = window.update(|_window, cx| {
+                TerminalBuilder::new_display_only(
+                    CursorShape::default(),
+                    AlternateScroll::On,
+                    None,
+                    0,
+                    cx.background_executor(),
+                    PathStyle::local(),
+                )
+                .unwrap()
+            });
+            window.new(|cx| builder.subscribe(cx))
+        }
+
+        #[gpui::test]
+        async fn test_try_invoke_function_skips_abbreviation(cx: &mut TestAppContext) {
+            let abbreviation =
+                FunctionConfig::new_abbreviation("l", "ls -lahtr", FunctionProtocol::All);
+            let terminal = build_terminal_with_functions(cx, vec![abbreviation]);
+
+            terminal.update(cx, |term, cx| {
+                term.update_input_buffers(b"l");
+                let result = term.try_invoke_function(cx);
+                assert!(
+                    result.is_none(),
+                    "try_invoke_function should skip abbreviation items"
+                );
+            });
+        }
+
+        #[gpui::test]
+        async fn test_try_invoke_function_matches_script(cx: &mut TestAppContext) {
+            let script = FunctionConfig::new("deploy", PathBuf::from("/scripts/deploy.py"));
+            let terminal = build_terminal_with_functions(cx, vec![script]);
+
+            terminal.update(cx, |term, cx| {
+                term.update_input_buffers(b"deploy");
+                let result = term.try_invoke_function(cx);
+                assert!(
+                    result.is_some(),
+                    "try_invoke_function should match script functions"
+                );
+                let invocation = result.unwrap();
+                assert_eq!(invocation.function_name, "deploy");
+                assert_eq!(invocation.script_path, PathBuf::from("/scripts/deploy.py"));
+                assert!(invocation.arguments.is_empty());
+                assert_eq!(invocation.raw_args, "");
+            });
+        }
+
+        #[gpui::test]
+        async fn test_try_expand_abbreviation_for_enter(cx: &mut TestAppContext) {
+            let abbreviation =
+                FunctionConfig::new_abbreviation("l", "ls -lahtr", FunctionProtocol::All);
+            let terminal = build_terminal_with_functions(cx, vec![abbreviation]);
+
+            terminal.update(cx, |term, cx| {
+                term.update_input_buffers(b"l");
+                let result = term.try_expand_abbreviation_for_enter(cx);
+                assert!(
+                    result.is_some(),
+                    "try_expand_abbreviation_for_enter should match single-word trigger"
+                );
+                let expansion = result.unwrap();
+                assert_eq!(expansion.trigger_len, 1);
+                assert_eq!(expansion.expansion, "ls -lahtr");
+            });
+        }
+
+        #[gpui::test]
+        async fn test_abbreviation_enter_no_match_multiword(cx: &mut TestAppContext) {
+            let abbreviation =
+                FunctionConfig::new_abbreviation("l", "ls -lahtr", FunctionProtocol::All);
+            let terminal = build_terminal_with_functions(cx, vec![abbreviation]);
+
+            terminal.update(cx, |term, cx| {
+                term.update_input_buffers(b"l extra");
+                let result = term.try_expand_abbreviation_for_enter(cx);
+                assert!(
+                    result.is_none(),
+                    "try_expand_abbreviation_for_enter should reject multi-word input"
+                );
+            });
+        }
+
+        #[gpui::test]
+        async fn test_script_and_abbreviation_coexist(cx: &mut TestAppContext) {
+            let script = FunctionConfig::new("deploy", PathBuf::from("/scripts/deploy.py"));
+            let abbreviation =
+                FunctionConfig::new_abbreviation("l", "ls -lahtr", FunctionProtocol::All);
+            let terminal = build_terminal_with_functions(cx, vec![script, abbreviation]);
+
+            terminal.update(cx, |term, cx| {
+                // "deploy" should be handled by try_invoke_function (script), not abbreviation
+                term.update_input_buffers(b"deploy");
+                assert!(
+                    term.try_invoke_function(cx).is_some(),
+                    "deploy should match as script function"
+                );
+                assert!(
+                    term.try_expand_abbreviation_for_enter(cx).is_none(),
+                    "deploy should not match as abbreviation"
+                );
+
+                // "l" should be handled by try_expand_abbreviation_for_enter, not try_invoke_function
+                term.clear_input_buffers();
+                term.update_input_buffers(b"l");
+                assert!(
+                    term.try_invoke_function(cx).is_none(),
+                    "l should not match as script function"
+                );
+                assert!(
+                    term.try_expand_abbreviation_for_enter(cx).is_some(),
+                    "l should match as abbreviation"
+                );
+            });
+        }
+
+        #[gpui::test]
+        async fn test_abbreviation_disabled_skips_expansion(cx: &mut TestAppContext) {
+            let abbreviation =
+                FunctionConfig::new_abbreviation("l", "ls -lahtr", FunctionProtocol::All);
+            let mut store = FunctionStore::new();
+            store.add_function(abbreviation);
+            store.abbreviation_enabled = false;
+
+            let terminal = build_terminal_with_functions_store(cx, store);
+
+            terminal.update(cx, |term, cx| {
+                term.update_input_buffers(b"l");
+                let result = term.try_expand_abbreviation_for_enter(cx);
+                assert!(
+                    result.is_none(),
+                    "abbreviation expansion should be skipped when abbreviation_enabled=false"
+                );
             });
         }
     }
