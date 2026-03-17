@@ -35,8 +35,8 @@ pub use function_store::{
 };
 
 pub use rule_store::{
-    AutomationRule, CredentialType, GlobalRuleStore, Protocol, RuleAction, RuleCondition,
-    RuleStore, RuleStoreEntity, RuleStoreEvent, TriggerEvent,
+    AutomationRule, ContextExclusion, CredentialType, GlobalRuleStore, Protocol, RuleAction,
+    RuleCondition, RuleStore, RuleStoreEntity, RuleStoreEvent, TriggerEvent,
 };
 
 pub use rule_engine::{ConnectionContext, MatchedAction, RuleEngine};
@@ -4877,8 +4877,18 @@ impl Terminal {
         } else {
             self.current_line_buffer.clone()
         };
+        let max_context_lines = self
+            .rule_engine
+            .as_ref()
+            .map(|e| e.max_context_lines())
+            .unwrap_or(0);
+        let previous_lines = if max_context_lines > 0 {
+            self.get_previous_lines(max_context_lines)
+        } else {
+            Vec::new()
+        };
         let matched_actions = if let Some(engine) = &mut self.rule_engine {
-            engine.check(trigger.clone(), &cursor_line_content, &user_input)
+            engine.check(trigger.clone(), &cursor_line_content, &user_input, &previous_lines)
         } else {
             if !self.login_completed && trigger == rule_store::TriggerEvent::Wakeup {
                 let screen_content = self.get_screen_content();
@@ -4934,6 +4944,28 @@ impl Terminal {
             content.push(cell.c);
         }
         content.trim_end().to_string()
+    }
+
+    /// Get lines above the cursor for context exclusion checking.
+    /// Returns up to `count` lines in top-to-bottom order.
+    fn get_previous_lines(&self, count: usize) -> Vec<String> {
+        if count == 0 {
+            return Vec::new();
+        }
+        let term = self.term.lock();
+        let grid = term.grid();
+        let cursor_row = grid.cursor.point.line.0;
+        let topmost_row = grid.topmost_line().0;
+        let mut lines = Vec::with_capacity(count);
+        for offset in (1..=count as i32).rev() {
+            let row = cursor_row - offset;
+            if row < topmost_row {
+                continue;
+            }
+            let text = row_to_string(&grid[Line(row)]);
+            lines.push(text.trim_end().to_string());
+        }
+        lines
     }
 
     /// Execute a single rule action.

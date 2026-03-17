@@ -80,6 +80,20 @@ pub enum RuleAction {
     },
 }
 
+/// Context-based exclusion: skip rule if previous lines match pattern.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ContextExclusion {
+    pub pattern: String,
+    #[serde(default)]
+    pub case_insensitive: bool,
+    #[serde(default = "default_context_lines")]
+    pub lines_before: usize,
+}
+
+fn default_context_lines() -> usize {
+    5
+}
+
 /// An automation rule for terminal connections.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AutomationRule {
@@ -94,6 +108,8 @@ pub struct AutomationRule {
     pub action: RuleAction,
     #[serde(default = "default_true")]
     pub exclude_user_input: bool,
+    #[serde(default)]
+    pub exclude_context: Option<ContextExclusion>,
 }
 
 impl ConfigItem for AutomationRule {
@@ -113,6 +129,7 @@ impl AutomationRule {
             condition,
             action,
             exclude_user_input: true,
+            exclude_context: None,
         }
     }
 
@@ -159,7 +176,7 @@ impl JsonConfigStore for RuleStore {
 }
 
 impl RuleStore {
-    pub const CURRENT_VERSION: u32 = 3;
+    pub const CURRENT_VERSION: u32 = 4;
 
     pub fn new() -> Self {
         Self {
@@ -220,6 +237,7 @@ fn default_rules() -> Vec<AutomationRule> {
                 credential_type: CredentialType::Username,
             },
             exclude_user_input: true,
+            exclude_context: None,
         },
         AutomationRule {
             id: Uuid::new_v4(),
@@ -235,6 +253,11 @@ fn default_rules() -> Vec<AutomationRule> {
                 credential_type: CredentialType::Password,
             },
             exclude_user_input: true,
+            exclude_context: Some(ContextExclusion {
+                pattern: r"(?i)(bootload|bootrom|boot\s*menu|ftp)".to_string(),
+                case_insensitive: true,
+                lines_before: 5,
+            }),
         },
         AutomationRule {
             id: Uuid::new_v4(),
@@ -251,6 +274,7 @@ fn default_rules() -> Vec<AutomationRule> {
                 append_newline: true,
             },
             exclude_user_input: true,
+            exclude_context: None,
         },
     ]
 }

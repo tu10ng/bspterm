@@ -1,6 +1,6 @@
 {
   "_comment": "[官方配置] 此文件由 Bspterm 自动安装和更新，请勿修改。如需自定义规则，请直接在规则编辑器中添加。",
-  "version": 3,
+  "version": 4,
   "rules": [
     {
       "id": "00000000-0000-0000-0000-000000000001",
@@ -34,7 +34,12 @@
         "type": "send_credential",
         "credential_type": "password"
       },
-      "exclude_user_input": true
+      "exclude_user_input": true,
+      "exclude_context": {
+        "pattern": "(?i)(bootload|bootrom|boot\\s*menu|ftp)",
+        "case_insensitive": true,
+        "lines_before": 5
+      }
     },
     {
       "id": "00000000-0000-0000-0000-000000000003",

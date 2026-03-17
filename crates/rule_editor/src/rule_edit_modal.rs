@@ -5,8 +5,8 @@ use gpui::{
 };
 use i18n::t;
 use terminal::{
-    AutomationRule, CredentialType, Protocol, RuleAction, RuleCondition, RuleStoreEntity,
-    TriggerEvent,
+    AutomationRule, ContextExclusion, CredentialType, Protocol, RuleAction, RuleCondition,
+    RuleStoreEntity, TriggerEvent,
 };
 use ui::{
     prelude::*, Button, ButtonCommon, ButtonStyle, Checkbox, Label, LabelSize, h_flex, v_flex,
@@ -20,6 +20,7 @@ pub struct RuleEditModal {
     name_editor: Entity<Editor>,
     pattern_editor: Entity<Editor>,
     send_text_editor: Entity<Editor>,
+    exclude_context_pattern_editor: Entity<Editor>,
     trigger: TriggerEvent,
     max_triggers: Option<u32>,
     protocol: Option<Protocol>,
@@ -28,6 +29,8 @@ pub struct RuleEditModal {
     credential_type: CredentialType,
     append_newline: bool,
     exclude_user_input: bool,
+    exclude_context_enabled: bool,
+    exclude_context_lines: usize,
     focus_handle: FocusHandle,
 }
 
@@ -64,12 +67,19 @@ impl RuleEditModal {
             editor
         });
 
+        let exclude_context_pattern_editor = cx.new(|cx| {
+            let mut editor = Editor::single_line(window, cx);
+            editor.set_placeholder_text(&t("rule_edit.exclude_context_pattern"), window, cx);
+            editor
+        });
+
         Self {
             rule_store,
             editing_rule_id: None,
             name_editor,
             pattern_editor,
             send_text_editor,
+            exclude_context_pattern_editor,
             trigger: TriggerEvent::Wakeup,
             max_triggers: None,
             protocol: None,
@@ -78,6 +88,8 @@ impl RuleEditModal {
             credential_type: CredentialType::Username,
             append_newline: true,
             exclude_user_input: true,
+            exclude_context_enabled: false,
+            exclude_context_lines: 5,
             focus_handle,
         }
     }
@@ -113,12 +125,28 @@ impl RuleEditModal {
             editor
         });
 
+        let (exclude_context_enabled, exclude_context_pattern, exclude_context_lines) =
+            match &rule.exclude_context {
+                Some(ctx) => (true, ctx.pattern.clone(), ctx.lines_before),
+                None => (false, String::new(), 5),
+            };
+
+        let exclude_context_pattern_editor = cx.new(|cx| {
+            let mut editor = Editor::single_line(window, cx);
+            if !exclude_context_pattern.is_empty() {
+                editor.set_text(exclude_context_pattern, window, cx);
+            }
+            editor.set_placeholder_text(&t("rule_edit.exclude_context_pattern"), window, cx);
+            editor
+        });
+
         Self {
             rule_store,
             editing_rule_id: Some(rule.id),
             name_editor,
             pattern_editor,
             send_text_editor,
+            exclude_context_pattern_editor,
             trigger: rule.trigger,
             max_triggers: rule.max_triggers,
             protocol,
@@ -127,6 +155,8 @@ impl RuleEditModal {
             credential_type,
             append_newline,
             exclude_user_input: rule.exclude_user_input,
+            exclude_context_enabled,
+            exclude_context_lines,
             focus_handle,
         }
     }
@@ -163,6 +193,24 @@ impl RuleEditModal {
             },
         };
 
+        let exclude_context = if self.exclude_context_enabled {
+            let context_pattern = self
+                .exclude_context_pattern_editor
+                .read(cx)
+                .text(cx);
+            if !context_pattern.is_empty() {
+                Some(ContextExclusion {
+                    pattern: context_pattern,
+                    case_insensitive: true,
+                    lines_before: self.exclude_context_lines,
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         if let Some(id) = self.editing_rule_id {
             let trigger = self.trigger.clone();
             let max_triggers = self.max_triggers;
@@ -175,6 +223,7 @@ impl RuleEditModal {
                     rule.condition = condition;
                     rule.action = action;
                     rule.exclude_user_input = exclude_user_input;
+                    rule.exclude_context = exclude_context;
                 }, cx);
             });
         } else {
@@ -187,6 +236,7 @@ impl RuleEditModal {
                 condition,
                 action,
                 exclude_user_input: self.exclude_user_input,
+                exclude_context,
             };
             self.rule_store.update(cx, |store, cx| {
                 store.add_rule(rule, cx);
@@ -410,6 +460,102 @@ impl Render for RuleEditModal {
                                 })),
                             ),
                     ),
+            )
+            .child(
+                v_flex()
+                    .gap_1()
+                    .child(
+                        Checkbox::new(
+                            "exclude-context",
+                            self.exclude_context_enabled.into(),
+                        )
+                        .label(t("rule_edit.exclude_context"))
+                        .on_click(cx.listener(|this, _, _window, cx| {
+                            this.exclude_context_enabled = !this.exclude_context_enabled;
+                            cx.notify();
+                        })),
+                    )
+                    .when(self.exclude_context_enabled, |this| {
+                        this.child(
+                            v_flex()
+                                .gap_1()
+                                .ml_4()
+                                .child(
+                                    Label::new(t("rule_edit.exclude_context_pattern"))
+                                        .size(LabelSize::Small),
+                                )
+                                .child(
+                                    div()
+                                        .border_1()
+                                        .border_color(cx.theme().colors().border)
+                                        .rounded_md()
+                                        .px_2()
+                                        .py_1()
+                                        .child(self.exclude_context_pattern_editor.clone()),
+                                )
+                                .child(
+                                    h_flex()
+                                        .gap_2()
+                                        .items_center()
+                                        .child(
+                                            Label::new(t("rule_edit.exclude_context_lines"))
+                                                .size(LabelSize::Small),
+                                        )
+                                        .child(
+                                            h_flex()
+                                                .gap_1()
+                                                .child(
+                                                    Button::new("ctx-lines-3", "3")
+                                                        .style(
+                                                            if self.exclude_context_lines == 3 {
+                                                                ButtonStyle::Filled
+                                                            } else {
+                                                                ButtonStyle::Subtle
+                                                            },
+                                                        )
+                                                        .on_click(cx.listener(
+                                                            |this, _, _window, cx| {
+                                                                this.exclude_context_lines = 3;
+                                                                cx.notify();
+                                                            },
+                                                        )),
+                                                )
+                                                .child(
+                                                    Button::new("ctx-lines-5", "5")
+                                                        .style(
+                                                            if self.exclude_context_lines == 5 {
+                                                                ButtonStyle::Filled
+                                                            } else {
+                                                                ButtonStyle::Subtle
+                                                            },
+                                                        )
+                                                        .on_click(cx.listener(
+                                                            |this, _, _window, cx| {
+                                                                this.exclude_context_lines = 5;
+                                                                cx.notify();
+                                                            },
+                                                        )),
+                                                )
+                                                .child(
+                                                    Button::new("ctx-lines-10", "10")
+                                                        .style(
+                                                            if self.exclude_context_lines == 10 {
+                                                                ButtonStyle::Filled
+                                                            } else {
+                                                                ButtonStyle::Subtle
+                                                            },
+                                                        )
+                                                        .on_click(cx.listener(
+                                                            |this, _, _window, cx| {
+                                                                this.exclude_context_lines = 10;
+                                                                cx.notify();
+                                                            },
+                                                        )),
+                                                ),
+                                        ),
+                                ),
+                        )
+                    }),
             )
             .child(
                 v_flex()
