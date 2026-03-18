@@ -1356,8 +1356,9 @@ impl TerminalPanel {
             }
         }
 
-        // Append any remaining groups not yet in group_order
-        let remaining: Vec<_> = groups.into_values().collect();
+        // Append any remaining groups not yet in group_order (sorted by name for stability)
+        let mut remaining: Vec<_> = groups.into_values().collect();
+        remaining.sort_by(|a, b| a.group_name.cmp(&b.group_name));
         for group in remaining {
             if group.key == GroupKey::Other {
                 other_group = Some(group);
@@ -1499,11 +1500,6 @@ fn render_grouped_tab_bar(
     };
 
     let groups = panel.update(cx, |panel, cx| {
-        for item in pane.items() {
-            if let Some(tv) = item.downcast::<TerminalView>() {
-                panel.update_group_order_for_terminal(&tv.read(cx), cx);
-            }
-        }
         panel.group_terminals_by_session(pane, cx)
     });
 
