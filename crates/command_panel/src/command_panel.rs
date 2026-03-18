@@ -3,7 +3,7 @@ use bspterm_actions::command_panel::{
     AddTab, Clear, CloseTab, RenameTab, Send, StartCycleSend, StopCycleSend, ToggleFocus,
 };
 use collections::HashMap;
-use editor::{Editor, EditorEvent, EditorMode, HighlightKey, MultiBuffer, ToPoint};
+use editor::{Editor, EditorEvent, EditorMode, HighlightKey, MultiBuffer, SizingBehavior, ToPoint};
 use gpui::{
     Action, App, ClickEvent, Context, Entity, EntityId, EventEmitter, FocusHandle, Focusable,
     FontStyle, HighlightStyle, IntoElement, MouseButton, Pixels, Render, SharedString, Styled,
@@ -242,7 +242,11 @@ impl CommandPanel {
 
         cx.new(|cx| {
             let mut editor = Editor::new(
-                EditorMode::full(),
+                EditorMode::Full {
+                    scale_ui_elements_with_buffer_font_size: true,
+                    show_active_line_background: true,
+                    sizing_behavior: SizingBehavior::ExcludeOverscrollMargin,
+                },
                 multi_buffer,
                 None,
                 window,
