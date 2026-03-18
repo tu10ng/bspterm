@@ -189,7 +189,7 @@ impl TerminalOutline {
             .map(|ts| ts.format("%H:%M:%S").to_string())
             .unwrap_or_default();
 
-        let prompt = entry.command.prompt.clone();
+        let line_number = format!("L{}", entry.command.line);
         let command_text = entry.command.command_text.clone();
 
         div()
@@ -219,14 +219,14 @@ impl TerminalOutline {
                             .items_center()
                             .gap_1()
                             .child(
-                                Label::new(timestamp_str)
+                                Label::new(line_number)
                                     .size(LabelSize::XSmall)
                                     .color(Color::Muted),
                             )
                             .child(
-                                Label::new(prompt)
-                                    .size(LabelSize::Small)
-                                    .color(Color::Accent),
+                                Label::new(timestamp_str)
+                                    .size(LabelSize::XSmall)
+                                    .color(Color::Muted),
                             ),
                     )
                     .child(
@@ -309,6 +309,7 @@ impl Render for TerminalOutline {
             .child(
                 div()
                     .flex_1()
+                    .min_h_0()
                     .overflow_hidden()
                     .child(if item_count > 0 {
                         uniform_list(
@@ -318,6 +319,7 @@ impl Render for TerminalOutline {
                                 this.render_entries(range, window, cx)
                             }),
                         )
+                        .size_full()
                         .with_sizing_behavior(ListSizingBehavior::Infer)
                         .track_scroll(&self.scroll_handle)
                         .into_any_element()
