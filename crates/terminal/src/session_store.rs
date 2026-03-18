@@ -663,6 +663,7 @@ impl SessionStore {
         }
 
         traverse(&self.root, &mut credentials, &mut seen);
+        credentials.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
         credentials
     }
 }
