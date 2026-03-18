@@ -232,10 +232,10 @@ workspace.workspace = true
 bspterm_actions.workspace = true
 bspterm_env_vars.workspace = true
 zlog.workspace = true
+zlog_settings.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
-zlog_settings.workspace = true
 chrono.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
