@@ -24,7 +24,6 @@ use gpui::{
     InteractiveElement, IntoElement, MouseButton, ParentElement, Render,
     StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window, actions, div,
 };
-use local_user::{LocalUserStoreEntity, LocalUserStoreEvent};
 use project::{Project, git_store::GitStoreEvent, trusted_worktrees::TrustedWorktrees};
 use project_dropdown::ProjectDropdown;
 use remote::RemoteConnectionOptions;
@@ -159,7 +158,6 @@ pub struct TitleBar {
     platform_titlebar: Entity<PlatformTitleBar>,
     project: Entity<Project>,
     user_store: Entity<UserStore>,
-    local_user_store: Entity<LocalUserStoreEntity>,
     client: Arc<Client>,
     workspace: WeakEntity<Workspace>,
     application_menu: Option<Entity<ApplicationMenu>>,
@@ -205,29 +203,15 @@ impl Render for TitleBar {
 
         let status = self.client.status();
         let status = &*status.borrow();
-        let local_signed_in = self.local_user_store.read(cx).is_logged_in();
 
         children.push(
             h_flex()
-                .map(|this| {
-                    if local_signed_in {
-                        this.pr_1p5()
-                    } else {
-                        this.pr_1()
-                    }
-                })
+                .pr_1()
                 .gap_1()
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .children(self.render_connection_status(status, cx))
                 .child(self.update_version.clone())
-                .when(
-                    !local_signed_in && TitleBarSettings::get_global(cx).show_sign_in,
-                    |this| this.child(self.render_sign_in_button(cx)),
-                )
-                .when(
-                    local_signed_in && TitleBarSettings::get_global(cx).show_user_menu,
-                    |this| this.child(self.render_user_menu_button(cx)),
-                )
+                .child(self.render_settings_menu_button(cx))
                 .into_any_element(),
         );
 
@@ -252,8 +236,6 @@ impl TitleBar {
         log::info!("[TitleBar::new] Got git_store");
         let user_store = workspace.app_state().user_store.clone();
         log::info!("[TitleBar::new] Got user_store");
-        let local_user_store = LocalUserStoreEntity::global(cx);
-        log::info!("[TitleBar::new] Got local_user_store");
         let client = workspace.app_state().client.clone();
         log::info!("[TitleBar::new] Got client");
 
@@ -303,9 +285,6 @@ impl TitleBar {
             }),
         );
         subscriptions.push(cx.observe(&user_store, |_a, _, cx| cx.notify()));
-        subscriptions.push(cx.subscribe(&local_user_store, |_, _, _: &LocalUserStoreEvent, cx| {
-            cx.notify();
-        }));
         if let Some(trusted_worktrees) = TrustedWorktrees::try_get_global(cx) {
             subscriptions.push(cx.subscribe(&trusted_worktrees, |_, _, _, cx| {
                 cx.notify();
@@ -324,7 +303,6 @@ impl TitleBar {
             workspace: workspace.weak_handle(),
             project,
             user_store,
-            local_user_store,
             client,
             _subscriptions: subscriptions,
             update_version,
@@ -868,56 +846,14 @@ impl TitleBar {
         }
     }
 
-    pub fn render_sign_in_button(&mut self, _: &mut Context<Self>) -> Button {
-        Button::new("sign_in", "登录")
-            .label_size(LabelSize::Small)
-            .on_click(|_, window, cx| {
-                window.dispatch_action(bspterm_actions::local_user::SignIn.boxed_clone(), cx);
-            })
-    }
-
-    fn render_initials_avatar(&self, initials: &str, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .size_6()
-            .rounded_full()
-            .bg(cx.theme().colors().element_background)
-            .flex()
-            .items_center()
-            .justify_center()
-            .child(Label::new(initials.to_string()).size(LabelSize::Small))
-    }
-
-    pub fn render_user_menu_button(&mut self, cx: &mut Context<Self>) -> impl Element {
+    fn render_settings_menu_button(&self, cx: &mut Context<Self>) -> impl Element {
         let show_update_badge = self.update_version.read(cx).show_update_in_menu_bar();
-        let profile = self.local_user_store.read(cx).profile().cloned();
-        let show_user_picture = TitleBarSettings::get_global(cx).show_user_picture;
 
-        if let Some(profile) = profile {
-            let initials = profile.initials();
-            let profile_name = profile.name.clone();
-            let profile_employee_id = profile.employee_id;
-
-            let menu = move |window: &mut Window, cx: &mut App| {
-                let profile_name = profile_name.clone();
-                let profile_employee_id = profile_employee_id.clone();
+        PopoverMenu::new("settings-menu")
+            .anchor(Corner::TopRight)
+            .menu(move |window, cx| {
                 ContextMenu::build(window, cx, |menu, _, _cx| {
-                    menu.custom_entry(
-                        move |_window, _cx| {
-                            h_flex()
-                                .w_full()
-                                .justify_between()
-                                .child(Label::new(profile_name.clone()))
-                                .child(
-                                    Label::new(format!("({})", profile_employee_id))
-                                        .size(LabelSize::Small)
-                                        .color(Color::Muted),
-                                )
-                                .into_any_element()
-                        },
-                        |_, _| {},
-                    )
-                    .separator()
-                    .when(show_update_badge, |this| {
+                    menu.when(show_update_badge, |this| {
                         this.custom_entry(
                             move |_window, _cx| {
                                 h_flex()
@@ -952,37 +888,14 @@ impl TitleBar {
                         "Extensions",
                         bspterm_actions::Extensions::default().boxed_clone(),
                     )
-                    .separator()
-                    .action("登出", bspterm_actions::local_user::SignOut.boxed_clone())
                 })
                 .into()
-            };
-
-            if show_user_picture {
-                PopoverMenu::new("user-menu")
-                    .anchor(Corner::TopRight)
-                    .menu(menu)
-                    .trigger_with_tooltip(
-                        ButtonLike::new("user-menu")
-                            .child(self.render_initials_avatar(&initials, cx)),
-                        Tooltip::text("用户菜单"),
-                    )
-                    .anchor(Corner::TopRight)
-                    .into_any_element()
-            } else {
-                PopoverMenu::new("user-menu")
-                    .anchor(Corner::TopRight)
-                    .menu(menu)
-                    .trigger_with_tooltip(
-                        IconButton::new("user-menu", IconName::ChevronDown)
-                            .icon_size(IconSize::Small),
-                        Tooltip::text("用户菜单"),
-                    )
-                    .anchor(Corner::TopRight)
-                    .into_any_element()
-            }
-        } else {
-            self.render_sign_in_button(cx).into_any_element()
-        }
+            })
+            .trigger_with_tooltip(
+                IconButton::new("settings-menu", IconName::Settings)
+                    .icon_size(IconSize::Small),
+                Tooltip::text("Settings"),
+            )
+            .anchor(Corner::TopRight)
     }
 }

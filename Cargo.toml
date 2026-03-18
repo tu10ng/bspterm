@@ -103,10 +103,7 @@ members = [
     "crates/language_selector",
     "crates/language_tools",
     "crates/languages",
-    "crates/lan_discovery",
-    "crates/lan_messaging",
     "crates/line_ending_selector",
-    "crates/local_user",
     "crates/lmstudio",
     "crates/lsp",
     "crates/markdown",
@@ -352,10 +349,7 @@ language_onboarding = { path = "crates/language_onboarding" }
 language_selector = { path = "crates/language_selector" }
 language_tools = { path = "crates/language_tools" }
 languages = { path = "crates/languages" }
-lan_discovery = { path = "crates/lan_discovery" }
-lan_messaging = { path = "crates/lan_messaging" }
 line_ending_selector = { path = "crates/line_ending_selector" }
-local_user = { path = "crates/local_user" }
 lmstudio = { path = "crates/lmstudio" }
 lsp = { path = "crates/lsp" }
 markdown = { path = "crates/markdown" }
@@ -545,6 +539,7 @@ exec = "0.3.1"
 fancy-regex = "0.16.0"
 fork = "0.4.0"
 futures = "0.3"
+get_if_addrs = "0.5"
 futures-lite = "1.13"
 gh-workflow = { git = "https://github.com/zed-industries/gh-workflow", rev = "c9eac0ed361583e1072860d96776fa52775b82ac" }
 git2 = { version = "0.20.1", default-features = false, features = ["vendored-libgit2"] }

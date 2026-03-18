@@ -269,11 +269,6 @@ impl WelcomePage {
                 t("welcome.quick_import_desc"),
             ))
             .child(InfoItem::new(
-                IconName::UserGroup,
-                t("welcome.lan_discovery"),
-                t("welcome.lan_discovery_desc"),
-            ))
-            .child(InfoItem::new(
                 IconName::ArrowRightLeft,
                 t("welcome.session_drag"),
                 t("welcome.session_drag_desc"),

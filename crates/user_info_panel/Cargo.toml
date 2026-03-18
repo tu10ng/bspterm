@@ -14,10 +14,8 @@ doctest = false
 
 [dependencies]
 anyhow.workspace = true
+get_if_addrs.workspace = true
 gpui.workspace = true
-lan_discovery.workspace = true
-lan_messaging.workspace = true
-local_user.workspace = true
 log.workspace = true
 ui.workspace = true
 workspace.workspace = true

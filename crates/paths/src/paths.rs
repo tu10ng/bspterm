@@ -260,12 +260,6 @@ pub fn functions_file() -> &'static PathBuf {
     FUNCTIONS_FILE.get_or_init(|| config_dir().join("functions.json"))
 }
 
-/// Returns the path to the `local_user.json` file for local user profile.
-pub fn local_user_file() -> &'static PathBuf {
-    static LOCAL_USER_FILE: OnceLock<PathBuf> = OnceLock::new();
-    LOCAL_USER_FILE.get_or_init(|| config_dir().join("local_user.json"))
-}
-
 /// Returns the path to the `shortcut_bar.json` file for terminal shortcut bar configuration.
 pub fn shortcut_bar_file() -> &'static PathBuf {
     static SHORTCUT_BAR_FILE: OnceLock<PathBuf> = OnceLock::new();

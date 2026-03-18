@@ -644,7 +644,6 @@ fn main() {
         repl::notebook::init(cx);
         // diagnostics::init(cx);
 
-        local_user::init(cx);
         workspace::init(app_state.clone(), cx);
         title_bar::init(cx);
         ui_prompt::init(cx);
@@ -677,8 +676,6 @@ fn main() {
         terminal_scripting::init(cx);
         terminal_outline::init(cx);
         script_panel::init(cx);
-        lan_discovery::init(cx, cx.http_client());
-        lan_messaging::init(cx);
         user_info_panel::init(cx);
         terminal::ActiveSessionTrackerEntity::init(cx);
         editor_panel::init(cx);

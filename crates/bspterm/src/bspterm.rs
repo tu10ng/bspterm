@@ -372,14 +372,6 @@ pub fn initialize_workspace(
             return;
         };
 
-        if let Some(user_store) = local_user::LocalUserStoreEntity::try_global(cx) {
-            if !user_store.read(cx).is_logged_in() {
-                workspace.toggle_modal(window, cx, |window, cx| {
-                    local_user::LocalLoginModal::new(window, cx)
-                });
-            }
-        }
-
         let workspace_handle = cx.entity();
         let center_pane = workspace.active_pane().clone();
         initialize_pane(workspace, &center_pane, window, cx);
