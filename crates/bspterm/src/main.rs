@@ -1466,7 +1466,9 @@ fn migrate_windows_config() {
     let old_config = if std::env::var("HOME").is_ok() {
         // HOME is set: new location is $HOME/.config/bspterm/
         // old location is %APPDATA%\Bspterm
-        dirs::config_dir().map(|dir| dir.join("Bspterm"))
+        std::env::var("APPDATA")
+            .ok()
+            .map(|dir| PathBuf::from(dir).join("Bspterm"))
     } else {
         // HOME is not set: new location is %APPDATA%\Bspterm
         // old location is %USERPROFILE%/.config/bspterm/
