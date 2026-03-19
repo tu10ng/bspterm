@@ -322,16 +322,18 @@ impl Component for ThemePreviewTile {
     fn preview(_window: &mut Window, cx: &mut App) -> Option<AnyElement> {
         let theme_registry = ThemeRegistry::global(cx);
 
-        let one_dark = theme_registry.get("One Dark");
-        let one_light = theme_registry.get("One Light");
-        let gruvbox_dark = theme_registry.get("Gruvbox Dark");
-        let gruvbox_light = theme_registry.get("Gruvbox Light");
+        let bspterm_dark = theme_registry.get("Bspterm Dark");
+        let bspterm_light = theme_registry.get("Bspterm Light");
+        let green_on_black = theme_registry.get("Green on Black");
+        let yellow_on_black = theme_registry.get("Yellow on Black");
+        let green_on_gray = theme_registry.get("Green on Gray");
 
         let themes_to_preview = vec![
-            one_dark.clone().ok(),
-            one_light.ok(),
-            gruvbox_dark.ok(),
-            gruvbox_light.ok(),
+            bspterm_dark.clone().ok(),
+            bspterm_light.ok(),
+            green_on_black.ok(),
+            yellow_on_black.ok(),
+            green_on_gray.ok(),
         ]
         .into_iter()
         .flatten()
@@ -342,13 +344,13 @@ impl Component for ThemePreviewTile {
                 .gap_6()
                 .p_4()
                 .children({
-                    if let Some(one_dark) = one_dark.ok() {
+                    if let Some(bspterm_dark) = bspterm_dark.ok() {
                         vec![example_group(vec![single_example(
                             "Default",
                             div()
                                 .w(px(240.))
                                 .h(px(180.))
-                                .child(ThemePreviewTile::new(one_dark, 0.42))
+                                .child(ThemePreviewTile::new(bspterm_dark, 0.42))
                                 .into_any_element(),
                         )])]
                     } else {

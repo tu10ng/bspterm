@@ -125,7 +125,6 @@ struct ThemeSelectorDelegate {
     original_system_appearance: Appearance,
     /// The currently selected new theme.
     new_theme: Arc<Theme>,
-    selection_completed: bool,
     selected_theme: Option<Arc<Theme>>,
     selected_index: usize,
     selector: WeakEntity<ThemeSelector>,
@@ -187,7 +186,6 @@ impl ThemeSelectorDelegate {
             original_system_appearance,
             new_theme: original_theme, // Start with the original theme.
             selected_index,
-            selection_completed: false,
             selected_theme: None,
             selector,
         }
@@ -351,8 +349,6 @@ impl PickerDelegate for ThemeSelectorDelegate {
         _window: &mut Window,
         cx: &mut Context<Picker<ThemeSelectorDelegate>>,
     ) {
-        self.selection_completed = true;
-
         let theme_name: Arc<str> = self.new_theme.name.as_str().into();
         let theme_appearance = self.new_theme.appearance;
         let system_appearance = SystemAppearance::global(cx).0;
@@ -363,20 +359,14 @@ impl PickerDelegate for ThemeSelectorDelegate {
             theme::set_theme(settings, theme_name, theme_appearance, system_appearance);
         });
 
-        self.selector
-            .update(cx, |_, cx| {
-                cx.emit(DismissEvent);
-            })
-            .ok();
+        // Update original so Escape reverts to the last confirmed theme, not the initial one.
+        self.original_theme_settings = ThemeSettings::get_global(cx).clone();
     }
 
     fn dismissed(&mut self, _: &mut Window, cx: &mut Context<Picker<ThemeSelectorDelegate>>) {
-        if !self.selection_completed {
-            SettingsStore::update_global(cx, |store, _| {
-                store.override_global(self.original_theme_settings.clone());
-            });
-            self.selection_completed = true;
-        }
+        SettingsStore::update_global(cx, |store, _| {
+            store.override_global(self.original_theme_settings.clone());
+        });
 
         self.selector
             .update(cx, |_, cx| cx.emit(DismissEvent))

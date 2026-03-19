@@ -56,19 +56,20 @@ pub(crate) fn apply_theme_color_defaults(
 }
 
 pub(crate) fn zed_default_dark() -> Theme {
-    let bg = hsla(215. / 360., 12. / 100., 15. / 100., 1.);
-    let editor = hsla(220. / 360., 12. / 100., 18. / 100., 1.);
-    let elevated_surface = hsla(225. / 360., 12. / 100., 17. / 100., 1.);
-    let hover = hsla(225.0 / 360., 11.8 / 100., 26.7 / 100., 1.0);
+    // VSCode Dark+ style colors matching Bspterm Dark theme
+    let bg = hsla(0. / 360., 0. / 100., 18. / 100., 1.); // #2d2d2d
+    let editor = hsla(0. / 360., 0. / 100., 12. / 100., 1.); // #1e1e1e
+    let elevated_surface = hsla(0. / 360., 0. / 100., 15. / 100., 1.); // #252526
+    let hover = hsla(200. / 360., 4. / 100., 20. / 100., 1.0); // #2a2d2e
 
-    let blue = hsla(207.8 / 360., 81. / 100., 66. / 100., 1.0);
-    let gray = hsla(218.8 / 360., 10. / 100., 40. / 100., 1.0);
-    let green = hsla(95. / 360., 38. / 100., 62. / 100., 1.0);
-    let orange = hsla(29. / 360., 54. / 100., 61. / 100., 1.0);
-    let purple = hsla(286. / 360., 51. / 100., 64. / 100., 1.0);
-    let red = hsla(355. / 360., 65. / 100., 65. / 100., 1.0);
-    let teal = hsla(187. / 360., 47. / 100., 55. / 100., 1.0);
-    let yellow = hsla(39. / 360., 67. / 100., 69. / 100., 1.0);
+    let blue = hsla(210. / 360., 60. / 100., 59. / 100., 1.0); // #569cd6
+    let gray = hsla(0. / 360., 0. / 100., 43. / 100., 1.0); // #6d6d6d
+    let green = hsla(100. / 360., 26. / 100., 47. / 100., 1.0); // #6a9955
+    let orange = hsla(19. / 360., 52. / 100., 64. / 100., 1.0); // #ce9178
+    let purple = hsla(300. / 360., 30. / 100., 68. / 100., 1.0); // #c586c0
+    let red = hsla(0. / 360., 86. / 100., 62. / 100., 1.0); // #f44747
+    let teal = hsla(160. / 360., 56. / 100., 55. / 100., 1.0); // #4ec9b0
+    let yellow = hsla(51. / 360., 53. / 100., 76. / 100., 1.0); // #dcdcaa
 
     const ADDED_COLOR: Hsla = Hsla {
         h: 134. / 360.,
@@ -103,7 +104,7 @@ pub(crate) fn zed_default_dark() -> Theme {
 
     let player = PlayerColors::dark();
     Theme {
-        id: "one_dark".to_string(),
+        id: "bspterm_dark".to_string(),
         name: DEFAULT_DARK_THEME.into(),
         appearance: Appearance::Dark,
         styles: ThemeStyles {
@@ -111,37 +112,37 @@ pub(crate) fn zed_default_dark() -> Theme {
             system: SystemColors::default(),
             accents: AccentColors(vec![blue, orange, purple, teal, red, green, yellow]),
             colors: ThemeColors {
-                border: hsla(225. / 360., 13. / 100., 12. / 100., 1.),
-                border_variant: hsla(228. / 360., 8. / 100., 25. / 100., 1.),
-                border_focused: hsla(223. / 360., 78. / 100., 65. / 100., 1.),
-                border_selected: hsla(222.6 / 360., 77.5 / 100., 65.1 / 100., 1.0),
+                border: hsla(0. / 360., 0. / 100., 25. / 100., 1.), // #3f3f3f
+                border_variant: hsla(0. / 360., 0. / 100., 18. / 100., 1.), // #2d2d2d
+                border_focused: hsla(200. / 360., 100. / 100., 40. / 100., 1.), // #007acc
+                border_selected: hsla(207. / 360., 84. / 100., 18. / 100., 1.0), // #094771
                 border_transparent: SystemColors::default().transparent,
-                border_disabled: hsla(222.0 / 360., 11.6 / 100., 33.7 / 100., 1.0),
+                border_disabled: hsla(0. / 360., 0. / 100., 25. / 100., 1.0), // #3f3f3f
                 elevated_surface_background: elevated_surface,
                 surface_background: bg,
                 background: bg,
-                element_background: hsla(223.0 / 360., 13. / 100., 21. / 100., 1.0),
+                element_background: hsla(0. / 360., 0. / 100., 18. / 100., 1.0), // #2d2d2d
                 element_hover: hover,
-                element_active: hsla(220.0 / 360., 11.8 / 100., 20.0 / 100., 1.0),
-                element_selected: hsla(224.0 / 360., 11.3 / 100., 26.1 / 100., 1.0),
+                element_active: hsla(240. / 360., 3. / 100., 22. / 100., 1.0), // #37373d
+                element_selected: hsla(240. / 360., 3. / 100., 22. / 100., 1.0), // #37373d
                 element_disabled: SystemColors::default().transparent,
                 element_selection_background: player.local().selection.alpha(0.25),
                 drop_target_background: hsla(220.0 / 360., 8.3 / 100., 21.4 / 100., 1.0),
                 drop_target_border: hsla(221. / 360., 11. / 100., 86. / 100., 1.0),
                 ghost_element_background: SystemColors::default().transparent,
                 ghost_element_hover: hover,
-                ghost_element_active: hsla(220.0 / 360., 11.8 / 100., 20.0 / 100., 1.0),
-                ghost_element_selected: hsla(224.0 / 360., 11.3 / 100., 26.1 / 100., 1.0),
+                ghost_element_active: hsla(240. / 360., 3. / 100., 22. / 100., 1.0),
+                ghost_element_selected: hsla(240. / 360., 3. / 100., 22. / 100., 1.0),
                 ghost_element_disabled: SystemColors::default().transparent,
-                text: hsla(221. / 360., 11. / 100., 86. / 100., 1.0),
-                text_muted: hsla(218.0 / 360., 7. / 100., 46. / 100., 1.0),
-                text_placeholder: hsla(220.0 / 360., 6.6 / 100., 44.5 / 100., 1.0),
-                text_disabled: hsla(220.0 / 360., 6.6 / 100., 44.5 / 100., 1.0),
-                text_accent: hsla(222.6 / 360., 77.5 / 100., 65.1 / 100., 1.0),
-                icon: hsla(222.9 / 360., 9.9 / 100., 86.1 / 100., 1.0),
-                icon_muted: hsla(220.0 / 360., 12.1 / 100., 66.1 / 100., 1.0),
-                icon_disabled: hsla(220.0 / 360., 6.4 / 100., 45.7 / 100., 1.0),
-                icon_placeholder: hsla(220.0 / 360., 6.4 / 100., 45.7 / 100., 1.0),
+                text: hsla(0. / 360., 0. / 100., 83. / 100., 1.0), // #d4d4d4
+                text_muted: hsla(0. / 360., 0. / 100., 62. / 100., 1.0), // #9d9d9d
+                text_placeholder: hsla(0. / 360., 0. / 100., 43. / 100., 1.0), // #6d6d6d
+                text_disabled: hsla(0. / 360., 0. / 100., 43. / 100., 1.0), // #6d6d6d
+                text_accent: hsla(210. / 360., 60. / 100., 59. / 100., 1.0), // #569cd6
+                icon: hsla(0. / 360., 0. / 100., 83. / 100., 1.0), // #d4d4d4
+                icon_muted: hsla(0. / 360., 0. / 100., 62. / 100., 1.0), // #9d9d9d
+                icon_disabled: hsla(0. / 360., 0. / 100., 43. / 100., 1.0), // #6d6d6d
+                icon_placeholder: hsla(0. / 360., 0. / 100., 62. / 100., 1.0), // #9d9d9d
                 icon_accent: blue,
                 debugger_accent: red,
                 status_bar_background: bg,
@@ -165,14 +166,14 @@ pub(crate) fn zed_default_dark() -> Theme {
                     66. / 100.,
                     0.2,
                 ),
-                editor_line_number: hsla(222.0 / 360., 11.5 / 100., 34.1 / 100., 1.0),
-                editor_active_line_number: hsla(216.0 / 360., 5.9 / 100., 49.6 / 100., 1.0),
-                editor_hover_line_number: hsla(216.0 / 360., 5.9 / 100., 56.7 / 100., 1.0),
-                editor_invisible: hsla(222.0 / 360., 11.5 / 100., 34.1 / 100., 1.0),
-                editor_wrap_guide: hsla(228. / 360., 8. / 100., 25. / 100., 1.),
-                editor_active_wrap_guide: hsla(228. / 360., 8. / 100., 25. / 100., 1.),
-                editor_indent_guide: hsla(228. / 360., 8. / 100., 25. / 100., 1.),
-                editor_indent_guide_active: hsla(225. / 360., 13. / 100., 12. / 100., 1.),
+                editor_line_number: hsla(0. / 360., 0. / 100., 52. / 100., 1.0), // #858585
+                editor_active_line_number: hsla(0. / 360., 0. / 100., 78. / 100., 1.0), // #c6c6c6
+                editor_hover_line_number: hsla(0. / 360., 0. / 100., 63. / 100., 1.0), // #a0a0a0
+                editor_invisible: hsla(0. / 360., 0. / 100., 43. / 100., 1.0), // #6d6d6d
+                editor_wrap_guide: hsla(0. / 360., 0. / 100., 83. / 100., 0.05),
+                editor_active_wrap_guide: hsla(0. / 360., 0. / 100., 83. / 100., 0.1),
+                editor_indent_guide: hsla(0. / 360., 0. / 100., 25. / 100., 1.),
+                editor_indent_guide_active: hsla(0. / 360., 0. / 100., 35. / 100., 1.),
                 editor_document_highlight_read_background: hsla(
                     207.8 / 360.,
                     81. / 100.,
@@ -216,29 +217,24 @@ pub(crate) fn zed_default_dark() -> Theme {
                 terminal_gutter_separator: crate::neutral().dark().step_6(),
                 panel_background: bg,
                 panel_focused_border: blue,
-                panel_indent_guide: hsla(228. / 360., 8. / 100., 25. / 100., 1.),
-                panel_indent_guide_hover: hsla(225. / 360., 13. / 100., 12. / 100., 1.),
-                panel_indent_guide_active: hsla(225. / 360., 13. / 100., 12. / 100., 1.),
+                panel_indent_guide: hsla(0. / 360., 0. / 100., 25. / 100., 1.),
+                panel_indent_guide_hover: hsla(0. / 360., 0. / 100., 35. / 100., 1.),
+                panel_indent_guide_active: hsla(0. / 360., 0. / 100., 35. / 100., 1.),
                 panel_overlay_background: bg,
                 panel_overlay_hover: hover,
                 pane_focused_border: blue,
-                pane_group_border: hsla(225. / 360., 13. / 100., 12. / 100., 1.),
-                scrollbar_thumb_background: gpui::transparent_black(),
-                scrollbar_thumb_hover_background: hover,
-                scrollbar_thumb_active_background: hsla(
-                    225.0 / 360.,
-                    11.8 / 100.,
-                    26.7 / 100.,
-                    1.0,
-                ),
-                scrollbar_thumb_border: hsla(228. / 360., 8. / 100., 25. / 100., 1.),
+                pane_group_border: hsla(0. / 360., 0. / 100., 25. / 100., 1.),
+                scrollbar_thumb_background: hsla(0. / 360., 0. / 100., 47. / 100., 0.4), // #797979 40%
+                scrollbar_thumb_hover_background: hsla(0. / 360., 0. / 100., 47. / 100., 0.7),
+                scrollbar_thumb_active_background: hsla(0. / 360., 0. / 100., 47. / 100., 1.0),
+                scrollbar_thumb_border: hsla(0. / 360., 0. / 100., 47. / 100., 0.4),
                 scrollbar_track_background: gpui::transparent_black(),
-                scrollbar_track_border: hsla(228. / 360., 8. / 100., 25. / 100., 1.),
-                minimap_thumb_background: hsla(225.0 / 360., 11.8 / 100., 26.7 / 100., 0.7),
-                minimap_thumb_hover_background: hsla(225.0 / 360., 11.8 / 100., 26.7 / 100., 0.7),
-                minimap_thumb_active_background: hsla(225.0 / 360., 11.8 / 100., 26.7 / 100., 0.7),
-                minimap_thumb_border: hsla(228. / 360., 8. / 100., 25. / 100., 1.),
-                editor_foreground: hsla(218. / 360., 14. / 100., 71. / 100., 1.),
+                scrollbar_track_border: hsla(0. / 360., 0. / 100., 15. / 100., 1.),
+                minimap_thumb_background: hsla(0. / 360., 0. / 100., 30. / 100., 0.7),
+                minimap_thumb_hover_background: hsla(0. / 360., 0. / 100., 30. / 100., 0.8),
+                minimap_thumb_active_background: hsla(0. / 360., 0. / 100., 30. / 100., 0.9),
+                minimap_thumb_border: hsla(0. / 360., 0. / 100., 25. / 100., 1.),
+                editor_foreground: hsla(0. / 360., 0. / 100., 83. / 100., 1.), // #d4d4d4
                 link_text_hover: blue,
                 version_control_added: ADDED_COLOR,
                 version_control_deleted: REMOVED_COLOR,

@@ -2378,7 +2378,7 @@ mod tests {
         let schema = store.json_schema(&SettingsJsonSchemaParams {
             language_names: &["Rust".to_string(), "TypeScript".to_string()],
             font_names: &["Zed Mono".to_string()],
-            theme_names: &["One Dark".into()],
+            theme_names: &["Bspterm Dark".into()],
             icon_theme_names: &["Zed Icons".into()],
             lsp_adapter_names: &[
                 "rust-analyzer".to_string(),
@@ -2429,7 +2429,7 @@ mod tests {
         let schema = store.project_json_schema(&SettingsJsonSchemaParams {
             language_names: &["Rust".to_string(), "TypeScript".to_string()],
             font_names: &["Zed Mono".to_string()],
-            theme_names: &["One Dark".into()],
+            theme_names: &["Bspterm Dark".into()],
             icon_theme_names: &["Zed Icons".into()],
             lsp_adapter_names: &[
                 "rust-analyzer".to_string(),
@@ -2480,7 +2480,7 @@ mod tests {
         let params = SettingsJsonSchemaParams {
             language_names: &["Rust".to_string()],
             font_names: &["Zed Mono".to_string()],
-            theme_names: &["One Dark".into()],
+            theme_names: &["Bspterm Dark".into()],
             icon_theme_names: &["Zed Icons".into()],
             lsp_adapter_names: &["rust-analyzer".to_string()],
         };
