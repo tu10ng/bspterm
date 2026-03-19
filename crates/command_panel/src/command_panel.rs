@@ -13,6 +13,7 @@ use gpui::{
 use i18n::t;
 use language::Buffer;
 use multi_buffer::MultiBufferRow;
+use search::{BufferSearchBar, buffer_search};
 use serde::{Deserialize, Serialize};
 use terminal::Terminal;
 use terminal_view::TerminalView;
@@ -23,7 +24,7 @@ use ui::{
 };
 use uuid::Uuid;
 use workspace::{
-    Event as WorkspaceEvent, OpenOptions, OpenVisible, Workspace,
+    Event as WorkspaceEvent, OpenOptions, OpenVisible, ToolbarItemView, Workspace,
     dock::{DockPosition, Panel, PanelEvent},
 };
 
@@ -119,6 +120,7 @@ pub struct CommandPanel {
     terminal_session_ids: HashMap<EntityId, Uuid>,
     // Loaded-but-unmatched persisted per-terminal configs (keyed by session_id)
     pending_session_states: HashMap<Uuid, PerTerminalPersistConfig>,
+    search_bar: Entity<BufferSearchBar>,
     renaming_tab: Option<usize>,
     rename_editor: Option<Entity<Editor>>,
     rename_focus_subscription: Option<Subscription>,
@@ -200,6 +202,11 @@ impl CommandPanel {
             }
         }));
 
+        let search_bar = cx.new(|cx| BufferSearchBar::new(None, window, cx));
+        search_bar.update(cx, |bar, cx| {
+            bar.set_active_pane_item(Some(&tabs[0].editor), window, cx);
+        });
+
         // Apply comment highlights for tabs with initial content
         cx.defer_in(window, |this, window, cx| {
             this.on_terminal_changed(window, cx);
@@ -221,6 +228,7 @@ impl CommandPanel {
             view_to_terminal: HashMap::default(),
             terminal_session_ids: HashMap::default(),
             pending_session_states,
+            search_bar,
             renaming_tab: None,
             rename_editor: None,
             rename_focus_subscription: None,
@@ -265,6 +273,14 @@ impl CommandPanel {
 
     fn active_editor(&self) -> &Entity<Editor> {
         &self.active_tab().editor
+    }
+
+    fn get_search_bar(
+        this: &CommandPanel,
+        _window: &mut Window,
+        _cx: &mut Context<CommandPanel>,
+    ) -> Option<Entity<BufferSearchBar>> {
+        Some(this.search_bar.clone())
     }
 
     fn get_focused_terminal(&self, cx: &App) -> Option<Entity<Terminal>> {
@@ -408,6 +424,10 @@ impl CommandPanel {
                 self.update_comment_highlights(&editor, cx);
             }
 
+            self.search_bar.update(cx, |bar, cx| {
+                bar.set_active_pane_item(Some(&self.tabs[self.active_tab_index].editor), window, cx);
+            });
+
             self.current_terminal = new_id;
             cx.notify();
         }
@@ -465,6 +485,10 @@ impl CommandPanel {
             }
             _ => {}
         }
+
+        self.search_bar.update(cx, |bar, cx| {
+            bar.set_active_pane_item(Some(&self.tabs[self.active_tab_index].editor), window, cx);
+        });
 
         self.tabs[self.active_tab_index].editor.focus_handle(cx).focus(window, cx);
         cx.notify();
@@ -1452,16 +1476,23 @@ impl CommandPanel {
 impl EventEmitter<PanelEvent> for CommandPanel {}
 
 impl Render for CommandPanel {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let colors = cx.theme().colors();
-        let panel_bg = colors.panel_background;
-        let active_editor = self.active_editor().clone();
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let root = {
+            let mut registrar = buffer_search::DivRegistrar::new(Self::get_search_bar, cx);
+            BufferSearchBar::register(&mut registrar);
+            registrar.into_div()
+        };
 
-        v_flex()
+        let active_editor = self.active_editor().clone();
+        let search_bar = self.search_bar.clone();
+
+        root
+            .flex()
+            .flex_col()
             .key_context("CommandPanel")
             .track_focus(&self.focus_handle)
             .size_full()
-            .bg(panel_bg)
+            .bg(cx.theme().colors().panel_background)
             .on_action(cx.listener(|this, _: &Send, window, cx| {
                 this.send_to_terminal(window, cx);
             }))
@@ -1491,6 +1522,21 @@ impl Render for CommandPanel {
                 this.convert_to_script(window, cx);
             }))
             .child(self.render_hint_bar(cx))
+            .map(|el| {
+                search_bar.update(cx, |bar, cx| {
+                    if bar.is_dismissed() {
+                        return el;
+                    }
+                    el.child(
+                        div()
+                            .px_1()
+                            .border_b_1()
+                            .border_color(cx.theme().colors().border_variant)
+                            .bg(cx.theme().colors().editor_background)
+                            .child(bar.render(window, cx)),
+                    )
+                })
+            })
             .child(
                 v_flex()
                     .flex_1()

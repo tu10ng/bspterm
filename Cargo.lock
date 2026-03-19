@@ -3329,6 +3329,7 @@ dependencies = [
  "menu",
  "multi_buffer",
  "paths",
+ "search",
  "serde",
  "serde_json",
  "settings",
