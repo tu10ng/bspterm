@@ -1480,6 +1480,8 @@ print(output)
             return;
         };
 
+        log::info!("[script] Button bar clicked: button='{}', id={}", button.label, button_id);
+
         let Some(connection_info) = ScriptingServer::get(cx) else {
             let err_msg = t("script.service_unavailable");
             log::error!("Scripting server not available for button bar script");
@@ -1496,6 +1498,8 @@ print(output)
                 script_panel::script_params::ScriptParams::parse_from_script(&content)
             })
             .is_some_and(|params| !params.is_empty());
+
+        log::info!("[script] Button bar script has_params={}, path={:?}", has_params, expanded_path);
 
         if has_params {
             let workspace = self.workspace.clone();
@@ -1570,6 +1574,8 @@ print(output)
         env_params: std::collections::HashMap<String, String>,
         cx: &mut Context<Self>,
     ) {
+        log::info!("[script] Button bar script with params: path={:?}, param_count={}", script_path, env_params.len());
+
         let Some(connection_info) = ScriptingServer::get(cx) else {
             let err_msg = t("script.service_unavailable");
             log::error!("Scripting server not available for button bar script");
@@ -1621,6 +1627,8 @@ print(output)
     /// Execute a function invoked from the terminal command line.
     fn execute_function(&mut self, invocation: FunctionInvocation, cx: &mut Context<Self>) {
         use std::collections::HashMap;
+
+        log::info!("[script] Execute function from command line: name='{}', args={:?}", invocation.function_name, invocation.arguments);
 
         // Get connection info from terminal for socket connection
         let Some(connection_info) = ScriptingServer::get(cx) else {
@@ -1695,6 +1703,8 @@ print(output)
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        log::info!("[script] Function bar clicked: name='{}', id={}", function_name, function_id);
+
         let expanded_path =
             shellexpand::tilde(&script_path.to_string_lossy()).into_owned();
 
@@ -1705,6 +1715,8 @@ print(output)
                 script_panel::script_params::ScriptParams::parse_from_script(&content)
             })
             .is_some_and(|params| !params.is_empty());
+
+        log::info!("[script] Function script has_params={}, path={:?}", has_params, expanded_path);
 
         if has_params {
             let workspace = self.workspace.clone();
@@ -1776,6 +1788,8 @@ print(output)
         env_params: std::collections::HashMap<String, String>,
         cx: &mut Context<Self>,
     ) {
+        log::info!("[script] Execute function with env params: name='{}', param_count={}", invocation.function_name, env_params.len());
+
         let Some(connection_info) = ScriptingServer::get(cx) else {
             log::warn!("Cannot execute function: scripting server not available");
             return;
@@ -2497,8 +2511,11 @@ print(output)
         let terminal_id = self.scripting_id.map(|id| id.to_string());
         let script_path =
             shellexpand::tilde(&shortcut.script_path.to_string_lossy()).into_owned();
+        let script_path_owned = PathBuf::from(&script_path);
+        log::info!("[script] Shortcut triggered: label='{}', keybinding='{}', path={:?}", shortcut.label, shortcut.keybinding, script_path);
+
         let mut runner = ButtonBarScriptRunner::new(
-            PathBuf::from(script_path),
+            script_path_owned,
             connection_info.to_env_string(),
             terminal_id,
         );
@@ -2509,11 +2526,6 @@ print(output)
             return;
         }
 
-        log::info!(
-            "Running script shortcut '{}' ({})",
-            shortcut.label,
-            shortcut.keybinding
-        );
         self.button_bar_runner = Some(runner);
         self.ensure_script_poll_task(cx);
         cx.notify();

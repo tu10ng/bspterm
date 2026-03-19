@@ -15,6 +15,7 @@ static PYTHON_PATH: OnceLock<PathBuf> = OnceLock::new();
 /// so subsequent calls return instantly.
 pub fn python_executable() -> anyhow::Result<PathBuf> {
     if let Some(cached) = PYTHON_PATH.get() {
+        log::info!("[python-runtime] Using cached Python: {:?}", cached);
         return Ok(cached.clone());
     }
 
@@ -26,8 +27,11 @@ pub fn python_executable() -> anyhow::Result<PathBuf> {
 
 #[allow(clippy::disallowed_methods)]
 fn find_python_executable() -> anyhow::Result<PathBuf> {
+    log::info!("[python-runtime] Searching for Python executable...");
+
     for candidate in PYTHON_CANDIDATES {
         let Ok(path) = which::which(candidate) else {
+            log::info!("[python-runtime] Candidate '{}' not found in PATH", candidate);
             continue;
         };
 
@@ -48,10 +52,12 @@ fn find_python_executable() -> anyhow::Result<PathBuf> {
             .stderr(Stdio::null())
             .output()
         else {
+            log::info!("[python-runtime] Candidate '{}' found at {:?} but failed validation", candidate, path);
             continue;
         };
 
         if output.stdout.trim_ascii() != b"3" {
+            log::info!("[python-runtime] Candidate '{}' at {:?} returned unexpected output", candidate, path);
             continue;
         }
 

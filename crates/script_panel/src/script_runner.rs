@@ -78,6 +78,8 @@ impl ScriptRunner {
         let python_path = std::env::join_paths([&scripts_dir, &user_site])
             .unwrap_or_else(|_| scripts_dir.as_os_str().to_os_string());
 
+        log::info!("[script-runner] PYTHONPATH={:?}, terminal_id={:?}", python_path, self.focused_terminal_id);
+
         let mut command = new_std_command(&python);
         command
             .arg(&self.script_path)
@@ -88,6 +90,10 @@ impl ScriptRunner {
 
         if let Some(terminal_id) = &self.focused_terminal_id {
             command.env("BSPTERM_CURRENT_TERMINAL", terminal_id);
+        }
+
+        if !self.params.is_empty() {
+            log::info!("[script-runner] Script params: {} env vars set", self.params.len());
         }
 
         for (key, value) in &self.params {
