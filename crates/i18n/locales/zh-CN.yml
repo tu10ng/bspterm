@@ -276,6 +276,8 @@ command_panel:
   close_tab: "关闭标签"
   default_tab_name: "标签"
   cycle_ms: "ms"
+  to_script: "转脚本"
+  to_script_tooltip: "转换为 Python 脚本（复制到剪贴板）"
 
 # Rule Editor Panel
 rule_editor:

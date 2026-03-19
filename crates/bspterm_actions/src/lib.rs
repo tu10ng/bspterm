@@ -435,7 +435,9 @@ pub mod command_panel {
             /// Stops cycle send in the command panel.
             StopCycleSend,
             /// Renames the current user tab in the command panel.
-            RenameTab
+            RenameTab,
+            /// Converts the command panel content to a Python script and copies to clipboard.
+            ConvertToScript
         ]
     );
 }

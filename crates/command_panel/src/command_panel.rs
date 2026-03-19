@@ -1,13 +1,14 @@
 use anyhow::Result;
 use bspterm_actions::command_panel::{
-    AddTab, Clear, CloseTab, RenameTab, Send, StartCycleSend, StopCycleSend, ToggleFocus,
+    AddTab, Clear, CloseTab, ConvertToScript, RenameTab, Send, StartCycleSend, StopCycleSend,
+    ToggleFocus,
 };
 use collections::HashMap;
 use editor::{Editor, EditorEvent, EditorMode, HighlightKey, MultiBuffer, SizingBehavior, ToPoint};
 use gpui::{
-    Action, App, ClickEvent, Context, Entity, EntityId, EventEmitter, FocusHandle, Focusable,
-    FontStyle, HighlightStyle, IntoElement, MouseButton, Pixels, Render, SharedString, Styled,
-    Subscription, Task, WeakEntity, Window, px,
+    Action, App, ClickEvent, Context, Entity, EntityId, EventEmitter, FocusHandle,
+    Focusable, FontStyle, HighlightStyle, IntoElement, MouseButton, Pixels, Render, SharedString,
+    Styled, Subscription, Task, WeakEntity, Window, px,
 };
 use i18n::t;
 use language::Buffer;
@@ -22,7 +23,7 @@ use ui::{
 };
 use uuid::Uuid;
 use workspace::{
-    Event as WorkspaceEvent, Workspace,
+    Event as WorkspaceEvent, OpenOptions, OpenVisible, Workspace,
     dock::{DockPosition, Panel, PanelEvent},
 };
 
@@ -715,6 +716,67 @@ impl CommandPanel {
         }
     }
 
+    fn convert_to_script(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.convert_to_script_for_tab(self.active_tab_index, window, cx);
+    }
+
+    fn convert_to_script_for_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(tab) = self.tabs.get(index) else {
+            return;
+        };
+        let content = tab.editor.read(cx).text(cx);
+        if content.trim().is_empty() {
+            log::info!("[CommandPanel] convert_to_script: tab {} content is empty, skipping", index);
+            return;
+        }
+        let is_cycle = matches!(tab.kind, CommandTabKind::CycleSend);
+        let cycle_interval_ms = if is_cycle {
+            self.current_cycle_interval()
+        } else {
+            0
+        };
+        let script = generate_python_script(&content, is_cycle, cycle_interval_ms);
+
+        let scripts_dir = paths::config_dir().join("scripts");
+        let _ = std::fs::create_dir_all(&scripts_dir);
+        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+        let script_path = scripts_dir.join(format!("cmd_{}.py", timestamp));
+
+        let workspace = self.workspace.clone();
+        let script_len = script.len();
+        cx.spawn_in(window, async move |_this, cx| {
+            let items = workspace
+                .update_in(cx, |workspace, window, cx| {
+                    workspace.open_paths(
+                        vec![script_path],
+                        OpenOptions {
+                            visible: Some(OpenVisible::All),
+                            focus: Some(true),
+                            ..Default::default()
+                        },
+                        None,
+                        window,
+                        cx,
+                    )
+                })?
+                .await;
+
+            if let Some(Some(Ok(item))) = items.into_iter().next() {
+                if let Some(editor) = item.downcast::<Editor>() {
+                    editor.update_in(cx, |editor, window, cx| {
+                        editor.set_text(script, window, cx);
+                    })?;
+                }
+            }
+            log::info!(
+                "[CommandPanel] convert_to_script: opened script buffer ({} bytes)",
+                script_len
+            );
+            anyhow::Ok(())
+        })
+        .detach_and_log_err(cx);
+    }
+
     fn add_user_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let user_tab_count = self
             .tabs
@@ -1169,6 +1231,7 @@ impl CommandPanel {
                         .menu(move |window, cx| {
                             let rename_handle = panel_handle.clone();
                             let close_handle = panel_handle.clone();
+                            let script_handle = panel_handle.clone();
                             ContextMenu::build(window, cx, move |menu, _window, _cx| {
                                 menu.entry(
                                     t("command_panel.rename_tab"),
@@ -1196,11 +1259,47 @@ impl CommandPanel {
                                         }
                                     },
                                 )
+                                .separator()
+                                .entry(
+                                    t("command_panel.to_script"),
+                                    None,
+                                    move |window, cx| {
+                                        if let Some(panel) = script_handle.upgrade() {
+                                            window.defer(cx, move |window, cx| {
+                                                panel.update(cx, |this, cx| {
+                                                    this.convert_to_script_for_tab(index, window, cx);
+                                                });
+                                            });
+                                        }
+                                    },
+                                )
                             })
                         });
                     left_tabs = left_tabs.child(menu);
                 } else {
-                    left_tabs = left_tabs.child(tab_button);
+                    let tab_element = tab_button.into_any_element();
+                    let panel_handle = cx.weak_entity();
+                    let menu = right_click_menu(("tab-menu", index))
+                        .trigger(|_, _, _| tab_element)
+                        .menu(move |window, cx| {
+                            let script_handle = panel_handle.clone();
+                            ContextMenu::build(window, cx, move |menu, _window, _cx| {
+                                menu.entry(
+                                    t("command_panel.to_script"),
+                                    None,
+                                    move |window, cx| {
+                                        if let Some(panel) = script_handle.upgrade() {
+                                            window.defer(cx, move |window, cx| {
+                                                panel.update(cx, |this, cx| {
+                                                    this.convert_to_script_for_tab(index, window, cx);
+                                                });
+                                            });
+                                        }
+                                    },
+                                )
+                            })
+                        });
+                    left_tabs = left_tabs.child(menu);
                 }
             }
         }
@@ -1388,6 +1487,9 @@ impl Render for CommandPanel {
                     this.start_rename_tab(index, window, cx);
                 }
             }))
+            .on_action(cx.listener(|this, _: &ConvertToScript, window, cx| {
+                this.convert_to_script(window, cx);
+            }))
             .child(self.render_hint_bar(cx))
             .child(
                 v_flex()
@@ -1465,4 +1567,61 @@ impl Drop for CommandPanel {
     fn drop(&mut self) {
         self.cycle_tasks.clear();
     }
+}
+
+fn generate_python_script(content: &str, is_cycle: bool, cycle_interval_ms: u64) -> String {
+    let mut commands = Vec::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with('#') {
+            commands.push(format!("    {}", trimmed));
+        } else {
+            let escaped = line.replace('\\', "\\\\").replace('"', "\\\"");
+            commands.push(format!("    term.send(\"{}\\n\")", escaped));
+        }
+    }
+
+    let body = if commands.is_empty() {
+        "    pass".to_string()
+    } else if is_cycle {
+        let interval_seconds = cycle_interval_ms as f64 / 1000.0;
+        let mut lines = vec!["    while True:".to_string()];
+        for command in &commands {
+            lines.push(format!("    {}", command));
+        }
+        lines.push(format!("        time.sleep({})", interval_seconds));
+        lines.join("\n")
+    } else {
+        let mut lines = Vec::new();
+        for (index, command) in commands.iter().enumerate() {
+            lines.push(command.clone());
+            if index < commands.len() - 1 && !command.trim_start().starts_with('#') {
+                lines.push("    time.sleep(0.05)".to_string());
+            }
+        }
+        lines.join("\n")
+    };
+
+    format!(
+        r#"#!/usr/bin/env python3
+"""
+Auto-generated from Command Panel
+"""
+import time
+from bspterm import current_terminal
+
+
+def main():
+    term = current_terminal()
+{}
+
+
+if __name__ == "__main__":
+    main()
+"#,
+        body
+    )
 }

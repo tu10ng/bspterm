@@ -33,3 +33,4 @@ serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
 paths.workspace = true
+chrono.workspace = true

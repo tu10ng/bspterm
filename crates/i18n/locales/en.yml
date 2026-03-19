@@ -276,6 +276,8 @@ command_panel:
   close_tab: "Close Tab"
   default_tab_name: "Tab"
   cycle_ms: "ms"
+  to_script: "To Script"
+  to_script_tooltip: "Convert to Python Script (clipboard)"
 
 # Rule Editor Panel
 rule_editor:
