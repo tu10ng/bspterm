@@ -36,9 +36,9 @@ Fork of [Zed](https://github.com/zed-industries/zed), a GPU-accelerated code edi
 - **rule_editor** (`crates/rule_editor`): Terminal automation rules panel
 - **highlight_editor** (`crates/highlight_editor`): Terminal highlighting rules panel
 - **log_tracer** (`crates/log_tracer`): Terminal log analysis, Docker code search, call graphs
-- **command_panel** (`crates/command_panel`): Command send panel with per-terminal persistence, cycle send
+- **command_panel** (`crates/command_panel`): Command send panel with per-terminal persistence, cycle send, Ctrl+F search, export to Python script
 - **call_graph_panel** (`crates/call_graph_panel`): Call graph visualization
-- **python_runtime** (`crates/python_runtime`): Bundled CPython 3.11 discovery + system fallback
+- **python_runtime** (`crates/python_runtime`): System Python discovery via PATH
 
 ## Rust Coding Guidelines
 
@@ -183,6 +183,9 @@ Persistent SSH/Telnet configs in `crates/terminal/src/session_store.rs`. Key typ
 - **Session Log Group Folders**: Log files are organized into subdirectories matching the session's group hierarchy from the session store tree (e.g., `session_logs/Production/Web Servers/20260312_host_22.log`). Group names are sanitized for filesystem safety. Sessions at root level log directly into `session_logs/`.
 - **Word Highlight (VSCode-style)**: `terminal.rs` (`WordHighlight`, `find_word_at_grid_point()`) + `terminal_element.rs` (`find_visible_occurrences()`) + `terminal_view.rs` (`HighlightWord`/`ClearWordHighlights` actions). Four scenarios: (1) select text → temporary highlight of all matching occurrences, (2) select text → right-click "Highlight" → persistent highlight, (3) click a word → temporary highlight of matching words, (4) right-click word → "Highlight" → persistent highlight. Persistent highlights use 8-color rotation (`word_highlight_colors()`), not saved across restart. Word boundaries use `semantic_escape_chars`.
 - **Per-Terminal Command Persistence**: `command_panel.rs` — each terminal retains its own command/cycle content and interval via `PerTerminalPersistConfig`. State restored on terminal focus switch, cleaned up on tab close.
+- **Command Panel Search**: `command_panel.rs` — Ctrl+F opens `BufferSearchBar` within command panel tabs for searching through commands.
+- **Command Panel Export to Script**: `command_panel.rs` — right-click tab → "To Script" converts command panel content to executable Python script (`cmd_YYYYMMDD_HHMMSS.py`), supports cycle mode with configured interval. Generated scripts are saved to the scripts directory and opened in editor.
+- **Number Popover IPv4**: `number_hover.rs` + `number_popover.rs` — hovering over numbers or IPv4 addresses in terminal shows multi-format popover (decimal/hex/binary/octal/IPv4). IPv4 detection uses regex, `scan_word_in_grid()` for grid scanning.
 - **Absolute Line Tracking**: `terminal.rs` — `total_lines_scrolled` field for stable addressing; `grid_line_to_absolute()` / `absolute_to_grid_line()` / `scroll_to_line()` for stable line references across scrollback. `command_history.rs` uses `i64` absolute lines.
 
 ## Terminal Autosuggestion (Fish-style)
@@ -239,6 +242,8 @@ Unix socket JSON-RPC in `crates/terminal_scripting/` and `crates/script_panel/`.
 Methods: `session.current`, `session.list`, `session.create_ssh`, `session.create_telnet`, `terminal.send`, `terminal.read`, `terminal.wait_for`, `terminal.run`, `terminal.close`
 
 Python client: `assets/scripts/bspterm.py`. Scripts in `~/.config/bspterm/scripts/*.py`. Scripts can declare `@params` blocks in docstrings for modal parameter input (types: string, number, boolean, choice, password). See `crates/script_panel/src/script_params.rs`.
+
+Official scripts in `assets/scripts/` are auto-installed to user's scripts directory on startup. Includes: `ctrl_b.py` (auto-send Ctrl+B for BootROM menu), `scan_mpu_ip.py`, `device_online_notify.py`, `disp_boa.py`, `example_with_params.py`.
 
 ## Python Runtime
 
@@ -332,6 +337,10 @@ Two options in `crates/settings/src/base_keymap_setting.rs`: `VSCode` (default) 
   - Zed 特有：`Onboarding`、`Welcome`、`RunModal`、`MultiProjectDropdown`、`NotebookEditor`、`RatePredictionsModal`
   - 条件块：`Editor && jupyter`、`Editor && !agent_diff`、`Editor && editor_agent_diff`
 * **已删除的个别绑定**：`editor::ToggleBreakpoint`（debugger）、`agent::*`、`assistant::*`、`task::Rerun`/`task::Spawn`、`git_panel::ToggleFocus`、`debug_panel::ToggleFocus`、`zed::Extensions`、`branches::OpenRecent`、`workspace::FollowNextCollaborator`
+
+## Custom Themes
+
+Custom terminal-optimized themes in `assets/themes/bspterm/bspterm.json`. Variants: Bspterm Light, Bspterm Dark, Green on Black, Yellow on Black, Green on Gray. Default theme: "Bspterm Dark". External themes (Ayu, Gruvbox, One Dark/Light) were removed in favor of these built-in themes.
 
 ## Windows 路径处理
 

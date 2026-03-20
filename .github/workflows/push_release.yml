@@ -26,16 +26,11 @@ jobs:
       - name: Package
         run: |
           mkdir -p release-artifacts
-          mkdir -p /tmp/bspterm-pkg/bin
-          cp target/release/bspterm /tmp/bspterm-pkg/bin/
-          cp target/release/cli /tmp/bspterm-pkg/bin/
           tar -czvf release-artifacts/bspterm-linux-x86_64.tar.gz \
-            -C /tmp/bspterm-pkg .
-          mkdir -p /tmp/discovery_server_pkg
-          cp target/release/discovery_server /tmp/discovery_server_pkg/
-          cp crates/discovery_server/settings.example.json /tmp/discovery_server_pkg/
+            -C target/release bspterm cli
           tar -czvf release-artifacts/discovery_server-linux-x86_64.tar.gz \
-            -C /tmp/discovery_server_pkg discovery_server settings.example.json
+            -C target/release discovery_server \
+            -C ../../crates/discovery_server settings.example.json
 
       - uses: actions/upload-artifact@v4
         with:
@@ -58,9 +53,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path release-artifacts -Force
-          Copy-Item target/release/bspterm.exe /tmp/bspterm-pkg/
-          Copy-Item target/release/cli.exe /tmp/bspterm-pkg/
-          Compress-Archive -Path /tmp/bspterm-pkg/* `
+          Compress-Archive -Path target/release/bspterm.exe, target/release/cli.exe `
             -DestinationPath release-artifacts/bspterm-windows-x86_64.zip
           Compress-Archive -Path target/release/discovery_server.exe, crates/discovery_server/settings.example.json `
             -DestinationPath release-artifacts/discovery_server-windows-x86_64.zip
