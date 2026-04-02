@@ -517,8 +517,13 @@ impl CommandPanel {
             let line_text: String = snapshot
                 .text_for_range(Point::new(row, 0)..Point::new(row, line_len))
                 .collect();
-            if !line_text.is_empty() && !line_text.starts_with('#') {
-                lines.push(line_text);
+            if let Some(comment_start) = line_text.find('#') {
+                let code_part = &line_text[..comment_start].trim_end();
+                if !code_part.is_empty() {
+                    lines.push(code_part.to_string());
+                }
+            } else if !line_text.is_empty() {
+                lines.push(line_text.to_string());
             }
         }
 
@@ -598,8 +603,13 @@ impl CommandPanel {
             let line_text: String = snapshot
                 .text_for_range(Point::new(row, 0)..Point::new(row, line_len))
                 .collect();
-            if !line_text.is_empty() && !line_text.starts_with('#') {
-                lines.push(line_text);
+            if let Some(comment_start) = line_text.find('#') {
+                let code_part = &line_text[..comment_start].trim_end();
+                if !code_part.is_empty() {
+                    lines.push(code_part.to_string());
+                }
+            } else if !line_text.is_empty() {
+                lines.push(line_text.to_string());
             }
         }
 
@@ -662,8 +672,13 @@ impl CommandPanel {
                 let line_text: String = snapshot
                     .text_for_range(Point::new(row, 0)..Point::new(row, line_len))
                     .collect();
-                if !line_text.is_empty() && !line_text.starts_with('#') {
-                    lines.push(line_text);
+                if let Some(comment_start) = line_text.find('#') {
+                    let code_part = &line_text[..comment_start].trim_end();
+                    if !code_part.is_empty() {
+                        lines.push(code_part.to_string());
+                    }
+                } else if !line_text.is_empty() {
+                    lines.push(line_text.to_string());
                 }
             }
             lines
@@ -1099,9 +1114,11 @@ impl CommandPanel {
             let line_text: String = snapshot
                 .text_for_range(Point::new(row, 0)..Point::new(row, line_len))
                 .collect();
-            if line_text.starts_with('#') {
-                let start = snapshot.anchor_before(Point::new(row, 0));
-                let end = snapshot.anchor_after(Point::new(row, line_len));
+            if let Some(hash_pos) = line_text.find('#') {
+                let start_point = Point::new(row, hash_pos);
+                let end_point = Point::new(row, line_len);
+                let start = snapshot.anchor_before(start_point);
+                let end = snapshot.anchor_after(end_point);
                 ranges.push(start..end);
             }
         }
