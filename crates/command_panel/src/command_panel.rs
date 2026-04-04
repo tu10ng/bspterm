@@ -517,8 +517,9 @@ impl CommandPanel {
             let line_text: String = snapshot
                 .text_for_range(Point::new(row, 0)..Point::new(row, line_len))
                 .collect();
-            if !line_text.is_empty() && !line_text.starts_with('#') {
-                lines.push(line_text);
+            let command = strip_inline_comment(&line_text);
+            if !command.is_empty() {
+                lines.push(command.to_string());
             }
         }
 
@@ -598,8 +599,9 @@ impl CommandPanel {
             let line_text: String = snapshot
                 .text_for_range(Point::new(row, 0)..Point::new(row, line_len))
                 .collect();
-            if !line_text.is_empty() && !line_text.starts_with('#') {
-                lines.push(line_text);
+            let command = strip_inline_comment(&line_text);
+            if !command.is_empty() {
+                lines.push(command.to_string());
             }
         }
 
@@ -662,8 +664,9 @@ impl CommandPanel {
                 let line_text: String = snapshot
                     .text_for_range(Point::new(row, 0)..Point::new(row, line_len))
                     .collect();
-                if !line_text.is_empty() && !line_text.starts_with('#') {
-                    lines.push(line_text);
+                let command = strip_inline_comment(&line_text);
+                if !command.is_empty() {
+                    lines.push(command.to_string());
                 }
             }
             lines
@@ -1099,8 +1102,8 @@ impl CommandPanel {
             let line_text: String = snapshot
                 .text_for_range(Point::new(row, 0)..Point::new(row, line_len))
                 .collect();
-            if line_text.starts_with('#') {
-                let start = snapshot.anchor_before(Point::new(row, 0));
+            if let Some(comment_start) = find_comment_start(&line_text) {
+                let start = snapshot.anchor_before(Point::new(row, comment_start as u32));
                 let end = snapshot.anchor_after(Point::new(row, line_len));
                 ranges.push(start..end);
             }
@@ -1615,6 +1618,35 @@ impl Drop for CommandPanel {
     }
 }
 
+/// Find the byte offset of the `#` comment marker in a line.
+/// `#` is a comment when preceded by whitespace or at position 0.
+/// Returns `None` if there is no comment.
+fn find_comment_start(line: &str) -> Option<usize> {
+    for (index, byte) in line.bytes().enumerate() {
+        if byte == b'#' {
+            if index == 0 {
+                return Some(0);
+            }
+            let prev = line.as_bytes()[index - 1];
+            if prev == b' ' || prev == b'\t' {
+                return Some(index);
+            }
+        }
+    }
+    None
+}
+
+/// Return the command portion of a line with any inline comment stripped
+/// and trailing whitespace trimmed. Returns `""` for full-line comments
+/// and empty lines.
+fn strip_inline_comment(line: &str) -> &str {
+    match find_comment_start(line) {
+        Some(0) => "",
+        Some(pos) => line[..pos].trim_end(),
+        None => line,
+    }
+}
+
 fn generate_python_script(content: &str, is_cycle: bool, cycle_interval_ms: u64) -> String {
     let mut commands = Vec::new();
     for line in content.lines() {
@@ -1622,11 +1654,23 @@ fn generate_python_script(content: &str, is_cycle: bool, cycle_interval_ms: u64)
         if trimmed.is_empty() {
             continue;
         }
-        if trimmed.starts_with('#') {
-            commands.push(format!("    {}", trimmed));
-        } else {
-            let escaped = line.replace('\\', "\\\\").replace('"', "\\\"");
-            commands.push(format!("    term.send(\"{}\\n\")", escaped));
+        match find_comment_start(line) {
+            Some(pos) if line[..pos].trim().is_empty() => {
+                // Full-line comment (only whitespace before #) → Python comment
+                commands.push(format!("    {}", trimmed));
+            }
+            Some(pos) => {
+                // Inline comment → Python comment line + term.send()
+                let comment_part = line[pos..].trim_end();
+                let command_part = line[..pos].trim_end();
+                commands.push(format!("    {}", comment_part));
+                let escaped = command_part.replace('\\', "\\\\").replace('"', "\\\"");
+                commands.push(format!("    term.send(\"{}\\n\")", escaped));
+            }
+            None => {
+                let escaped = line.replace('\\', "\\\\").replace('"', "\\\"");
+                commands.push(format!("    term.send(\"{}\\n\")", escaped));
+            }
         }
     }
 
@@ -1670,4 +1714,68 @@ if __name__ == "__main__":
 "#,
         body
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_comment_start_full_line() {
+        assert_eq!(find_comment_start("# this is a comment"), Some(0));
+        assert_eq!(find_comment_start("#comment"), Some(0));
+    }
+
+    #[test]
+    fn test_find_comment_start_inline() {
+        assert_eq!(find_comment_start("ls -la # list files"), Some(7));
+        assert_eq!(find_comment_start("echo hello\t# tab before"), Some(11));
+    }
+
+    #[test]
+    fn test_find_comment_start_no_comment() {
+        assert_eq!(find_comment_start("echo hello#world"), None);
+        assert_eq!(find_comment_start("ls -la"), None);
+        assert_eq!(find_comment_start(""), None);
+    }
+
+    #[test]
+    fn test_find_comment_start_multiple_hashes() {
+        assert_eq!(find_comment_start("cmd #first #second"), Some(4));
+        assert_eq!(find_comment_start("a#b #real"), Some(4));
+    }
+
+    #[test]
+    fn test_strip_inline_comment_full_line() {
+        assert_eq!(strip_inline_comment("# comment"), "");
+        assert_eq!(strip_inline_comment("#comment"), "");
+    }
+
+    #[test]
+    fn test_strip_inline_comment_inline() {
+        assert_eq!(strip_inline_comment("ls -la  # list files"), "ls -la");
+        assert_eq!(strip_inline_comment("cmd # note"), "cmd");
+    }
+
+    #[test]
+    fn test_strip_inline_comment_no_comment() {
+        assert_eq!(strip_inline_comment("echo hello#world"), "echo hello#world");
+        assert_eq!(strip_inline_comment("ls -la"), "ls -la");
+        assert_eq!(strip_inline_comment(""), "");
+    }
+
+    #[test]
+    fn test_strip_inline_comment_trailing_whitespace() {
+        assert_eq!(strip_inline_comment("cmd   # note"), "cmd");
+    }
+
+    #[test]
+    fn test_generate_script_inline_comments() {
+        let content = "ls -la  # list files\n# full comment\necho hello";
+        let script = generate_python_script(content, false, 5000);
+        assert!(script.contains("# list files"));
+        assert!(script.contains("term.send(\"ls -la\\n\")"));
+        assert!(script.contains("# full comment"));
+        assert!(script.contains("term.send(\"echo hello\\n\")"));
+    }
 }
