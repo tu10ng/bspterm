@@ -188,6 +188,7 @@ members = [
     "crates/terminal_scripting",
     "crates/terminal_view",
     "crates/script_panel",
+    "crates/sftp_panel",
     "crates/text",
     "crates/theme",
     "crates/theme_extension",
@@ -432,6 +433,7 @@ terminal_outline = { path = "crates/terminal_outline" }
 terminal_scripting = { path = "crates/terminal_scripting" }
 terminal_view = { path = "crates/terminal_view" }
 script_panel = { path = "crates/script_panel" }
+sftp_panel = { path = "crates/sftp_panel" }
 text = { path = "crates/text" }
 theme = { path = "crates/theme" }
 theme_extension = { path = "crates/theme_extension" }
@@ -650,6 +652,7 @@ reqwest = { git = "https://github.com/zed-industries/reqwest.git", rev = "c15662
 ], package = "zed-reqwest", version = "0.12.15-zed" }
 rsa = "0.9.6"
 russh = { version = "0.57", features = ["rsa"] }
+russh-sftp = "2.1"
 ssh-key = { version = "0.6", features = ["rsa", "ed25519"] }
 runtimelib = { version = "1.1.0", default-features = false, features = [
     "async-dispatcher-runtime", "aws-lc-rs"

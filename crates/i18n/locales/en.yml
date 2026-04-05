@@ -565,3 +565,16 @@ call_graph:
   error_title: "Analysis Failed"
   export_dot: "Export DOT"
   export_svg: "Export SVG"
+
+# SFTP Panel
+sftp_panel:
+  title: "SFTP"
+  disconnected: "Disconnected"
+  connecting: "Connecting..."
+  connected: "Connected"
+  error: "Error"
+  connect_from_terminal: "Connect from active terminal"
+  navigate_up: "Navigate up"
+  click_connect: "Click the link icon to connect from active terminal"
+  empty_directory: "Empty directory"
+  refresh: "Sync & Refresh"

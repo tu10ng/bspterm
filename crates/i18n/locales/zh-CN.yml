@@ -565,3 +565,16 @@ call_graph:
   error_title: "分析失败"
   export_dot: "导出 DOT"
   export_svg: "导出 SVG"
+
+# SFTP Panel
+sftp_panel:
+  title: "SFTP"
+  disconnected: "未连接"
+  connecting: "连接中..."
+  connected: "已连接"
+  error: "错误"
+  connect_from_terminal: "从当前终端连接"
+  navigate_up: "返回上级目录"
+  click_connect: "点击链接图标从当前终端连接"
+  empty_directory: "空目录"
+  refresh: "同步刷新"

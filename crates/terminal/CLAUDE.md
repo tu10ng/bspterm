@@ -12,7 +12,10 @@ src/
 │   ├── mod.rs            # TerminalConnection trait, ConnectionState
 │   ├── pty.rs            # Local PTY connection
 │   ├── ssh/              # SSH connection (auth, session, terminal adapter)
+│   │   ├── sftp.rs       # SftpClient wrapper for SFTP file operations
+│   │   └── ...
 │   └── telnet/           # Telnet connection (protocol, session, terminal adapter)
+├── sftp_store.rs         # SftpStore entity managing SFTP client connections
 ├── session_store.rs      # Session persistence in tree structure
 ├── session_logger.rs     # Terminal output logging (group-path subdirectories)
 ├── active_session_tracker.rs  # GPUI entity for active sessions
@@ -44,6 +47,10 @@ src/
 | `SessionStore` / `SessionStoreEntity` | Session persistence with GPUI integration |
 | `SessionNode` | Group or Session in tree structure |
 | `SessionConfig` | SSH/Telnet configuration with auth methods |
+| `SftpClient` | SFTP file operations wrapper (list_dir, read/write, mkdir, remove) |
+| `SftpStore` / `SftpStoreEntity` | SFTP client connection manager with GPUI events |
+| `SshHostKey` | Host+port key for SFTP client lookup |
+| `RemoteEntry` | Remote file/directory entry (name, path, size, is_dir) |
 | `RuleStore` / `RuleEngine` | Automation rules with pattern matching |
 | `AutomationRule` | Trigger + condition + action definition |
 | `ContextExclusion` | Context-aware rule exclusion (pattern/case_insensitive/lines_before) |

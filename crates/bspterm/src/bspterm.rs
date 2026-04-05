@@ -648,6 +648,7 @@ fn initialize_panels(
         let terminal_panel = TerminalPanel::load(workspace_handle.clone(), cx.clone());
         let editor_panel = EditorPanel::load(workspace_handle.clone(), cx.clone());
         let script_panel = script_panel::ScriptPanel::load(workspace_handle.clone(), cx.clone());
+        let sftp_panel = sftp_panel::SftpPanel::load(workspace_handle.clone(), cx.clone());
         let command_panel = command_panel::CommandPanel::load(workspace_handle.clone(), cx.clone());
         // let git_panel = GitPanel::load(workspace_handle.clone(), cx.clone());
         // let debug_panel = DebugPanel::load(workspace_handle.clone(), cx);
@@ -679,6 +680,7 @@ fn initialize_panels(
             add_panel_when_ready(terminal_panel, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(editor_panel, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(script_panel, workspace_handle.clone(), cx.clone()),
+            add_panel_when_ready(sftp_panel, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(command_panel, workspace_handle.clone(), cx.clone()),
             // add_panel_when_ready(git_panel, workspace_handle.clone(), cx.clone()),
             // add_panel_when_ready(debug_panel, workspace_handle.clone(), cx.clone()),

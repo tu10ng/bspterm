@@ -160,6 +160,59 @@ pub(crate) fn extract_command_preserve_trailing(line: &str) -> Option<(String, S
     None
 }
 
+/// Extracts the prompt portion from a line, even if there is no command after it.
+/// Used to detect the prompt when the terminal is idle (no user input).
+pub(crate) fn extract_prompt(line: &str) -> Option<String> {
+    let trimmed = line.trim_end();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    for pattern in prompt_patterns() {
+        if let Some(caps) = pattern.captures(trimmed) {
+            if let Some(prompt_match) = caps.get(1) {
+                return Some(prompt_match.as_str().to_string());
+            }
+        }
+    }
+
+    // If no pattern matched with a command part, try matching the whole line as a prompt.
+    // Idle prompts like "user@host:~$ " end with $, #, or > possibly followed by spaces.
+    static BARE_PROMPT: OnceLock<Regex> = OnceLock::new();
+    let bare_prompt = BARE_PROMPT.get_or_init(|| {
+        Regex::new(r"^(.*[$#>])\s*$").unwrap()
+    });
+    if let Some(caps) = bare_prompt.captures(trimmed) {
+        if let Some(prompt_match) = caps.get(1) {
+            return Some(prompt_match.as_str().to_string());
+        }
+    }
+
+    // Huawei user view: <DeviceName> with nothing after
+    static BARE_HUAWEI_USER: OnceLock<Regex> = OnceLock::new();
+    let bare_huawei = BARE_HUAWEI_USER.get_or_init(|| {
+        Regex::new(r"^(<[^<>]+>)\s*$").unwrap()
+    });
+    if let Some(caps) = bare_huawei.captures(trimmed) {
+        if let Some(prompt_match) = caps.get(1) {
+            return Some(prompt_match.as_str().to_string());
+        }
+    }
+
+    // Huawei system view: [DeviceName] or [DeviceName-xxx]
+    static BARE_HUAWEI_SYS: OnceLock<Regex> = OnceLock::new();
+    let bare_huawei_sys = BARE_HUAWEI_SYS.get_or_init(|| {
+        Regex::new(r"^(\[[^\[\]@\s]+\])\s*$").unwrap()
+    });
+    if let Some(caps) = bare_huawei_sys.captures(trimmed) {
+        if let Some(prompt_match) = caps.get(1) {
+            return Some(prompt_match.as_str().to_string());
+        }
+    }
+
+    None
+}
+
 // ── PromptContext classification ─────────────────────────────────────────
 
 /// Classifies the type of prompt to scope autosuggestion matching.

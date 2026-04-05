@@ -2345,6 +2345,7 @@ dependencies = [
  "settings",
  "settings_profile_selector",
  "settings_ui",
+ "sftp_panel",
  "shellexpand 2.1.2",
  "smol",
  "snippet_provider",
@@ -6104,6 +6105,18 @@ dependencies = [
  "futures-sink",
  "nanorand",
  "spin 0.9.8",
+]
+
+[[package]]
+name = "flurry"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf5efcf77a4da27927d3ab0509dec5b0954bb3bc59da5a1de9e52642ebd4cdf9"
+dependencies = [
+ "ahash",
+ "num_cpus",
+ "parking_lot",
+ "seize",
 ]
 
 [[package]]
@@ -13499,6 +13512,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "russh-sftp"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3bb94393cafad0530145b8f626d8687f1ee1dedb93d7ba7740d6ae81868b13b5"
+dependencies = [
+ "bitflags 2.10.0",
+ "bytes 1.11.1",
+ "chrono",
+ "flurry",
+ "log",
+ "serde",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "russh-util"
 version = "0.52.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14134,6 +14164,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "seize"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "689224d06523904ebcc9b482c6a3f4f7fb396096645c4cd10c0d2ff7371a34d3"
+
+[[package]]
 name = "self_cell"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14471,6 +14507,27 @@ dependencies = [
  "util",
  "workspace",
  "zlog",
+]
+
+[[package]]
+name = "sftp_panel"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bspterm_actions",
+ "collections",
+ "gpui",
+ "gpui_tokio",
+ "i18n",
+ "log",
+ "panel",
+ "regex",
+ "settings",
+ "terminal",
+ "terminal_view",
+ "ui",
+ "util",
+ "workspace",
 ]
 
 [[package]]
@@ -15688,6 +15745,7 @@ dependencies = [
  "regex",
  "release_channel",
  "russh",
+ "russh-sftp",
  "schemars",
  "serde",
  "serde_json",

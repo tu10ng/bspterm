@@ -207,6 +207,7 @@ terminal_outline.workspace = true
 terminal_view.workspace = true
 terminal_scripting.workspace = true
 script_panel.workspace = true
+sftp_panel.workspace = true
 theme.workspace = true
 theme_extension.workspace = true
 theme_selector.workspace = true

@@ -167,6 +167,26 @@ impl SshSession {
         })
     }
 
+    /// Open a new SFTP channel on this SSH session.
+    pub async fn open_sftp_channel(&self) -> Result<russh::Channel<russh::client::Msg>> {
+        let handle_guard = self.handle.read().await;
+        let handle = handle_guard
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("SSH session is closed"))?;
+
+        let channel = handle
+            .channel_open_session()
+            .await
+            .context("failed to open SSH channel for SFTP")?;
+
+        channel
+            .request_subsystem(true, "sftp")
+            .await
+            .context("failed to request SFTP subsystem")?;
+
+        Ok(channel)
+    }
+
     pub async fn close(&self) {
         *self.state.write() = ConnectionState::Disconnected;
         if let Some(handle) = self.handle.write().await.take() {

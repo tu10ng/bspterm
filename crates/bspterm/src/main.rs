@@ -687,6 +687,7 @@ fn main() {
         terminal_scripting::init(cx);
         terminal_outline::init(cx);
         script_panel::init(cx);
+        sftp_panel::init(cx);
         user_info_panel::init(cx);
         terminal::ActiveSessionTrackerEntity::init(cx);
         editor_panel::init(cx);

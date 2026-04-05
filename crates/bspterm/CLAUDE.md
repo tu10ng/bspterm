@@ -91,5 +91,5 @@ cargo run -p cli  # Run release CLI
 - Special CLI modes: `--askpass`, `--crash-handler`, `--nc`, `--printenv`
 - Theme loading is eager (load active theme at startup)
 - File watchers: themes directory, languages directory (debug), user settings
-- Panels registered: RemoteExplorer, RuleEditor, EditorPanel, TerminalPanel, ProjectPanel, OutlinePanel
-- Global entities initialized: SessionStore, RuleStore, ShortcutBarStore
+- Panels registered: RemoteExplorer, RuleEditor, EditorPanel, TerminalPanel, ProjectPanel, OutlinePanel, SftpPanel
+- Global entities initialized: SessionStore, RuleStore, ShortcutBarStore, SftpStore

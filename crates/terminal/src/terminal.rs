@@ -13,6 +13,7 @@ pub mod rule_engine;
 pub mod rule_store;
 pub mod session_logger;
 pub mod session_store;
+pub mod sftp_store;
 pub mod shortcut_bar_store;
 pub mod suggestion_history;
 pub mod terminal_lsp;
@@ -3383,6 +3384,31 @@ impl Terminal {
         }
 
         command_history::extract_command_preserve_trailing(&line_text)
+    }
+
+    /// Reads the prompt from the terminal grid's cursor line.
+    /// Unlike `read_user_input_from_grid`, this works even when the user hasn't typed anything
+    /// (idle prompt). Reads the full line content and extracts the prompt portion.
+    pub fn read_prompt_from_grid(&self) -> Option<String> {
+        let term = self.term.lock();
+        let grid = term.grid();
+        let cursor_point = grid.cursor.point;
+        let cols = grid.columns();
+
+        let mut line_text = String::new();
+        let row = &grid[cursor_point.line];
+        for col in 0..cols {
+            let cell = &row[Column(col)];
+            line_text.push(cell.c);
+        }
+        drop(term);
+
+        let trimmed = line_text.trim_end();
+        if trimmed.is_empty() {
+            return None;
+        }
+
+        command_history::extract_prompt(trimmed)
     }
 
     /// Updates the autosuggestion by querying the suggestion history.

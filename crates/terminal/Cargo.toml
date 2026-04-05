@@ -44,6 +44,7 @@ util.workspace = true
 urlencoding.workspace = true
 parking_lot.workspace = true
 russh.workspace = true
+russh-sftp.workspace = true
 ssh-key.workspace = true
 async-trait.workspace = true
 dirs.workspace = true

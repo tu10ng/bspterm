@@ -1,11 +1,13 @@
 mod auth;
 mod manager;
+pub mod sftp;
 mod session;
 mod terminal;
 
 pub use auth::{SshAuthConfig, SshAuthMethod};
 pub use manager::SshSessionManager;
 pub use session::SshSession;
+pub use sftp::{RemoteEntry, SftpClient};
 pub use terminal::SshTerminalConnection;
 
 use std::hash::Hash;

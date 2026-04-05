@@ -334,6 +334,20 @@ pub mod script_panel {
     );
 }
 
+pub mod sftp_panel {
+    use gpui::actions;
+
+    actions!(
+        sftp_panel,
+        [
+            /// Toggles focus on the SFTP panel.
+            ToggleFocus,
+            /// Sync CWD from terminal and refresh directory listing.
+            RefreshDirectory
+        ]
+    );
+}
+
 pub mod rule_editor {
     use gpui::actions;
 
