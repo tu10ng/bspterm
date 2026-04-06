@@ -28,6 +28,13 @@ pub struct ScriptRunner {
 }
 
 impl ScriptRunner {
+    pub fn script_name(&self) -> String {
+        self.script_path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "script".to_string())
+    }
+
     pub fn new(
         script_path: PathBuf,
         connection_string: String,

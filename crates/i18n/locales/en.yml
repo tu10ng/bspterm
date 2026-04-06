@@ -252,6 +252,12 @@ script_panel:
   run: "Run"
   stop: "Stop"
   output_placeholder: "Output will appear here..."
+  running_scripts: "Running"
+  source_panel: "Panel"
+  source_button_bar: "Button"
+  source_function: "Function"
+  source_shortcut: "Shortcut"
+  no_running: "No scripts running"
 
 # Script Parameters Modal
 script_params:

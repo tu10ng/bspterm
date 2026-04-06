@@ -52,6 +52,10 @@ impl ButtonBarScriptRunner {
         self.runner.stop();
     }
 
+    pub fn script_name(&self) -> String {
+        self.runner.script_name()
+    }
+
     pub fn status(&mut self) -> &ScriptStatus {
         self.runner.status()
     }

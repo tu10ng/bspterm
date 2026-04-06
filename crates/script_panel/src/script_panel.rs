@@ -1,26 +1,30 @@
+pub mod running_script_registry;
 pub mod script_params;
 pub mod script_params_modal;
 pub mod script_runner;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Instant;
 
 use anyhow::Result;
 use gpui::{
     Action, App, Context, Entity, EventEmitter, FocusHandle, Focusable, IntoElement, ParentElement,
-    Render, Styled, WeakEntity, Window, px,
+    Render, Styled, Subscription, WeakEntity, Window, px,
 };
 use i18n::t;
 use ui::{
-    prelude::*, Color, Icon, IconName, IconSize, Label, LabelSize, ListItem, ListItemSpacing,
-    h_flex, v_flex,
+    prelude::*, Color, Icon, IconButton, IconName, IconSize, Label, LabelSize, ListItem,
+    ListItemSpacing, Tooltip, h_flex, v_flex,
 };
+use uuid::Uuid;
 use workspace::{
     Workspace,
     dock::{DockPosition, Panel, PanelEvent},
 };
 use bspterm_actions::script_panel::ToggleFocus;
 
+use running_script_registry::{RunningScriptEvent, RunningScriptRegistry, ScriptSource};
 use script_params::ScriptParams;
 use script_params_modal::ScriptParamsModal;
 use script_runner::{ScriptRunner, ScriptStatus};
@@ -69,6 +73,7 @@ fn ensure_default_scripts() {
 
 pub fn init(cx: &mut App) {
     ensure_default_scripts();
+    RunningScriptRegistry::init(cx);
 
     cx.observe_new(|workspace: &mut Workspace, _, _| {
         workspace.register_action(|workspace, _: &ToggleFocus, window, cx| {
@@ -94,12 +99,20 @@ pub struct ScriptPanel {
     script_runner: Option<ScriptRunner>,
     output: String,
     _subscription: Option<gpui::Subscription>,
+    registry_id: Option<Uuid>,
+    _registry_subscription: Option<Subscription>,
 }
 
 impl ScriptPanel {
     pub fn new(workspace: WeakEntity<Workspace>, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
         let scripts = Self::load_scripts();
+
+        let registry_subscription = RunningScriptRegistry::try_global(cx).map(|registry| {
+            cx.subscribe(&registry, |_this, _registry, _event: &RunningScriptEvent, cx| {
+                cx.notify();
+            })
+        });
 
         Self {
             focus_handle,
@@ -110,6 +123,8 @@ impl ScriptPanel {
             script_runner: None,
             output: String::new(),
             _subscription: None,
+            registry_id: None,
+            _registry_subscription: registry_subscription,
         }
     }
 
@@ -263,18 +278,49 @@ impl ScriptPanel {
         if let Err(e) = runner.start() {
             self.output.push_str(&format!("Failed to start: {}\n", e));
         } else {
+            let script_name = runner.script_name();
             self.script_runner = Some(runner);
+
+            if let Some(registry) = RunningScriptRegistry::try_global(cx) {
+                let panel = cx.entity().downgrade();
+                let id = registry.update(cx, |registry, cx| {
+                    registry.register(
+                        script_name,
+                        ScriptSource::Panel,
+                        move |cx| {
+                            if let Some(panel) = panel.upgrade() {
+                                panel.update(cx, |this, cx| {
+                                    this.stop_script(cx);
+                                });
+                            }
+                        },
+                        cx,
+                    )
+                });
+                self.registry_id = Some(id);
+            }
         }
 
         cx.notify();
     }
 
-    fn stop_script(&mut self, _cx: &mut Context<Self>) {
+    fn stop_script(&mut self, cx: &mut Context<Self>) {
         if let Some(runner) = &mut self.script_runner {
             runner.stop();
             self.output.push_str("Script stopped.\n");
         }
         self.script_runner = None;
+        self.unregister_from_registry(cx);
+    }
+
+    fn unregister_from_registry(&mut self, cx: &mut Context<Self>) {
+        if let Some(id) = self.registry_id.take() {
+            if let Some(registry) = RunningScriptRegistry::try_global(cx) {
+                registry.update(cx, |registry, cx| {
+                    registry.unregister(id, cx);
+                });
+            }
+        }
     }
 
     fn update_output(&mut self, cx: &mut Context<Self>) {
@@ -289,11 +335,13 @@ impl ScriptPanel {
                     self.output
                         .push_str(&format!("\nScript finished with exit code: {}\n", code));
                     self.script_runner = None;
+                    self.unregister_from_registry(cx);
                     cx.notify();
                 }
                 ScriptStatus::Failed(err) => {
                     self.output.push_str(&format!("\nScript failed: {}\n", err));
                     self.script_runner = None;
+                    self.unregister_from_registry(cx);
                     cx.notify();
                 }
                 _ => {}
@@ -403,6 +451,108 @@ impl ScriptPanel {
             })
     }
 
+    fn render_running_scripts(
+        &self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let entries: Vec<(Uuid, String, ScriptSource, Instant)> =
+            if let Some(registry) = RunningScriptRegistry::try_global(cx) {
+                registry
+                    .read(cx)
+                    .entries()
+                    .iter()
+                    .map(|e| (e.id, e.script_name.clone(), e.source, e.started_at))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+
+        let source_label = |source: ScriptSource| -> String {
+            match source {
+                ScriptSource::Panel => t("script_panel.source_panel").to_string(),
+                ScriptSource::ButtonBar => t("script_panel.source_button_bar").to_string(),
+                ScriptSource::Function => t("script_panel.source_function").to_string(),
+                ScriptSource::Shortcut => t("script_panel.source_shortcut").to_string(),
+            }
+        };
+
+        let border_color = cx.theme().colors().border;
+
+        v_flex()
+            .w_full()
+            .border_b_1()
+            .border_color(border_color)
+            .p_2()
+            .gap_1()
+            .child(
+                Label::new(t("script_panel.running_scripts"))
+                    .size(LabelSize::Small)
+                    .color(Color::Muted),
+            )
+            .when(entries.is_empty(), |this| {
+                this.child(
+                    Label::new(t("script_panel.no_running"))
+                        .size(LabelSize::XSmall)
+                        .color(Color::Muted),
+                )
+            })
+            .children(entries.into_iter().enumerate().map(|(ix, (id, name, source, started_at))| {
+                let elapsed = started_at.elapsed().as_secs();
+                let time_str = if elapsed < 60 {
+                    format!("{}s", elapsed)
+                } else {
+                    format!("{}m{}s", elapsed / 60, elapsed % 60)
+                };
+
+                ListItem::new(("running-script", ix))
+                    .spacing(ListItemSpacing::Dense)
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .gap_2()
+                            .items_center()
+                            .child(
+                                Icon::new(IconName::PlayFilled)
+                                    .size(IconSize::XSmall)
+                                    .color(Color::Success),
+                            )
+                            .child(
+                                Label::new(name)
+                                    .size(LabelSize::Small)
+                                    .into_any_element(),
+                            )
+                            .child(
+                                Label::new(source_label(source))
+                                    .size(LabelSize::XSmall)
+                                    .color(Color::Muted)
+                                    .into_any_element(),
+                            )
+                            .child(
+                                Label::new(time_str)
+                                    .size(LabelSize::XSmall)
+                                    .color(Color::Muted)
+                                    .into_any_element(),
+                            )
+                            .child(div().flex_grow())
+                            .child(
+                                IconButton::new(("stop-running", ix), IconName::Stop)
+                                    .icon_size(IconSize::XSmall)
+                                    .tooltip(Tooltip::text(t("script_panel.stop")))
+                                    .on_click(cx.listener(move |_this, _, _window, cx| {
+                                        if let Some(registry) =
+                                            RunningScriptRegistry::try_global(cx)
+                                        {
+                                            registry.update(cx, |registry, cx| {
+                                                registry.stop(id, cx);
+                                            });
+                                        }
+                                    })),
+                            ),
+                    )
+            }))
+    }
+
     fn render_output(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.update_output(cx);
 
@@ -473,6 +623,7 @@ impl Render for ScriptPanel {
                     .border_color(border_color)
                     .child(self.render_script_list(window, cx)),
             )
+            .child(self.render_running_scripts(window, cx))
             .child(self.render_output(window, cx))
     }
 }

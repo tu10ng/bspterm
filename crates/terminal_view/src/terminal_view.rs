@@ -93,6 +93,7 @@ use bspterm_actions::{
 };
 use call_graph_panel::TraceConfigModal;
 use button_bar::ButtonBarScriptRunner;
+use script_panel::running_script_registry::{RunningScriptRegistry, ScriptSource};
 use function_bar::{FunctionBarConfigModal, AddFunctionModal, EditAbbreviationModal, RenameFunctionModal};
 use shortcut_bar::{AddShortcutModal, EditShortcutModal, ShortcutBarConfigModal};
 use terminal::{
@@ -316,6 +317,8 @@ pub struct TerminalView {
     button_bar_runner: Option<ButtonBarScriptRunner>,
     function_runner: Option<ButtonBarScriptRunner>,
     _script_poll_task: Option<Task<()>>,
+    button_bar_registry_id: Option<uuid::Uuid>,
+    function_registry_id: Option<uuid::Uuid>,
     _button_bar_subscription: Option<Subscription>,
     _function_store_subscription: Option<Subscription>,
     /// Currently selected button for context menu operations (button_id, script_path)
@@ -537,6 +540,8 @@ impl TerminalView {
             button_bar_runner: None,
             function_runner: None,
             _script_poll_task: None,
+            button_bar_registry_id: None,
+            function_registry_id: None,
             _button_bar_subscription: button_bar_subscription,
             _function_store_subscription: None,
             selected_button: None,
@@ -1562,7 +1567,9 @@ print(output)
                 return;
             }
 
+            let script_name = runner.script_name();
             self.button_bar_runner = Some(runner);
+            self.register_button_bar_script(script_name, ScriptSource::ButtonBar, cx);
             self.ensure_script_poll_task(cx);
             cx.notify();
         }
@@ -1603,7 +1610,9 @@ print(output)
             return;
         }
 
+        let script_name = runner.script_name();
         self.button_bar_runner = Some(runner);
+        self.register_button_bar_script(script_name, ScriptSource::ButtonBar, cx);
         self.ensure_script_poll_task(cx);
         cx.notify();
     }
@@ -1690,7 +1699,9 @@ print(output)
             invocation.arguments
         );
 
+        let script_name = runner.script_name();
         self.function_runner = Some(runner);
+        self.register_function_script(script_name, ScriptSource::Function, cx);
         self.ensure_script_poll_task(cx);
         cx.notify();
     }
@@ -1818,7 +1829,9 @@ print(output)
 
         log::info!("Function '{}' started with env params", invocation.function_name);
 
+        let script_name = runner.script_name();
         self.function_runner = Some(runner);
+        self.register_function_script(script_name, ScriptSource::Function, cx);
         self.ensure_script_poll_task(cx);
         cx.notify();
     }
@@ -1850,6 +1863,86 @@ print(output)
         }));
     }
 
+    fn register_button_bar_script(
+        &mut self,
+        script_name: String,
+        source: ScriptSource,
+        cx: &mut Context<Self>,
+    ) {
+        self.unregister_button_bar_script(cx);
+        if let Some(registry) = RunningScriptRegistry::try_global(cx) {
+            let weak = cx.entity().downgrade();
+            let id = registry.update(cx, |registry, cx| {
+                registry.register(
+                    script_name,
+                    source,
+                    move |cx| {
+                        if let Some(view) = weak.upgrade() {
+                            view.update(cx, |this, _cx| {
+                                if let Some(runner) = &mut this.button_bar_runner {
+                                    runner.stop();
+                                }
+                                this.button_bar_runner = None;
+                            });
+                        }
+                    },
+                    cx,
+                )
+            });
+            self.button_bar_registry_id = Some(id);
+        }
+    }
+
+    fn unregister_button_bar_script(&mut self, cx: &mut Context<Self>) {
+        if let Some(id) = self.button_bar_registry_id.take() {
+            if let Some(registry) = RunningScriptRegistry::try_global(cx) {
+                registry.update(cx, |registry, cx| {
+                    registry.unregister(id, cx);
+                });
+            }
+        }
+    }
+
+    fn register_function_script(
+        &mut self,
+        script_name: String,
+        source: ScriptSource,
+        cx: &mut Context<Self>,
+    ) {
+        self.unregister_function_script(cx);
+        if let Some(registry) = RunningScriptRegistry::try_global(cx) {
+            let weak = cx.entity().downgrade();
+            let id = registry.update(cx, |registry, cx| {
+                registry.register(
+                    script_name,
+                    source,
+                    move |cx| {
+                        if let Some(view) = weak.upgrade() {
+                            view.update(cx, |this, _cx| {
+                                if let Some(runner) = &mut this.function_runner {
+                                    runner.stop();
+                                }
+                                this.function_runner = None;
+                            });
+                        }
+                    },
+                    cx,
+                )
+            });
+            self.function_registry_id = Some(id);
+        }
+    }
+
+    fn unregister_function_script(&mut self, cx: &mut Context<Self>) {
+        if let Some(id) = self.function_registry_id.take() {
+            if let Some(registry) = RunningScriptRegistry::try_global(cx) {
+                registry.update(cx, |registry, cx| {
+                    registry.unregister(id, cx);
+                });
+            }
+        }
+    }
+
     fn update_button_bar_runner(&mut self, cx: &mut Context<Self>) {
         let Some(runner) = &mut self.button_bar_runner else {
             return;
@@ -1868,12 +1961,14 @@ print(output)
             ScriptStatus::Finished(code) => {
                 log::debug!("Button bar script finished with code {}", code);
                 self.button_bar_runner = None;
+                self.unregister_button_bar_script(cx);
                 None
             }
             ScriptStatus::Failed(err) => {
                 log::error!("Button bar script failed: {}", err);
                 let err_msg = err.clone();
                 self.button_bar_runner = None;
+                self.unregister_button_bar_script(cx);
                 Some(err_msg)
             }
             _ => None,
@@ -1900,12 +1995,14 @@ print(output)
             ScriptStatus::Finished(code) => {
                 log::info!("[function-script] finished with code {}", code);
                 self.function_runner = None;
+                self.unregister_function_script(cx);
                 None
             }
             ScriptStatus::Failed(err) => {
                 log::error!("[function-script] failed: {}", err);
                 let err_msg = err.clone();
                 self.function_runner = None;
+                self.unregister_function_script(cx);
                 Some(err_msg)
             }
             _ => None,
@@ -2526,7 +2623,9 @@ print(output)
             return;
         }
 
+        let script_name = runner.script_name();
         self.button_bar_runner = Some(runner);
+        self.register_button_bar_script(script_name, ScriptSource::Shortcut, cx);
         self.ensure_script_poll_task(cx);
         cx.notify();
     }

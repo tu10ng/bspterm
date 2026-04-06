@@ -252,6 +252,12 @@ script_panel:
   run: "运行"
   stop: "停止"
   output_placeholder: "输出将显示在此处..."
+  running_scripts: "运行中"
+  source_panel: "面板"
+  source_button_bar: "按钮"
+  source_function: "函数"
+  source_shortcut: "快捷键"
+  no_running: "没有正在运行的脚本"
 
 # Script Parameters Modal
 script_params:
