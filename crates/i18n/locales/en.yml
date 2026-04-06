@@ -190,6 +190,7 @@ remote_explorer:
   new_session: "New Session"
   new_ssh_session: "New SSH Session"
   new_telnet_session: "New Telnet Session"
+  new_subgroup: "New Subgroup"
   pin_group: "Pin Group"
   unpin_group: "Unpin Group"
   switch_to_ssh: "Switch to SSH"

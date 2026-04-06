@@ -190,6 +190,7 @@ remote_explorer:
   new_session: "新建会话"
   new_ssh_session: "新建 SSH 会话"
   new_telnet_session: "新建 Telnet 会话"
+  new_subgroup: "新建子分组"
   pin_group: "置顶分组"
   unpin_group: "取消置顶"
   switch_to_ssh: "切换为 SSH"

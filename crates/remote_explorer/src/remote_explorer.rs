@@ -817,6 +817,7 @@ impl RemoteExplorer {
                     let workspace_for_edit = workspace.clone();
                     let workspace_for_new_ssh = workspace_for_edit.clone();
                     let workspace_for_new_telnet = workspace_for_edit.clone();
+                    let workspace_for_new_subgroup = workspace_for_edit.clone();
                     let pin_label = if is_pinned {
                         t("remote_explorer.unpin_group")
                     } else {
@@ -842,6 +843,15 @@ impl RemoteExplorer {
                             workspace.update(cx, |ws, cx| {
                                 ws.toggle_modal(window, cx, |window, cx| {
                                     SessionEditModal::new_create_telnet(Some(entry_id), window, cx)
+                                });
+                            });
+                        }
+                    })
+                    .entry(t("remote_explorer.new_subgroup"), None, move |window, cx| {
+                        if let Some(workspace) = workspace_for_new_subgroup.upgrade() {
+                            workspace.update(cx, |ws, cx| {
+                                ws.toggle_modal(window, cx, |window, cx| {
+                                    GroupEditModal::new_create(Some(entry_id), window, cx)
                                 });
                             });
                         }
