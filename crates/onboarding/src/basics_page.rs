@@ -20,13 +20,12 @@ use crate::{
     theme_preview::{ThemePreviewStyle, ThemePreviewTile},
 };
 
-const LIGHT_THEMES: [&str; 5] = ["Bspterm Light", "Bspterm Light", "Bspterm Light", "Bspterm Light", "Bspterm Light"];
-const DARK_THEMES: [&str; 5] = ["Bspterm Dark", "Green on Black", "Yellow on Black", "Green on Gray", "Bspterm Light"];
-const FAMILY_NAMES: [SharedString; 5] = [
+const LIGHT_THEMES: [&str; 4] = ["Bspterm Light", "Bspterm Light", "Bspterm Light", "Bspterm Light"];
+const DARK_THEMES: [&str; 4] = ["Bspterm Dark", "Green on Black", "Yellow on Black", "Bspterm Light"];
+const FAMILY_NAMES: [SharedString; 4] = [
     SharedString::new_static("Dark"),
     SharedString::new_static("Green"),
     SharedString::new_static("Yellow"),
-    SharedString::new_static("Green Gray"),
     SharedString::new_static("Light"),
 ];
 

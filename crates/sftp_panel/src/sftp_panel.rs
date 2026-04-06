@@ -147,6 +147,7 @@ pub struct SftpPanel {
     sftp_file_mappings: HashMap<PathBuf, SftpFileMapping>,
     watch_enabled: bool,
     watch_task: Option<Task<()>>,
+    followed_terminal_id: Option<gpui::EntityId>,
     drag_target: Option<SftpDragTarget>,
     hover_expand_task: Option<Task<()>>,
     cached_visible_indices: Vec<usize>,
@@ -225,6 +226,7 @@ impl SftpPanel {
             sftp_file_mappings: HashMap::new(),
             watch_enabled: true,
             watch_task: None,
+            followed_terminal_id: None,
             drag_target: None,
             hover_expand_task: None,
             cached_visible_indices: Vec::new(),
@@ -361,6 +363,19 @@ impl SftpPanel {
         if matches!(self.status, ConnectionStatus::Connecting) {
             return;
         }
+
+        // Get the active terminal's entity id to detect actual tab switches
+        let terminal_id = self.workspace.upgrade().and_then(|ws| {
+            ws.read(cx).active_pane().read(cx).active_item().and_then(|item| {
+                let terminal_view = item.downcast::<terminal_view::TerminalView>()?;
+                Some(terminal_view.read(cx).terminal().entity_id())
+            })
+        });
+
+        if terminal_id == self.followed_terminal_id {
+            return;
+        }
+        self.followed_terminal_id = terminal_id;
 
         let Some(config) = self.active_terminal_ssh_config(cx) else {
             return;

@@ -4,7 +4,7 @@ use gpui::{
 };
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use terminal::ParsedNumber;
+use terminal::{NumberFormat, ParsedNumber};
 use ui::{
     prelude::*, Color, CopyButton, FluentBuilder, IconButton, IconName, IconSize, Label,
     LabelCommon, Tooltip, h_flex, v_flex,
@@ -186,17 +186,68 @@ impl RenderOnce for NumberPopoverElement {
 
         let hex_row = Self::render_format_row("Hex", &hex_str, None, popover_id, "hex", cx);
 
-        let content = v_flex()
-            .gap_1()
-            .pt_1()
-            .child(binary_row)
-            .child(decimal_row)
-            .child(hex_row)
-            .when_some(ipv4_str, |this, ipv4| {
-                this.child(Self::render_format_row(
-                    "IPv4", &ipv4, None, popover_id, "ipv4", cx,
-                ))
-            });
+        let mac_colon_str = parsed.format_as_mac_colon();
+
+        let content = match parsed.format {
+            NumberFormat::MacAddress => {
+                let mac_hyphen = parsed.format_as_mac_hyphen();
+                let mac_cisco = parsed.format_as_mac_cisco();
+                v_flex()
+                    .gap_1()
+                    .pt_1()
+                    .when_some(mac_colon_str.clone(), |this, mac| {
+                        this.child(Self::render_format_row(
+                            "Colon", &mac, None, popover_id, "mac-colon", cx,
+                        ))
+                    })
+                    .when_some(mac_hyphen, |this, mac| {
+                        this.child(Self::render_format_row(
+                            "Hyphen", &mac, None, popover_id, "mac-hyphen", cx,
+                        ))
+                    })
+                    .when_some(mac_cisco, |this, mac| {
+                        this.child(Self::render_format_row(
+                            "Cisco", &mac, None, popover_id, "mac-cisco", cx,
+                        ))
+                    })
+                    .child(Self::render_format_row(
+                        "Decimal", &decimal_str, None, popover_id, "decimal", cx,
+                    ))
+                    .child(Self::render_format_row(
+                        "Hex", &hex_str, None, popover_id, "hex", cx,
+                    ))
+            }
+            NumberFormat::TipcAddress => {
+                let decode_str = parsed.format_as_tipc_decode();
+                v_flex()
+                    .gap_1()
+                    .pt_1()
+                    .child(Self::render_format_row(
+                        "Decode", &decode_str, None, popover_id, "tipc-decode", cx,
+                    ))
+                    .child(Self::render_format_row(
+                        "Value", &parsed.value.to_string(), None, popover_id, "tipc-value", cx,
+                    ))
+            }
+            _ => {
+                v_flex()
+                    .gap_1()
+                    .pt_1()
+                    .child(binary_row)
+                    .child(decimal_row)
+                    .child(hex_row)
+                    .when_some(ipv4_str, |this, ipv4| {
+                        this.child(Self::render_format_row(
+                            "IPv4", &ipv4, None, popover_id, "ipv4", cx,
+                        ))
+                    })
+                    .when_some(mac_colon_str, |this, mac| {
+                        this.child(Self::render_format_row(
+                            "MAC", &mac, None, popover_id, "mac", cx,
+                        ))
+                    })
+            }
+        };
 
         let drag_data = NumberPopoverDrag {
             popover_id,

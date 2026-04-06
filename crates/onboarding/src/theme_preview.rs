@@ -326,14 +326,12 @@ impl Component for ThemePreviewTile {
         let bspterm_light = theme_registry.get("Bspterm Light");
         let green_on_black = theme_registry.get("Green on Black");
         let yellow_on_black = theme_registry.get("Yellow on Black");
-        let green_on_gray = theme_registry.get("Green on Gray");
 
         let themes_to_preview = vec![
             bspterm_dark.clone().ok(),
             bspterm_light.ok(),
             green_on_black.ok(),
             yellow_on_black.ok(),
-            green_on_gray.ok(),
         ]
         .into_iter()
         .flatten()

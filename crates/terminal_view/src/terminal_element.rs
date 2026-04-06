@@ -1936,8 +1936,37 @@ impl Element for TerminalElement {
                 // Layout cursor. Rectangle is used for IME, so we should lay it out even
                 // if we don't end up showing it.
                 let cursor_point = DisplayCursor::from(cursor.point, display_offset);
+                let original_cursor_shape = cursor.shape;
+
+                // Pre-compute autosuggestion first char to show inside block cursor
+                // (Fish shell behavior: ghost first char visible through block cursor)
+                let first_ghost_char: Option<char> = if display_offset == 0 {
+                    let terminal = self.terminal.read(cx);
+                    let autosuggestion_enabled =
+                        TerminalSettings::get_global(cx).autosuggestion;
+                    if autosuggestion_enabled && terminal.is_cursor_at_end_of_input() {
+                        terminal.autosuggestion().and_then(|s| s.chars().next())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                // When block cursor is focused and autosuggestion exists, show ghost
+                // first char inside the cursor with placeholder color
+                let (effective_cursor_char, cursor_text_color) =
+                    if cursor.shape == AlacCursorShape::Block
+                        && self.focused
+                        && let Some(ghost_char) = first_ghost_char
+                    {
+                        (ghost_char, cx.theme().colors().text_placeholder)
+                    } else {
+                        (*cursor_char, theme.colors().terminal_ansi_background)
+                    };
+
                 let cursor_text = {
-                    let str_trxt = cursor_char.to_string();
+                    let str_trxt = effective_cursor_char.to_string();
                     let len = str_trxt.len();
                     window.text_system().shape_line(
                         str_trxt.into(),
@@ -1945,7 +1974,7 @@ impl Element for TerminalElement {
                         &[TextRun {
                             len,
                             font: text_style.font(),
-                            color: theme.colors().terminal_ansi_background,
+                            color: cursor_text_color,
                             ..Default::default()
                         }],
                         None,
@@ -1955,7 +1984,7 @@ impl Element for TerminalElement {
                 // For whitespace, use cell width to avoid cursor stretching.
                 // For other characters, use the larger of shaped width and cell width
                 // to properly cover wide characters like emojis.
-                let cursor_width = if cursor_char.is_whitespace() {
+                let cursor_width = if effective_cursor_char.is_whitespace() {
                     dimensions.cell_width()
                 } else {
                     cursor_text.width.max(dimensions.cell_width())
@@ -2048,24 +2077,44 @@ impl Element for TerminalElement {
                                 if !truncated.is_empty() {
                                     let ghost_color =
                                         cx.theme().colors().text_placeholder;
-                                    let start_col = ghost_cursor_col as i32;
-                                    let text_len = truncated.len();
 
-                                    Some(BatchedTextRun {
-                                        start_point: AlacPoint::new(
-                                            ghost_cursor_line,
-                                            start_col,
-                                        ),
-                                        text: truncated,
-                                        cell_count: text_len,
-                                        style: TextRun {
-                                            len: text_len,
-                                            font: text_style.font(),
-                                            color: ghost_color,
-                                            ..Default::default()
-                                        },
-                                        font_size: text_style.font_size,
-                                    })
+                                    // When block cursor is focused, first ghost char
+                                    // is already rendered inside the cursor — skip it
+                                    let (ghost_text, start_col) =
+                                        if original_cursor_shape == AlacCursorShape::Block
+                                            && self.focused
+                                            && first_ghost_char.is_some()
+                                        {
+                                            let mut chars = truncated.chars();
+                                            chars.next();
+                                            (
+                                                chars.as_str().to_string(),
+                                                (ghost_cursor_col + 1) as i32,
+                                            )
+                                        } else {
+                                            (truncated, ghost_cursor_col as i32)
+                                        };
+
+                                    if ghost_text.is_empty() {
+                                        None
+                                    } else {
+                                        let text_len = ghost_text.len();
+                                        Some(BatchedTextRun {
+                                            start_point: AlacPoint::new(
+                                                ghost_cursor_line,
+                                                start_col,
+                                            ),
+                                            text: ghost_text,
+                                            cell_count: text_len,
+                                            style: TextRun {
+                                                len: text_len,
+                                                font: text_style.font(),
+                                                color: ghost_color,
+                                                ..Default::default()
+                                            },
+                                            font_size: text_style.font_size,
+                                        })
+                                    }
                                 } else {
                                     None
                                 }

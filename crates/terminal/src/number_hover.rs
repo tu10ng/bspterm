@@ -16,6 +16,8 @@ pub enum NumberFormat {
     Binary,
     Octal,
     IPv4,
+    MacAddress,
+    TipcAddress,
 }
 
 /// A parsed number with its original string representation and value.
@@ -133,6 +135,65 @@ impl ParsedNumber {
             v & 0xFF,
         ))
     }
+
+    /// Format as MAC address with colon separators: `AA:BB:CC:DD:EE:FF`
+    /// Returns `Some` only when `0 <= value <= 0xFFFF_FFFF_FFFF` (48-bit).
+    pub fn format_as_mac_colon(&self) -> Option<String> {
+        if self.value < 0 || self.value > 0xFFFF_FFFF_FFFF {
+            return None;
+        }
+        let v = self.value as u64;
+        Some(format!(
+            "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+            (v >> 40) & 0xFF,
+            (v >> 32) & 0xFF,
+            (v >> 24) & 0xFF,
+            (v >> 16) & 0xFF,
+            (v >> 8) & 0xFF,
+            v & 0xFF,
+        ))
+    }
+
+    /// Format as MAC address with hyphen separators: `AA-BB-CC-DD-EE-FF`
+    /// Returns `Some` only when `0 <= value <= 0xFFFF_FFFF_FFFF` (48-bit).
+    pub fn format_as_mac_hyphen(&self) -> Option<String> {
+        if self.value < 0 || self.value > 0xFFFF_FFFF_FFFF {
+            return None;
+        }
+        let v = self.value as u64;
+        Some(format!(
+            "{:02X}-{:02X}-{:02X}-{:02X}-{:02X}-{:02X}",
+            (v >> 40) & 0xFF,
+            (v >> 32) & 0xFF,
+            (v >> 24) & 0xFF,
+            (v >> 16) & 0xFF,
+            (v >> 8) & 0xFF,
+            v & 0xFF,
+        ))
+    }
+
+    /// Format as Cisco-style MAC address: `AABB.CCDD.EEFF`
+    /// Returns `Some` only when `0 <= value <= 0xFFFF_FFFF_FFFF` (48-bit).
+    pub fn format_as_mac_cisco(&self) -> Option<String> {
+        if self.value < 0 || self.value > 0xFFFF_FFFF_FFFF {
+            return None;
+        }
+        let v = self.value as u64;
+        Some(format!(
+            "{:04X}.{:04X}.{:04X}",
+            (v >> 32) & 0xFFFF,
+            (v >> 16) & 0xFFFF,
+            v & 0xFFFF,
+        ))
+    }
+
+    /// Decode TIPC address: value / 32 = frame, value % 32 = slot.
+    /// Returns `"frame/slot"`.
+    pub fn format_as_tipc_decode(&self) -> String {
+        let frame = self.value / 32;
+        let slot = self.value % 32;
+        format!("{}/{}", frame, slot)
+    }
 }
 
 
@@ -168,6 +229,19 @@ static DEC_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^-?[0-9][0-9_]*$").unwrap());
 static IPV4_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$").unwrap());
+// MAC address: AA:BB:CC:DD:EE:FF, AA-BB-CC-DD-EE-FF, or AABB.CCDD.EEFF
+static MAC_COLON_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}$").unwrap()
+});
+static MAC_HYPHEN_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[0-9a-fA-F]{2}-[0-9a-fA-F]{2}-[0-9a-fA-F]{2}-[0-9a-fA-F]{2}-[0-9a-fA-F]{2}-[0-9a-fA-F]{2}$").unwrap()
+});
+static MAC_CISCO_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[0-9a-fA-F]{4}\.[0-9a-fA-F]{4}\.[0-9a-fA-F]{4}$").unwrap()
+});
+// TIPC address: 1.1.\d+
+static TIPC_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^1\.1\.\d+$").unwrap());
 
 /// Parse a dotted-decimal IPv4 string into a 32-bit value.
 fn parse_ipv4_string(s: &str) -> Option<i128> {
@@ -187,6 +261,28 @@ fn parse_ipv4_string(s: &str) -> Option<i128> {
         value = (value << 8) | octet;
     }
     Some(value as i128)
+}
+
+/// Parse a MAC address string (colon, hyphen, or Cisco format) into a 48-bit value.
+fn parse_mac_string(s: &str) -> Option<i128> {
+    if MAC_COLON_REGEX.is_match(s) || MAC_HYPHEN_REGEX.is_match(s) {
+        let hex_str: String = s.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+        return u64::from_str_radix(&hex_str, 16).ok().map(|v| v as i128);
+    }
+    if MAC_CISCO_REGEX.is_match(s) {
+        let hex_str: String = s.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+        return u64::from_str_radix(&hex_str, 16).ok().map(|v| v as i128);
+    }
+    None
+}
+
+/// Parse a TIPC address string (`1.1.\d+`) — value is the third segment.
+fn parse_tipc_string(s: &str) -> Option<i128> {
+    if !TIPC_REGEX.is_match(s) {
+        return None;
+    }
+    let third = s.strip_prefix("1.1.")?;
+    third.parse::<i128>().ok()
 }
 
 /// Parse a string as a number if it matches any supported format.
@@ -220,6 +316,16 @@ pub fn parse_number_string(s: &str) -> Option<(i128, NumberFormat)> {
         }
     }
 
+    // Try MAC address (before IPv4 — Cisco format uses `.`)
+    if let Some(value) = parse_mac_string(s) {
+        return Some((value, NumberFormat::MacAddress));
+    }
+
+    // Try TIPC address (before IPv4 — `1.1.\d+` has 3 segments, won't match IPv4 regex, but check first for clarity)
+    if let Some(value) = parse_tipc_string(s) {
+        return Some((value, NumberFormat::TipcAddress));
+    }
+
     // Try IPv4
     if let Some(value) = parse_ipv4_string(s) {
         return Some((value, NumberFormat::IPv4));
@@ -241,9 +347,14 @@ fn is_number_char(c: char) -> bool {
     c.is_ascii_hexdigit() || c == 'x' || c == 'X' || c == 'b' || c == 'B' || c == 'o' || c == 'O' || c == '_' || c == '-'
 }
 
-/// Check if a character can be part of an IPv4 address.
+/// Check if a character can be part of an IPv4 or TIPC address.
 fn is_ipv4_char(c: char) -> bool {
     c.is_ascii_digit() || c == '.'
+}
+
+/// Check if a character can be part of a MAC address.
+fn is_mac_char(c: char) -> bool {
+    c.is_ascii_hexdigit() || c == ':' || c == '-' || c == '.'
 }
 
 /// Scan a word from the grid starting at `(line, col)`, expanding left and right
@@ -289,7 +400,7 @@ fn scan_word_in_grid<T: EventListener>(
 }
 
 /// Find a number at the given terminal grid position.
-/// Uses two-pass scanning: first tries IPv4 (with `.`), then hex/bin/oct/dec (without `.`).
+/// Uses multi-pass scanning: MAC, then IPv4/TIPC, then hex/bin/oct/dec.
 pub fn find_number_at_position<T: EventListener>(
     term: &Term<T>,
     point: AlacPoint,
@@ -301,16 +412,34 @@ pub fn find_number_at_position<T: EventListener>(
     let cell = grid.index(point);
     let c = cell.c;
 
-    // Pass 1: If clicked char is a digit, try IPv4 scan (includes `.`)
-    if c.is_ascii_digit() {
-        let (start_col, end_col, ipv4_str) =
-            scan_word_in_grid(term, line, col.0, is_ipv4_char);
-        if let Some((value, format)) = parse_number_string(&ipv4_str) {
-            if format == NumberFormat::IPv4 {
+    // Pass 0: If clicked char is hex digit or MAC separator, try MAC scan
+    if c.is_ascii_hexdigit() || c == ':' || c == '-' {
+        let (start_col, end_col, mac_str) =
+            scan_word_in_grid(term, line, col.0, is_mac_char);
+        if let Some((value, format)) = parse_number_string(&mac_str) {
+            if format == NumberFormat::MacAddress {
                 let word_match = AlacPoint::new(line, Column(start_col))
                     ..=AlacPoint::new(line, Column(end_col));
                 return Some(ParsedNumber {
-                    original: ipv4_str,
+                    original: mac_str,
+                    value,
+                    format,
+                    word_match,
+                });
+            }
+        }
+    }
+
+    // Pass 1: If clicked char is a digit, try TIPC/IPv4 scan (includes `.`)
+    if c.is_ascii_digit() {
+        let (start_col, end_col, dotted_str) =
+            scan_word_in_grid(term, line, col.0, is_ipv4_char);
+        if let Some((value, format)) = parse_number_string(&dotted_str) {
+            if format == NumberFormat::TipcAddress || format == NumberFormat::IPv4 {
+                let word_match = AlacPoint::new(line, Column(start_col))
+                    ..=AlacPoint::new(line, Column(end_col));
+                return Some(ParsedNumber {
+                    original: dotted_str,
                     value,
                     format,
                     word_match,
@@ -548,5 +677,105 @@ mod tests {
         assert_eq!(make_num(-1).format_as_ipv4(), None);
         // Values larger than u32 have no IPv4 representation
         assert_eq!(make_num(0x1_0000_0000).format_as_ipv4(), None);
+    }
+
+    #[test]
+    fn test_parse_mac_colon() {
+        assert_eq!(
+            parse_number_string("AA:BB:CC:DD:EE:FF"),
+            Some((0xAABBCCDDEEFF, NumberFormat::MacAddress))
+        );
+        assert_eq!(
+            parse_number_string("00:11:22:33:44:55"),
+            Some((0x001122334455, NumberFormat::MacAddress))
+        );
+    }
+
+    #[test]
+    fn test_parse_mac_hyphen() {
+        assert_eq!(
+            parse_number_string("AA-BB-CC-DD-EE-FF"),
+            Some((0xAABBCCDDEEFF, NumberFormat::MacAddress))
+        );
+    }
+
+    #[test]
+    fn test_parse_mac_cisco() {
+        assert_eq!(
+            parse_number_string("AABB.CCDD.EEFF"),
+            Some((0xAABBCCDDEEFF, NumberFormat::MacAddress))
+        );
+        assert_eq!(
+            parse_number_string("0011.2233.4455"),
+            Some((0x001122334455, NumberFormat::MacAddress))
+        );
+    }
+
+    #[test]
+    fn test_format_mac() {
+        let make_mac = |value: i128| ParsedNumber {
+            original: String::new(),
+            value,
+            format: NumberFormat::MacAddress,
+            word_match: AlacPoint::new(alacritty_terminal::index::Line(0), Column(0))
+                ..=AlacPoint::new(alacritty_terminal::index::Line(0), Column(0)),
+        };
+
+        let mac = make_mac(0xAABBCCDDEEFF);
+        assert_eq!(mac.format_as_mac_colon(), Some("AA:BB:CC:DD:EE:FF".to_string()));
+        assert_eq!(mac.format_as_mac_hyphen(), Some("AA-BB-CC-DD-EE-FF".to_string()));
+        assert_eq!(mac.format_as_mac_cisco(), Some("AABB.CCDD.EEFF".to_string()));
+
+        let mac2 = make_mac(0x001122334455);
+        assert_eq!(mac2.format_as_mac_colon(), Some("00:11:22:33:44:55".to_string()));
+        assert_eq!(mac2.format_as_mac_cisco(), Some("0011.2233.4455".to_string()));
+    }
+
+    #[test]
+    fn test_parse_tipc() {
+        assert_eq!(
+            parse_number_string("1.1.54"),
+            Some((54, NumberFormat::TipcAddress))
+        );
+        assert_eq!(
+            parse_number_string("1.1.0"),
+            Some((0, NumberFormat::TipcAddress))
+        );
+        assert_eq!(
+            parse_number_string("1.1.100"),
+            Some((100, NumberFormat::TipcAddress))
+        );
+    }
+
+    #[test]
+    fn test_tipc_not_match_other() {
+        // 2.1.54 should not match TIPC
+        assert_ne!(
+            parse_number_string("2.1.54").map(|(_, f)| f),
+            Some(NumberFormat::TipcAddress)
+        );
+        // 1.2.54 should not match TIPC
+        assert_ne!(
+            parse_number_string("1.2.54").map(|(_, f)| f),
+            Some(NumberFormat::TipcAddress)
+        );
+    }
+
+    #[test]
+    fn test_format_tipc_decode() {
+        let make_tipc = |value: i128| ParsedNumber {
+            original: String::new(),
+            value,
+            format: NumberFormat::TipcAddress,
+            word_match: AlacPoint::new(alacritty_terminal::index::Line(0), Column(0))
+                ..=AlacPoint::new(alacritty_terminal::index::Line(0), Column(0)),
+        };
+
+        // 54 / 32 = 1, 54 % 32 = 22 → "1/22"
+        assert_eq!(make_tipc(54).format_as_tipc_decode(), "1/22");
+        // 0 / 32 = 0, 0 % 32 = 0 → "0/0"
+        assert_eq!(make_tipc(0).format_as_tipc_decode(), "0/0");
+        // 100 / 32 = 3, 100 % 32 = 4 → "3/4"
+        assert_eq!(make_tipc(100).format_as_tipc_decode(), "3/4");
     }
 }

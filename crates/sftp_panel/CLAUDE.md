@@ -87,6 +87,7 @@ cargo test -p sftp_panel
 - `SftpStoreEntity` must be initialized via `sftp_panel::init(cx)` before use
 - Connection reuses existing `SftpClient` if one exists for the same host+port (via `SftpStore::get_or_connect`)
 - `connect_from_active_terminal` only works with SSH terminals, not Telnet
+- `follow_active_terminal()` uses `followed_terminal_id` to skip redundant syncs when the same terminal fires `ActiveItemChanged` (e.g. on every keypress via Wakeup → ChangeItemTitle). Only actual tab switches trigger `sync_from_terminal()` / `connect()`.
 - File sizes formatted with `format_file_size()` (B/KB/MB/GB)
 - Navigate-up from "/" is a no-op; navigating up or into a directory clears expanded state
 - Sorting always places directories before files at each depth level
