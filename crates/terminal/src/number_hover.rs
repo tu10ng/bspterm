@@ -34,6 +34,21 @@ pub struct ParsedNumber {
 }
 
 impl ParsedNumber {
+    /// Try to interpret the value as a Unix timestamp (seconds since epoch).
+    /// Returns a local datetime string if the value is in a reasonable range (1970-2100).
+    pub fn format_as_datetime(&self) -> Option<String> {
+        use chrono::{Local, TimeZone};
+        // 0 ~ 4102444800 (2100-01-01 00:00:00 UTC)
+        if self.value >= 0 && self.value <= 4102444800 {
+            Local
+                .timestamp_opt(self.value as i64, 0)
+                .single()
+                .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+        } else {
+            None
+        }
+    }
+
     /// Format as binary with 4-bit grouping and position markers.
     /// Returns (binary_string, bit_positions).
     /// Position markers use regular ASCII digits (displayed in smaller font in UI).

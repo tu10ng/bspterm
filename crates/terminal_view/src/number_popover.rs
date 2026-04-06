@@ -186,6 +186,7 @@ impl RenderOnce for NumberPopoverElement {
 
         let hex_row = Self::render_format_row("Hex", &hex_str, None, popover_id, "hex", cx);
 
+        let datetime_str = parsed.format_as_datetime();
         let mac_colon_str = parsed.format_as_mac_colon();
 
         let content = match parsed.format {
@@ -236,6 +237,11 @@ impl RenderOnce for NumberPopoverElement {
                     .child(binary_row)
                     .child(decimal_row)
                     .child(hex_row)
+                    .when_some(datetime_str, |this, dt| {
+                        this.child(Self::render_format_row(
+                            "DateTime", &dt, None, popover_id, "datetime", cx,
+                        ))
+                    })
                     .when_some(ipv4_str, |this, ipv4| {
                         this.child(Self::render_format_row(
                             "IPv4", &ipv4, None, popover_id, "ipv4", cx,
