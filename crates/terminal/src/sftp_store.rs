@@ -74,6 +74,11 @@ impl SftpStore {
     pub fn get_client(&self, host_key: &SshHostKey) -> Option<Arc<SftpClient>> {
         self.clients.get(host_key).cloned()
     }
+
+    /// Get the SSH session for the given host, if connected.
+    pub fn get_session(&self, host_key: &SshHostKey) -> Option<Arc<SshSession>> {
+        self.sessions.get(host_key).cloned()
+    }
 }
 
 impl EventEmitter<SftpStoreEvent> for SftpStore {}

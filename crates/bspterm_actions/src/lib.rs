@@ -343,7 +343,49 @@ pub mod sftp_panel {
             /// Toggles focus on the SFTP panel.
             ToggleFocus,
             /// Sync CWD from terminal and refresh directory listing.
-            RefreshDirectory
+            RefreshDirectory,
+            /// Create a new file in the current directory.
+            NewFile,
+            /// Create a new directory in the current directory.
+            NewDirectory,
+            /// Rename the selected entry.
+            Rename,
+            /// Delete the selected entry.
+            Delete,
+            /// Open the selected entry.
+            Open,
+            /// Copy the remote path to clipboard.
+            CopyPath,
+            /// Download the selected entry to local.
+            Download,
+            /// Cut the selected entry.
+            Cut,
+            /// Copy the selected entry.
+            Copy,
+            /// Paste from clipboard.
+            Paste,
+            /// Change permissions of the selected entry.
+            Chmod,
+            /// Toggle sort mode (Name / ModifiedTime).
+            ToggleSortMode,
+            /// Toggle showing hidden files (dotfiles).
+            ToggleShowHiddenFiles,
+            /// Select the next entry.
+            SelectNext,
+            /// Select the previous entry.
+            SelectPrevious,
+            /// Confirm selection (enter directory or open file).
+            Confirm,
+            /// Navigate to parent directory.
+            GoUp,
+            /// Cancel current operation.
+            Cancel,
+            /// Toggle the filter input.
+            ToggleFilter,
+            /// Edit the path bar to navigate to a directory.
+            EditPath,
+            /// Toggle automatic directory watching.
+            ToggleWatch,
         ]
     );
 }

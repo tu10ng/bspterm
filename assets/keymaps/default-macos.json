@@ -797,5 +797,18 @@
       "cmd-enter": "command_panel::Send",
       "f2": "command_panel::RenameTab"
     }
+  },
+  {
+    "context": "SftpPanel",
+    "bindings": {
+      "up": "sftp_panel::SelectPrevious",
+      "down": "sftp_panel::SelectNext",
+      "enter": "sftp_panel::Confirm",
+      "escape": "sftp_panel::Cancel",
+      "backspace": "sftp_panel::GoUp",
+      "f2": "sftp_panel::Rename",
+      "delete": "sftp_panel::Delete",
+      "f5": "sftp_panel::RefreshDirectory"
+    }
   }
 ]

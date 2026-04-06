@@ -187,6 +187,34 @@ impl SshSession {
         Ok(channel)
     }
 
+    /// Execute a remote command via SSH exec channel and return stdout.
+    pub async fn exec_command(&self, command: &str) -> Result<String> {
+        let handle_guard = self.handle.read().await;
+        let handle = handle_guard
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("SSH session is closed"))?;
+
+        let mut channel = handle
+            .channel_open_session()
+            .await
+            .context("failed to open SSH channel for exec")?;
+
+        channel
+            .exec(true, command)
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to exec command: {}", e))?;
+
+        let mut output = Vec::new();
+        loop {
+            match channel.wait().await {
+                Some(russh::ChannelMsg::Data { data }) => output.extend_from_slice(&data),
+                Some(russh::ChannelMsg::Eof | russh::ChannelMsg::Close) | None => break,
+                _ => {}
+            }
+        }
+        String::from_utf8(output).context("command output is not valid UTF-8")
+    }
+
     pub async fn close(&self) {
         *self.state.write() = ConnectionState::Disconnected;
         if let Some(handle) = self.handle.write().await.take() {

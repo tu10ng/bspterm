@@ -69,13 +69,17 @@ impl SftpClient {
         Ok(entries)
     }
 
-    /// Download a remote file to a local path.
-    pub async fn read_file(&self, remote_path: &str, local_path: &Path) -> Result<()> {
-        let data = self
-            .session
+    /// Read a remote file and return its contents as bytes (without writing to disk).
+    pub async fn read_file_bytes(&self, remote_path: &str) -> Result<Vec<u8>> {
+        self.session
             .read(remote_path)
             .await
-            .map_err(|e| anyhow::anyhow!("failed to read remote file '{}': {}", remote_path, e))?;
+            .map_err(|e| anyhow::anyhow!("failed to read remote file '{}': {}", remote_path, e))
+    }
+
+    /// Download a remote file to a local path.
+    pub async fn read_file(&self, remote_path: &str, local_path: &Path) -> Result<()> {
+        let data = self.read_file_bytes(remote_path).await?;
         std::fs::write(local_path, data)
             .context("failed to write local file")?;
         Ok(())
@@ -196,6 +200,55 @@ impl SftpClient {
             }
         } else {
             self.write_file(local_path, &remote_path).await?;
+        }
+        Ok(())
+    }
+
+    /// Create an empty file at the given remote path.
+    pub async fn create_empty_file(&self, path: &str) -> Result<()> {
+        self.session
+            .write(path, &[])
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to create file '{}': {}", path, e))?;
+        Ok(())
+    }
+
+    /// Recursively remove a directory and all its contents.
+    pub async fn recursive_remove(&self, path: &str) -> Result<()> {
+        let entries = self.list_dir(path).await?;
+        for entry in entries {
+            if entry.is_dir {
+                Box::pin(self.recursive_remove(&entry.path)).await?;
+            } else {
+                self.remove_file(&entry.path).await?;
+            }
+        }
+        self.remove_dir(path).await?;
+        Ok(())
+    }
+
+    /// Recursively download a remote path (file or directory) to a local path.
+    pub async fn recursive_download(&self, remote_path: &str, local_path: &Path) -> Result<()> {
+        let metadata = self
+            .session
+            .metadata(remote_path)
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to stat '{}': {}", remote_path, e))?;
+
+        if metadata.is_dir() {
+            std::fs::create_dir_all(local_path)
+                .with_context(|| format!("failed to create local directory '{}'", local_path.display()))?;
+            let entries = self.list_dir(remote_path).await?;
+            for entry in entries {
+                let child_local = local_path.join(&entry.name);
+                Box::pin(self.recursive_download(&entry.path, &child_local)).await?;
+            }
+        } else {
+            if let Some(parent) = local_path.parent() {
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("failed to create parent directory '{}'", parent.display()))?;
+            }
+            self.read_file(remote_path, local_path).await?;
         }
         Ok(())
     }

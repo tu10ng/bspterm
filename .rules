@@ -356,3 +356,88 @@ Windows 上 `std::fs::canonicalize()` 会给路径加 `\\?\` 前缀（Extended-L
 ## Zed 遗留命名
 
 以下路径保留了 Zed 时期的命名，无需重命名：`crates/client/src/zed_urls.rs`, `crates/zlog/`, `crates/install_cli/src/register_zed_scheme.rs`, `crates/docs_preprocessor/`.
+
+## 常见 UI 模式
+
+### PopoverMenu 下拉菜单（排序/筛选按钮）
+
+需要多选项切换时（如排序方式），不要用 `IconButton` + `on_click` 循环切换，应使用 `PopoverMenu` + `ContextMenu::toggleable_entry`。参考实现：`remote_explorer.rs:538-580`、`sftp_panel.rs` 的排序按钮。
+
+```rust
+use ui::{ContextMenu, IconButton, IconName, IconPosition, IconSize, PopoverMenu, Tooltip};
+
+// 在 render 方法中，需要先捕获状态到局部变量（闭包无法借用 &self）
+let current_sort = self.sort_mode;
+let weak = cx.weak_entity();
+
+PopoverMenu::new("my-sort-popover")
+    .trigger(
+        IconButton::new("sort-btn", IconName::ListFilter)
+            .icon_size(IconSize::Small)
+            .tooltip(Tooltip::text(t("my_panel.sort_by"))),
+    )
+    .menu(move |window, cx| {
+        let weak = weak.clone();
+        let weak2 = weak.clone();
+        Some(ContextMenu::build(window, cx, move |menu, _window, _cx| {
+            menu.toggleable_entry(
+                t("my_panel.sort_option_a"),
+                current_sort == SortMode::A,  // 当前选中项显示 checkmark
+                IconPosition::Start,
+                None,  // keybinding
+                { let weak = weak.clone(); move |_window, cx| {
+                    weak.update(cx, |this, cx| { /* 更新状态 */ cx.notify(); }).ok();
+                }},
+            )
+            .toggleable_entry(
+                t("my_panel.sort_option_b"),
+                current_sort == SortMode::B,
+                IconPosition::Start,
+                None,
+                move |_window, cx| {
+                    weak2.update(cx, |this, cx| { /* 更新状态 */ cx.notify(); }).ok();
+                },
+            )
+        }))
+    })
+    .anchor(gpui::Corner::TopRight)
+```
+
+要点：
+- `weak_entity()` 在闭包中更新 entity，每个 `toggleable_entry` 的回调需要独立的 `weak` clone
+- `current_sort` 等状态在闭包外捕获（`Copy` 类型直接 move）
+- `.anchor(gpui::Corner::TopRight)` 让菜单从按钮右上角展开
+
+### uniform_list + 过滤（隐藏文件/搜索）
+
+`uniform_list` 的 `item_count` 和 `render_entries(range)` 中的 index 必须对应同一个逻辑列表。如果有过滤逻辑（隐藏文件、搜索过滤），不能直接用 `self.entries.len()` 作 `item_count` 然后在 `render_entry` 中用原始 index——这会导致过滤不生效或 index 越界。
+
+正确做法：维护一个 `cached_visible_indices: Vec<usize>` 缓存，在 `render()` 开头重算：
+
+```rust
+// render() 开头
+self.cached_visible_indices = self.visible_entries()
+    .into_iter()
+    .map(|(idx, _)| idx)
+    .collect();
+let item_count = self.cached_visible_indices.len();
+
+// uniform_list 使用 item_count
+uniform_list("my-list", item_count, cx.processor(|this, range, window, cx| {
+    this.render_entries(range, window, cx)
+}))
+
+// render_entries 中做 index 映射
+fn render_entries(&self, range: Range<usize>, ...) -> Vec<AnyElement> {
+    range.map(|display_ix| {
+        let real_ix = self.cached_visible_indices
+            .get(display_ix).copied().unwrap_or(display_ix);
+        self.render_entry(real_ix, cx)
+    }).collect()
+}
+```
+
+要点：
+- `visible_entries()` 返回 `Vec<(usize, &Entry)>`，usize 是原始 entries 中的 index
+- 每次 `render()` 都重算缓存（因为 entries 和过滤条件都可能变化）
+- `render_entry(real_ix)` 用原始 index 访问 `self.entries[real_ix]`，保证选中、展开等状态一致
