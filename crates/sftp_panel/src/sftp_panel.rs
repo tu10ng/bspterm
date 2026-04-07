@@ -119,20 +119,68 @@ struct SftpFileMapping {
     original_md5: [u8; 16],
 }
 
-pub struct SftpPanel {
-    workspace: WeakEntity<Workspace>,
-    sftp_store: Entity<SftpStore>,
-    focus_handle: FocusHandle,
-    scroll_handle: UniformListScrollHandle,
-    width: Option<Pixels>,
+struct ConnectionState {
     status: ConnectionStatus,
-    host_key: Option<SshHostKey>,
     client: Option<Arc<SftpClient>>,
     current_path: String,
     home_path: Option<String>,
     entries: Vec<FileEntry>,
     expanded_dirs: HashSet<String>,
     selected_index: Option<usize>,
+    watch_enabled: bool,
+    watch_task: Option<Task<()>>,
+    load_task: Option<Task<()>>,
+    md5_cache: HashMap<String, String>,
+    dir_count_cache: HashMap<String, usize>,
+    md5_available: Option<bool>,
+    md5_task: Option<Task<()>>,
+    dir_count_task: Option<Task<()>>,
+    connect_task: Option<Task<()>>,
+}
+
+impl ConnectionState {
+    fn new() -> Self {
+        Self {
+            status: ConnectionStatus::Disconnected,
+            client: None,
+            current_path: "/".to_string(),
+            home_path: None,
+            entries: Vec::new(),
+            expanded_dirs: HashSet::new(),
+            selected_index: None,
+            watch_enabled: true,
+            watch_task: None,
+            load_task: None,
+            md5_cache: HashMap::new(),
+            dir_count_cache: HashMap::new(),
+            md5_available: None,
+            md5_task: None,
+            dir_count_task: None,
+            connect_task: None,
+        }
+    }
+
+    fn clear_metadata_caches(&mut self) {
+        self.md5_cache.clear();
+        self.dir_count_cache.clear();
+        self.md5_available = None;
+        self.md5_task = None;
+        self.dir_count_task = None;
+    }
+
+    fn stop_watch(&mut self) {
+        self.watch_task = None;
+    }
+}
+
+pub struct SftpPanel {
+    workspace: WeakEntity<Workspace>,
+    sftp_store: Entity<SftpStore>,
+    focus_handle: FocusHandle,
+    scroll_handle: UniformListScrollHandle,
+    width: Option<Pixels>,
+    connections: HashMap<SshHostKey, ConnectionState>,
+    active_host_key: Option<SshHostKey>,
     sort_mode: SortMode,
     show_hidden_files: bool,
     edit_state: Option<EditState>,
@@ -143,19 +191,11 @@ pub struct SftpPanel {
     path_editor: Option<Entity<Editor>>,
     context_menu: Option<(Entity<ContextMenu>, Point<Pixels>, Subscription)>,
     _subscriptions: Vec<Subscription>,
-    load_task: Option<Task<()>>,
     sftp_file_mappings: HashMap<PathBuf, SftpFileMapping>,
-    watch_enabled: bool,
-    watch_task: Option<Task<()>>,
     followed_terminal_id: Option<gpui::EntityId>,
     drag_target: Option<SftpDragTarget>,
     hover_expand_task: Option<Task<()>>,
     cached_visible_indices: Vec<usize>,
-    md5_cache: HashMap<String, String>,
-    dir_count_cache: HashMap<String, usize>,
-    md5_available: Option<bool>,
-    md5_task: Option<Task<()>>,
-    dir_count_task: Option<Task<()>>,
 }
 
 impl SftpPanel {
@@ -175,19 +215,19 @@ impl SftpPanel {
         let store_subscription =
             cx.subscribe(&sftp_store, |this, _, event, cx| match event {
                 SftpStoreEvent::ClientConnected(host_key) => {
-                    if this.host_key.as_ref() == Some(host_key) {
-                        this.status = ConnectionStatus::Connected;
-                        this.client =
+                    if let Some(conn) = this.connections.get_mut(host_key) {
+                        conn.status = ConnectionStatus::Connected;
+                        conn.client =
                             this.sftp_store.read(cx).get_client(host_key);
                         cx.notify();
                     }
                 }
                 SftpStoreEvent::ClientDisconnected(host_key) => {
-                    if this.host_key.as_ref() == Some(host_key) {
-                        this.status = ConnectionStatus::Disconnected;
-                        this.client = None;
-                        this.entries.clear();
-                        this.clear_metadata_caches();
+                    if let Some(conn) = this.connections.get_mut(host_key) {
+                        conn.status = ConnectionStatus::Disconnected;
+                        conn.client = None;
+                        conn.entries.clear();
+                        conn.clear_metadata_caches();
                         cx.notify();
                     }
                 }
@@ -204,14 +244,8 @@ impl SftpPanel {
             focus_handle,
             scroll_handle: UniformListScrollHandle::new(),
             width: None,
-            status: ConnectionStatus::Disconnected,
-            host_key: None,
-            client: None,
-            current_path: "/".to_string(),
-            home_path: None,
-            entries: Vec::new(),
-            expanded_dirs: HashSet::new(),
-            selected_index: None,
+            connections: HashMap::new(),
+            active_host_key: None,
             sort_mode: SortMode::Name,
             show_hidden_files: true,
             edit_state: None,
@@ -222,30 +256,32 @@ impl SftpPanel {
             path_editor: None,
             context_menu: None,
             _subscriptions: subscriptions,
-            load_task: None,
             sftp_file_mappings: HashMap::new(),
-            watch_enabled: true,
-            watch_task: None,
             followed_terminal_id: None,
             drag_target: None,
             hover_expand_task: None,
             cached_visible_indices: Vec::new(),
-            md5_cache: HashMap::new(),
-            dir_count_cache: HashMap::new(),
-            md5_available: None,
-            md5_task: None,
-            dir_count_task: None,
         }
+    }
+
+    fn active_connection(&self) -> Option<&ConnectionState> {
+        self.active_host_key.as_ref().and_then(|k| self.connections.get(k))
+    }
+
+    fn active_connection_mut(&mut self) -> Option<&mut ConnectionState> {
+        self.active_host_key.as_ref().and_then(|k| self.connections.get_mut(k))
     }
 
     pub fn connect(&mut self, config: SshConfig, cx: &mut Context<Self>) {
         let host_key = SshHostKey::from(&config);
-        self.host_key = Some(host_key);
-        self.status = ConnectionStatus::Connecting;
-        self.entries.clear();
-        self.expanded_dirs.clear();
-        self.current_path = "/".to_string();
-        self.clear_metadata_caches();
+        self.active_host_key = Some(host_key.clone());
+
+        let conn = self.connections.entry(host_key.clone()).or_insert_with(ConnectionState::new);
+        conn.status = ConnectionStatus::Connecting;
+        conn.entries.clear();
+        conn.expanded_dirs.clear();
+        conn.current_path = "/".to_string();
+        conn.clear_metadata_caches();
         cx.notify();
 
         let task = self
@@ -253,7 +289,8 @@ impl SftpPanel {
             .update(cx, |store, cx| store.get_or_connect(config, cx));
 
         let tokio_handle = gpui_tokio::Tokio::handle(cx);
-        cx.spawn(async move |this, cx| {
+        let host_key_for_task = host_key.clone();
+        let connect_task = cx.spawn(async move |this, cx| {
             match task.await {
                 Ok(client) => {
                     // Resolve home directory before loading
@@ -264,37 +301,55 @@ impl SftpPanel {
                         .map_err(anyhow::Error::from)
                         .and_then(|r| r.map_err(anyhow::Error::from));
                     this.update(cx, |this, cx| {
-                        if let Ok(home) = &home {
-                            this.home_path = Some(home.clone());
-                            this.current_path = home.clone();
+                        if let Some(conn) = this.connections.get_mut(&host_key_for_task) {
+                            if let Ok(home) = &home {
+                                conn.home_path = Some(home.clone());
+                                conn.current_path = home.clone();
+                            }
+                            conn.connect_task = None;
                         }
-                        this.sync_from_terminal(cx);
+                        // Only sync if this is still the active connection
+                        if this.active_host_key.as_ref() == Some(&host_key_for_task) {
+                            this.sync_from_terminal(cx);
+                        }
                     })
                     .ok();
                 }
                 Err(err) => {
                     this.update(cx, |this, cx| {
-                        this.status = ConnectionStatus::Error(err.to_string());
+                        if let Some(conn) = this.connections.get_mut(&host_key_for_task) {
+                            conn.status = ConnectionStatus::Error(err.to_string());
+                            conn.connect_task = None;
+                        }
                         cx.notify();
                     })
                     .ok();
                 }
             }
-        })
-        .detach();
-    }
-
-    fn disconnect(&mut self, cx: &mut Context<Self>) {
-        self.stop_watch();
-        if let Some(host_key) = &self.host_key {
-            self.sftp_store.update(cx, |store, cx| {
-                store.disconnect(host_key, cx);
-            });
+        });
+        if let Some(conn) = self.connections.get_mut(&host_key) {
+            conn.connect_task = Some(connect_task);
         }
     }
 
+    fn disconnect(&mut self, cx: &mut Context<Self>) {
+        let Some(host_key) = self.active_host_key.clone() else {
+            return;
+        };
+        if let Some(conn) = self.connections.remove(&host_key) {
+            drop(conn); // drop tasks
+            self.sftp_store.update(cx, |store, cx| {
+                store.disconnect(&host_key, cx);
+            });
+        }
+        self.active_host_key = None;
+        cx.notify();
+    }
+
     pub fn connect_from_active_terminal(&mut self, cx: &mut Context<Self>) {
-        if matches!(self.status, ConnectionStatus::Connecting | ConnectionStatus::Connected) {
+        // Check if active connection is already connecting or connected
+        let active_status = self.active_connection().map(|c| &c.status);
+        if matches!(active_status, Some(ConnectionStatus::Connecting | ConnectionStatus::Connected)) {
             return;
         }
 
@@ -360,10 +415,6 @@ impl SftpPanel {
     }
 
     fn follow_active_terminal(&mut self, cx: &mut Context<Self>) {
-        if matches!(self.status, ConnectionStatus::Connecting) {
-            return;
-        }
-
         // Get the active terminal's entity id to detect actual tab switches
         let terminal_id = self.workspace.upgrade().and_then(|ws| {
             ws.read(cx).active_pane().read(cx).active_item().and_then(|item| {
@@ -383,15 +434,23 @@ impl SftpPanel {
 
         let new_host_key = SshHostKey::from(&config);
 
-        if self.host_key.as_ref() == Some(&new_host_key) {
+        if self.active_host_key.as_ref() == Some(&new_host_key) {
+            // Same host, just sync CWD
             self.sync_from_terminal(cx);
+        } else if self.connections.contains_key(&new_host_key) {
+            // Existing connection — switch display
+            self.active_host_key = Some(new_host_key);
+            self.sync_from_terminal(cx);
+            cx.notify();
         } else {
+            // New connection
             self.connect(config, cx);
         }
     }
 
     fn sync_from_terminal(&mut self, cx: &mut Context<Self>) {
-        if self.status != ConnectionStatus::Connected {
+        let status = self.active_connection().map(|c| c.status.clone());
+        if status != Some(ConnectionStatus::Connected) {
             return;
         }
 
@@ -410,32 +469,32 @@ impl SftpPanel {
 
         if let Some(path) = prompt.as_deref().and_then(extract_cwd_from_prompt) {
             if path.starts_with('/') {
-                // Absolute path — navigate directly
-                self.current_path = path;
-                self.entries.clear();
-                self.selected_index = None;
+                if let Some(conn) = self.active_connection_mut() {
+                    conn.current_path = path;
+                    conn.entries.clear();
+                    conn.selected_index = None;
+                }
                 self.load_directory(cx);
                 cx.notify();
             } else if path.starts_with('~') {
-                // Tilde path — replace ~ with cached home_path locally
-                if let Some(home) = &self.home_path {
+                let home = self.active_connection().and_then(|c| c.home_path.clone());
+                if let Some(home) = home {
                     let resolved = if path == "~" {
                         home.clone()
                     } else {
-                        // ~/subdir → /home/user/subdir
                         format!("{}{}", home, &path[1..])
                     };
-                    self.current_path = resolved;
-                    self.entries.clear();
-                    self.selected_index = None;
+                    if let Some(conn) = self.active_connection_mut() {
+                        conn.current_path = resolved;
+                        conn.entries.clear();
+                        conn.selected_index = None;
+                    }
                     self.load_directory(cx);
                     cx.notify();
                 } else {
-                    // No cached home_path, fallback to refresh current
                     self.load_directory(cx);
                 }
             } else {
-                // Bare directory name (e.g., "tmp", "log") — try multiple candidates
                 self.resolve_bare_dirname(path, cx);
             }
         } else {
@@ -444,26 +503,22 @@ impl SftpPanel {
     }
 
     fn resolve_bare_dirname(&mut self, name: String, cx: &mut Context<Self>) {
-        let Some(client) = self.client.clone() else {
+        let Some(client) = self.active_connection().and_then(|c| c.client.clone()) else {
             return;
         };
-        let current_path = self.current_path.clone();
-        let home_path = self.home_path.clone();
+        let current_path = self.active_connection().map(|c| c.current_path.clone()).unwrap_or_default();
+        let home_path = self.active_connection().and_then(|c| c.home_path.clone());
         let tokio_handle = gpui_tokio::Tokio::handle(cx);
 
         cx.spawn(async move |this, cx| {
-            // Build candidate paths to try
             let mut candidates = Vec::new();
-            // 1. /{name} (e.g., /tmp)
             candidates.push(format!("/{}", name));
-            // 2. {current_path}/{name} (e.g., /home/user/projects)
             let under_current = if current_path.ends_with('/') {
                 format!("{}{}", current_path, name)
             } else {
                 format!("{}/{}", current_path, name)
             };
             candidates.push(under_current);
-            // 3. {home_path}/{name} (e.g., /home/user/dirname)
             if let Some(home) = &home_path {
                 let under_home = if home.ends_with('/') {
                     format!("{}{}", home, name)
@@ -473,12 +528,9 @@ impl SftpPanel {
                 candidates.push(under_home);
             }
 
-            // Deduplicate while preserving order
             let mut seen = std::collections::HashSet::new();
             candidates.retain(|c| seen.insert(c.clone()));
 
-
-            // Try each candidate via stat
             for candidate in &candidates {
                 let client_clone = client.clone();
                 let path = candidate.clone();
@@ -488,10 +540,12 @@ impl SftpPanel {
                 if let Ok(Ok(entry)) = result {
                     if entry.is_dir {
                         this.update(cx, |this, cx| {
-                            this.current_path = candidate.clone();
-                            this.entries.clear();
-                            this.expanded_dirs.clear();
-                            this.selected_index = None;
+                            if let Some(conn) = this.active_connection_mut() {
+                                conn.current_path = candidate.clone();
+                                conn.entries.clear();
+                                conn.expanded_dirs.clear();
+                                conn.selected_index = None;
+                            }
                             this.load_directory(cx);
                             cx.notify();
                         }).ok();
@@ -500,7 +554,6 @@ impl SftpPanel {
                 }
             }
 
-            // All candidates failed — fallback to refreshing current directory
             this.update(cx, |this, cx| {
                 this.load_directory(cx);
             }).ok();
@@ -508,13 +561,16 @@ impl SftpPanel {
     }
 
     fn load_directory(&mut self, cx: &mut Context<Self>) {
-        let Some(client) = self.client.clone() else {
+        let Some(client) = self.active_connection().and_then(|c| c.client.clone()) else {
             return;
         };
-        let path = self.current_path.clone();
+        let Some(path) = self.active_connection().map(|c| c.current_path.clone()) else {
+            return;
+        };
+        let active_key = self.active_host_key.clone();
         let tokio_handle = gpui_tokio::Tokio::handle(cx);
 
-        self.load_task = Some(cx.spawn(async move |this, cx| {
+        let load_task = cx.spawn(async move |this, cx| {
             let result = tokio_handle
                 .spawn(async move { client.list_dir(&path).await })
                 .await
@@ -524,27 +580,42 @@ impl SftpPanel {
             match result {
                 Ok(entries) => {
                     this.update(cx, |this, cx| {
-                        let parent_path = this.current_path.clone();
-                        let expanded_dirs = this.expanded_dirs.clone();
-                        this.md5_cache.clear();
-                        this.dir_count_cache.clear();
-                        this.entries = entries
+                        let Some(conn) = active_key.as_ref().and_then(|k| this.connections.get_mut(k)) else {
+                            return;
+                        };
+                        let parent_path = conn.current_path.clone();
+                        let expanded_dirs = conn.expanded_dirs.clone();
+                        conn.md5_cache.clear();
+                        conn.dir_count_cache.clear();
+                        conn.entries = entries
                             .into_iter()
                             .map(|entry| FileEntry { depth: 0, parent_path: parent_path.clone(), entry })
                             .collect();
-                        this.sort_entries();
-
-                        // Restore expanded directories after reload
-                        if !expanded_dirs.is_empty() {
-                            this.re_expand_dirs(expanded_dirs, cx);
+                        conn.load_task = None;
+                        // sort_entries and re_expand_dirs need &mut self, so drop conn borrow
+                        drop(expanded_dirs.clone());
+                        let expanded = expanded_dirs;
+                        // We need to sort and re-expand via self methods
+                        // But those methods access self.entries etc. which are now in conn
+                        // So we do it inline
+                        let sort_mode = this.sort_mode;
+                        if let Some(conn) = active_key.as_ref().and_then(|k| this.connections.get_mut(k)) {
+                            Self::sort_entries_on(sort_mode, &mut conn.entries);
+                            // Re-expand: just set expanded_dirs, children will be loaded below
                         }
-
-                        this.load_task = None;
+                        // Re-expand directories after reload
+                        if !expanded.is_empty() {
+                            this.re_expand_dirs_for_key(active_key.as_ref(), expanded, cx);
+                        }
                         this.fetch_entry_metadata(cx);
                         cx.notify();
 
                         // Start watch after successful load
-                        if this.watch_enabled {
+                        let watch_enabled = active_key.as_ref()
+                            .and_then(|k| this.connections.get(k))
+                            .map(|c| c.watch_enabled)
+                            .unwrap_or(false);
+                        if watch_enabled {
                             this.start_watch(cx);
                         }
                     })
@@ -553,21 +624,23 @@ impl SftpPanel {
                 Err(err) => {
                     log::error!("Failed to list directory: {}", err);
                     this.update(cx, |this, cx| {
-                        this.load_task = None;
+                        if let Some(conn) = active_key.as_ref().and_then(|k| this.connections.get_mut(k)) {
+                            conn.load_task = None;
+                        }
                         cx.notify();
                     })
                     .ok();
                 }
             }
-        }));
+        });
+        if let Some(conn) = self.active_connection_mut() {
+            conn.load_task = Some(load_task);
+        }
     }
 
-    fn sort_entries(&mut self) {
-        // Only sort root-level entries (depth 0), preserving child ordering
-        // Children are sorted when inserted via insert_children()
-        if self.entries.iter().all(|e| e.depth == 0) {
-            let sort_mode = self.sort_mode;
-            self.entries.sort_by(|a, b| {
+    fn sort_entries_on(sort_mode: SortMode, entries: &mut Vec<FileEntry>) {
+        if entries.iter().all(|e| e.depth == 0) {
+            entries.sort_by(|a, b| {
                 b.entry.is_dir.cmp(&a.entry.is_dir).then_with(|| match sort_mode {
                     SortMode::Name => {
                         a.entry.name.to_lowercase().cmp(&b.entry.name.to_lowercase())
@@ -576,40 +649,41 @@ impl SftpPanel {
                 })
             });
         } else {
-            self.sort_entries_tree();
+            Self::sort_entries_tree_on(sort_mode, entries);
         }
     }
 
-    fn sort_entries_tree(&mut self) {
-        // Sort sibling groups in-place while preserving tree structure
+    fn sort_entries(&mut self) {
         let sort_mode = self.sort_mode;
+        if let Some(conn) = self.active_connection_mut() {
+            Self::sort_entries_on(sort_mode, &mut conn.entries);
+        }
+    }
+
+    fn sort_entries_tree_on(sort_mode: SortMode, entries: &mut Vec<FileEntry>) {
         let mut index = 0;
-        while index < self.entries.len() {
-            // Find the range of siblings at this depth with the same parent
-            let depth = self.entries[index].depth;
-            let parent_path = self.entries[index].parent_path.clone();
+        while index < entries.len() {
+            let depth = entries[index].depth;
+            let parent_path = entries[index].parent_path.clone();
             let sibling_start = index;
 
-            // Collect sibling ranges (each sibling + its subtree)
             let mut sibling_ranges: Vec<(usize, usize)> = Vec::new();
-            while index < self.entries.len()
-                && self.entries[index].depth == depth
-                && self.entries[index].parent_path == parent_path
+            while index < entries.len()
+                && entries[index].depth == depth
+                && entries[index].parent_path == parent_path
             {
                 let start = index;
                 index += 1;
-                // Skip children (deeper entries)
-                while index < self.entries.len() && self.entries[index].depth > depth {
+                while index < entries.len() && entries[index].depth > depth {
                     index += 1;
                 }
                 sibling_ranges.push((start, index));
             }
 
             if sibling_ranges.len() > 1 {
-                // Extract sibling subtrees, sort them, and put them back
                 let mut subtrees: Vec<Vec<FileEntry>> = sibling_ranges
                     .iter()
-                    .map(|(start, end)| self.entries[*start..*end].to_vec())
+                    .map(|(start, end)| entries[*start..*end].to_vec())
                     .collect();
 
                 subtrees.sort_by(|a, b| {
@@ -630,7 +704,7 @@ impl SftpPanel {
                 let mut write_index = sibling_start;
                 for subtree in subtrees {
                     for entry in subtree {
-                        self.entries[write_index] = entry;
+                        entries[write_index] = entry;
                         write_index += 1;
                     }
                 }
@@ -638,18 +712,8 @@ impl SftpPanel {
         }
     }
 
-    fn sort_entries_slice(&self, entries: &mut Vec<FileEntry>) {
-        let sort_mode = self.sort_mode;
-        entries.sort_by(|a, b| {
-            b.entry.is_dir.cmp(&a.entry.is_dir).then_with(|| match sort_mode {
-                SortMode::Name => a.entry.name.to_lowercase().cmp(&b.entry.name.to_lowercase()),
-                SortMode::ModifiedTime => b.entry.modified.cmp(&a.entry.modified),
-            })
-        });
-    }
-
     fn toggle_expanded(&mut self, index: usize, cx: &mut Context<Self>) {
-        let Some(entry) = self.entries.get(index).cloned() else {
+        let Some(entry) = self.active_connection().and_then(|c| c.entries.get(index).cloned()) else {
             return;
         };
         if !entry.entry.is_dir {
@@ -658,12 +722,17 @@ impl SftpPanel {
 
         let path = entry.entry.path.clone();
 
-        if self.expanded_dirs.contains(&path) {
-            self.expanded_dirs.remove(&path);
+        let is_expanded = self.active_connection().map(|c| c.expanded_dirs.contains(&path)).unwrap_or(false);
+        if is_expanded {
+            if let Some(conn) = self.active_connection_mut() {
+                conn.expanded_dirs.remove(&path);
+            }
             self.remove_children(index);
             cx.notify();
         } else {
-            self.expanded_dirs.insert(path.clone());
+            if let Some(conn) = self.active_connection_mut() {
+                conn.expanded_dirs.insert(path.clone());
+            }
             self.load_directory_children(index, cx);
         }
     }
@@ -673,12 +742,13 @@ impl SftpPanel {
         parent_index: usize,
         cx: &mut Context<Self>,
     ) {
-        let Some(parent_entry) = self.entries.get(parent_index).cloned() else {
+        let Some(parent_entry) = self.active_connection().and_then(|c| c.entries.get(parent_index).cloned()) else {
             return;
         };
-        let Some(client) = self.client.clone() else {
+        let Some(client) = self.active_connection().and_then(|c| c.client.clone()) else {
             return;
         };
+        let active_key = self.active_host_key.clone();
 
         let path = parent_entry.entry.path.clone();
         let parent_depth = parent_entry.depth;
@@ -695,17 +765,24 @@ impl SftpPanel {
             match result {
                 Ok(entries) => {
                     this.update(cx, |this, cx| {
-                        // Verify parent is still at the same index and still expanded
-                        if let Some(parent) = this.entries.get(parent_index) {
+                        let Some(conn) = active_key.as_ref().and_then(|k| this.connections.get_mut(k)) else {
+                            return;
+                        };
+                        if let Some(parent) = conn.entries.get(parent_index) {
                             if parent.entry.path == path
-                                && this.expanded_dirs.contains(&path)
+                                && conn.expanded_dirs.contains(&path)
                             {
-                                this.insert_children(
+                                let sort_mode = this.sort_mode;
+                                Self::insert_children_on(
+                                    sort_mode,
+                                    &mut conn.entries,
                                     parent_index,
                                     entries,
                                     parent_depth + 1,
                                     &path,
                                 );
+                                // fetch_entry_metadata needs &mut self
+                                let _ = conn;
                                 this.fetch_entry_metadata(cx);
                                 cx.notify();
                             }
@@ -715,9 +792,10 @@ impl SftpPanel {
                 }
                 Err(err) => {
                     log::error!("Failed to load directory {}: {}", path, err);
-                    // Remove from expanded set on error
                     this.update(cx, |this, cx| {
-                        this.expanded_dirs.remove(&path);
+                        if let Some(conn) = active_key.as_ref().and_then(|k| this.connections.get_mut(k)) {
+                            conn.expanded_dirs.remove(&path);
+                        }
                         cx.notify();
                     })
                     .ok();
@@ -727,14 +805,15 @@ impl SftpPanel {
         .detach();
     }
 
-    fn insert_children(
-        &mut self,
+    fn insert_children_on(
+        sort_mode: SortMode,
+        entries: &mut Vec<FileEntry>,
         parent_index: usize,
-        entries: Vec<RemoteEntry>,
+        new_remote_entries: Vec<RemoteEntry>,
         depth: usize,
         parent_path: &str,
     ) {
-        let mut new_entries: Vec<FileEntry> = entries
+        let mut new_entries: Vec<FileEntry> = new_remote_entries
             .into_iter()
             .map(|entry| FileEntry {
                 depth,
@@ -743,50 +822,56 @@ impl SftpPanel {
             })
             .collect();
 
-        self.sort_entries_slice(&mut new_entries);
+        new_entries.sort_by(|a, b| {
+            b.entry.is_dir.cmp(&a.entry.is_dir).then_with(|| match sort_mode {
+                SortMode::Name => a.entry.name.to_lowercase().cmp(&b.entry.name.to_lowercase()),
+                SortMode::ModifiedTime => b.entry.modified.cmp(&a.entry.modified),
+            })
+        });
 
         let insert_pos = parent_index + 1;
         for (i, entry) in new_entries.into_iter().enumerate() {
-            self.entries.insert(insert_pos + i, entry);
+            entries.insert(insert_pos + i, entry);
         }
     }
 
     fn remove_children(&mut self, parent_index: usize) {
-        let parent_depth = self.entries[parent_index].depth;
+        let Some(conn) = self.active_connection_mut() else {
+            return;
+        };
+        let parent_depth = conn.entries[parent_index].depth;
 
         let i = parent_index + 1;
-        while i < self.entries.len() {
-            if self.entries[i].depth <= parent_depth {
+        while i < conn.entries.len() {
+            if conn.entries[i].depth <= parent_depth {
                 break;
             }
-            if self.entries[i].entry.is_dir {
-                self.expanded_dirs.remove(&self.entries[i].entry.path);
+            if conn.entries[i].entry.is_dir {
+                conn.expanded_dirs.remove(&conn.entries[i].entry.path);
             }
-            self.entries.remove(i);
+            conn.entries.remove(i);
         }
     }
 
-    fn re_expand_dirs(&mut self, dirs_to_expand: HashSet<String>, cx: &mut Context<Self>) {
-        // Re-expand directories that were previously expanded
-        // Filter to only dirs that still exist in current entries
-        let existing_paths: HashSet<String> = self
+    fn re_expand_dirs_for_key(&mut self, key: Option<&SshHostKey>, dirs_to_expand: HashSet<String>, cx: &mut Context<Self>) {
+        let Some(key) = key else { return; };
+        let Some(conn) = self.connections.get_mut(key) else { return; };
+
+        let existing_paths: HashSet<String> = conn
             .entries
             .iter()
             .filter(|e| e.entry.is_dir)
             .map(|e| e.entry.path.clone())
             .collect();
 
-        // Only keep dirs that still exist
         let valid_dirs: HashSet<String> = dirs_to_expand
             .into_iter()
             .filter(|path| existing_paths.contains(path))
             .collect();
 
-        self.expanded_dirs = valid_dirs.clone();
+        conn.expanded_dirs = valid_dirs.clone();
 
-        // Actually load children for each expanded directory
-        // Collect indices first to avoid borrow issues
-        let indices_to_expand: Vec<usize> = self
+        let indices_to_expand: Vec<usize> = conn
             .entries
             .iter()
             .enumerate()
@@ -794,12 +879,15 @@ impl SftpPanel {
             .map(|(i, _)| i)
             .collect();
 
+        // Need to release conn borrow before calling load_directory_children
+        let _ = conn;
         for index in indices_to_expand {
             self.load_directory_children(index, cx);
         }
     }
 
     fn get_parent_dir(&self, path: &str) -> String {
+        let current_path = self.active_connection().map(|c| c.current_path.clone()).unwrap_or_else(|| "/".to_string());
         path.rsplit_once('/')
             .map(|(parent, _)| {
                 if parent.is_empty() {
@@ -808,21 +896,26 @@ impl SftpPanel {
                     parent.to_string()
                 }
             })
-            .unwrap_or_else(|| self.current_path.clone())
+            .unwrap_or(current_path)
     }
 
     fn start_watch(&mut self, cx: &mut Context<Self>) {
-        if !self.watch_enabled || self.client.is_none() {
+        let watch_enabled = self.active_connection().map(|c| c.watch_enabled).unwrap_or(false);
+        let client = self.active_connection().and_then(|c| c.client.clone());
+        if !watch_enabled || client.is_none() {
             return;
         }
 
-        self.stop_watch();
+        if let Some(conn) = self.active_connection_mut() {
+            conn.stop_watch();
+        }
 
-        let client = self.client.clone().unwrap();
-        let path = self.current_path.clone();
+        let client = client.unwrap();
+        let path = self.active_connection().map(|c| c.current_path.clone()).unwrap_or_default();
+        let active_key = self.active_host_key.clone();
         let tokio_handle = gpui_tokio::Tokio::handle(cx);
 
-        self.watch_task = Some(cx.spawn(async move |this, cx| {
+        let watch_task = cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(WATCH_INTERVAL).await;
 
@@ -838,8 +931,10 @@ impl SftpPanel {
                     Ok(new_entries) => {
                         let should_update = this
                             .update(cx, |this, _cx| {
-                                // Build snapshot: path -> (size, mtime)
-                                let old_snapshot: HashMap<String, (u64, Option<u64>)> = this
+                                let Some(conn) = active_key.as_ref().and_then(|k| this.connections.get(k)) else {
+                                    return false;
+                                };
+                                let old_snapshot: HashMap<String, (u64, Option<u64>)> = conn
                                     .entries
                                     .iter()
                                     .map(|e| {
@@ -859,15 +954,19 @@ impl SftpPanel {
 
                         if should_update {
                             this.update(cx, |this, cx| {
-                                let parent_path = this.current_path.clone();
-                                let expanded_dirs = this.expanded_dirs.clone();
-                                this.entries = new_entries
+                                let sort_mode = this.sort_mode;
+                                let Some(conn) = active_key.as_ref().and_then(|k| this.connections.get_mut(k)) else {
+                                    return;
+                                };
+                                let parent_path = conn.current_path.clone();
+                                let expanded_dirs = conn.expanded_dirs.clone();
+                                conn.entries = new_entries
                                     .into_iter()
                                     .map(|entry| FileEntry { depth: 0, parent_path: parent_path.clone(), entry })
                                     .collect();
-                                this.sort_entries();
-                                // Re-expand previously expanded root-level dirs
-                                this.re_expand_dirs(expanded_dirs, cx);
+                                Self::sort_entries_on(sort_mode, &mut conn.entries);
+                                let _ = conn;
+                                this.re_expand_dirs_for_key(active_key.as_ref(), expanded_dirs, cx);
                                 cx.notify();
                             })
                             .ok();
@@ -878,16 +977,24 @@ impl SftpPanel {
                     }
                 }
             }
-        }));
+        });
+        if let Some(conn) = self.active_connection_mut() {
+            conn.watch_task = Some(watch_task);
+        }
     }
 
     fn stop_watch(&mut self) {
-        self.watch_task = None;
+        if let Some(conn) = self.active_connection_mut() {
+            conn.stop_watch();
+        }
     }
 
     fn toggle_watch(&mut self, cx: &mut Context<Self>) {
-        self.watch_enabled = !self.watch_enabled;
-        if self.watch_enabled {
+        if let Some(conn) = self.active_connection_mut() {
+            conn.watch_enabled = !conn.watch_enabled;
+        }
+        let watch_enabled = self.active_connection().map(|c| c.watch_enabled).unwrap_or(false);
+        if watch_enabled {
             self.start_watch(cx);
         } else {
             self.stop_watch();
@@ -896,7 +1003,10 @@ impl SftpPanel {
     }
 
     fn visible_entries(&self) -> Vec<(usize, &FileEntry)> {
-        self.entries
+        let Some(conn) = self.active_connection() else {
+            return Vec::new();
+        };
+        conn.entries
             .iter()
             .enumerate()
             .filter(|(_, entry)| {
@@ -926,18 +1036,20 @@ impl SftpPanel {
     }
 
     fn navigate_up(&mut self, cx: &mut Context<Self>) {
-        if self.current_path == "/" {
+        let current_path = self.active_connection().map(|c| c.current_path.clone()).unwrap_or_else(|| "/".to_string());
+        if current_path == "/" {
             return;
         }
-        if let Some(parent) = self
-            .current_path
+        if let Some(parent) = current_path
             .rsplit_once('/')
             .map(|(p, _)| if p.is_empty() { "/" } else { p })
         {
-            self.current_path = parent.to_string();
-            self.entries.clear();
-            self.expanded_dirs.clear();
-            self.selected_index = None;
+            if let Some(conn) = self.active_connection_mut() {
+                conn.current_path = parent.to_string();
+                conn.entries.clear();
+                conn.expanded_dirs.clear();
+                conn.selected_index = None;
+            }
             self.load_directory(cx);
             cx.notify();
         }
@@ -946,7 +1058,8 @@ impl SftpPanel {
     fn start_path_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
-            editor.set_text(self.current_path.as_str(), window, cx);
+            let current_path = self.active_connection().map(|c| c.current_path.as_str()).unwrap_or("/");
+            editor.set_text(current_path, window, cx);
             editor.select_all(&editor::actions::SelectAll, window, cx);
             let placeholder = t("sftp_panel.path_placeholder");
             editor.set_placeholder_text(&placeholder, window, cx);
@@ -975,7 +1088,7 @@ impl SftpPanel {
         if input.is_empty() {
             return;
         }
-        let Some(client) = self.client.clone() else {
+        let Some(client) = self.active_connection().and_then(|c| c.client.clone()) else {
             return;
         };
         let tokio_handle = gpui_tokio::Tokio::handle(cx);
@@ -1031,10 +1144,12 @@ impl SftpPanel {
             };
 
             this.update(cx, |this, cx| {
-                this.current_path = target_dir;
-                this.entries.clear();
-                this.expanded_dirs.clear();
-                this.selected_index = None;
+                if let Some(conn) = this.active_connection_mut() {
+                    conn.current_path = target_dir;
+                    conn.entries.clear();
+                    conn.expanded_dirs.clear();
+                    conn.selected_index = None;
+                }
                 this.load_directory(cx);
                 cx.notify();
             })
@@ -1048,23 +1163,24 @@ impl SftpPanel {
     }
 
     fn navigate_into(&mut self, index: usize, cx: &mut Context<Self>) {
-        if let Some(entry) = self.entries.get(index) {
-            if entry.entry.is_dir {
-                self.current_path = entry.entry.path.clone();
-                self.entries.clear();
-                self.expanded_dirs.clear();
-                self.selected_index = None;
-                self.load_directory(cx);
-                cx.notify();
+        let path = self.active_connection().and_then(|c| c.entries.get(index)).map(|e| (e.entry.is_dir, e.entry.path.clone()));
+        if let Some((true, path)) = path {
+            if let Some(conn) = self.active_connection_mut() {
+                conn.current_path = path;
+                conn.entries.clear();
+                conn.expanded_dirs.clear();
+                conn.selected_index = None;
             }
+            self.load_directory(cx);
+            cx.notify();
         }
     }
 
     fn upload_external_files(&mut self, paths: &[PathBuf], cx: &mut Context<Self>) {
-        let Some(client) = self.client.clone() else {
+        let Some(client) = self.active_connection().and_then(|c| c.client.clone()) else {
             return;
         };
-        let current_path = self.current_path.clone();
+        let current_path = self.active_connection().map(|c| c.current_path.clone()).unwrap_or_default();
         let tokio_handle = gpui_tokio::Tokio::handle(cx);
         let paths = paths.to_vec();
 
@@ -1093,12 +1209,13 @@ impl SftpPanel {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.selected_index = Some(index);
+        if let Some(conn) = self.active_connection_mut() {
+            conn.selected_index = Some(index);
+        }
 
-        if let Some(entry) = self.entries.get(index) {
-            if entry.entry.is_dir {
-                self.toggle_expanded(index, cx);
-            }
+        let is_dir = self.active_connection().and_then(|c| c.entries.get(index)).map(|e| e.entry.is_dir).unwrap_or(false);
+        if is_dir {
+            self.toggle_expanded(index, cx);
         }
 
         cx.notify();
@@ -1110,8 +1227,9 @@ impl SftpPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(entry) = self.entries.get(index) {
-            if entry.entry.is_dir {
+        let entry_info = self.active_connection().and_then(|c| c.entries.get(index)).map(|e| e.entry.is_dir);
+        if let Some(is_dir) = entry_info {
+            if is_dir {
                 // Double-click navigates into directory (like Open action)
                 self.navigate_into(index, cx);
             } else {
@@ -1127,7 +1245,7 @@ impl SftpPanel {
         if visible.is_empty() {
             return;
         }
-        let current = self.selected_index.unwrap_or(0);
+        let current = self.active_connection().and_then(|c| c.selected_index).unwrap_or(0);
         // Find next visible index after current
         let next = visible
             .iter()
@@ -1135,7 +1253,9 @@ impl SftpPanel {
             .or_else(|| visible.first())
             .map(|(real_idx, _)| *real_idx);
         if let Some(idx) = next {
-            self.selected_index = Some(idx);
+            if let Some(conn) = self.active_connection_mut() {
+                conn.selected_index = Some(idx);
+            }
             cx.notify();
         }
     }
@@ -1145,7 +1265,7 @@ impl SftpPanel {
         if visible.is_empty() {
             return;
         }
-        let current = self.selected_index.unwrap_or(0);
+        let current = self.active_connection().and_then(|c| c.selected_index).unwrap_or(0);
         let prev = visible
             .iter()
             .rev()
@@ -1153,7 +1273,9 @@ impl SftpPanel {
             .or_else(|| visible.last())
             .map(|(real_idx, _)| *real_idx);
         if let Some(idx) = prev {
-            self.selected_index = Some(idx);
+            if let Some(conn) = self.active_connection_mut() {
+                conn.selected_index = Some(idx);
+            }
             cx.notify();
         }
     }
@@ -1167,9 +1289,11 @@ impl SftpPanel {
             self.confirm_edit(window, cx);
             return;
         }
-        if let Some(index) = self.selected_index {
-            if let Some(entry) = self.entries.get(index) {
-                if entry.entry.is_dir {
+        let selected = self.active_connection().and_then(|c| c.selected_index);
+        if let Some(index) = selected {
+            let is_dir = self.active_connection().and_then(|c| c.entries.get(index)).map(|e| e.entry.is_dir);
+            if let Some(is_dir) = is_dir {
+                if is_dir {
                     self.toggle_expanded(index, cx);
                 } else {
                     self.open_file(index, window, cx);
@@ -1200,7 +1324,9 @@ impl SftpPanel {
             return;
         }
         self.marked_entries.clear();
-        self.selected_index = None;
+        if let Some(conn) = self.active_connection_mut() {
+            conn.selected_index = None;
+        }
         cx.notify();
     }
 
@@ -1219,9 +1345,10 @@ impl SftpPanel {
     }
 
     fn copy_path_action(&mut self, _: &CopyPath, _window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(index) = self.selected_index {
-            if let Some(entry) = self.entries.get(index) {
-                cx.write_to_clipboard(ClipboardItem::new_string(entry.entry.path.clone()));
+        let selected = self.active_connection().and_then(|c| c.selected_index);
+        if let Some(index) = selected {
+            if let Some(path) = self.active_connection().and_then(|c| c.entries.get(index)).map(|e| e.entry.path.clone()) {
+                cx.write_to_clipboard(ClipboardItem::new_string(path));
             }
         }
     }
@@ -1252,11 +1379,11 @@ impl SftpPanel {
         if !self.marked_entries.is_empty() {
             self.marked_entries
                 .iter()
-                .filter_map(|&idx| self.entries.get(idx).map(|e| e.entry.path.clone()))
+                .filter_map(|&idx| self.active_connection().and_then(|c| c.entries.get(idx)).map(|e| e.entry.path.clone()))
                 .collect()
-        } else if let Some(index) = self.selected_index {
-            self.entries
-                .get(index)
+        } else if let Some(index) = self.active_connection().and_then(|c| c.selected_index) {
+            self.active_connection()
+                .and_then(|c| c.entries.get(index))
                 .map(|e| vec![e.entry.path.clone()])
                 .unwrap_or_default()
         } else {
@@ -1268,10 +1395,10 @@ impl SftpPanel {
         let Some(clipboard) = self.clipboard.clone() else {
             return;
         };
-        let Some(client) = self.client.clone() else {
+        let Some(client) = self.active_connection().and_then(|c| c.client.clone()) else {
             return;
         };
-        let current_path = self.current_path.clone();
+        let current_path = self.active_connection().map(|c| c.current_path.clone()).unwrap_or_default();
         let is_cut = clipboard.is_cut;
         let tokio_handle = gpui_tokio::Tokio::handle(cx);
 
@@ -1360,14 +1487,12 @@ impl SftpPanel {
     }
 
     fn rename_action(&mut self, _: &Rename, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(index) = self.selected_index else {
+        let Some(index) = self.active_connection().and_then(|c| c.selected_index) else {
             return;
         };
-        let Some(entry) = self.entries.get(index) else {
+        let Some((name, is_dir)) = self.active_connection().and_then(|c| c.entries.get(index)).map(|e| (e.entry.name.clone(), e.entry.is_dir)) else {
             return;
         };
-        let name = entry.entry.name.clone();
-        let is_dir = entry.entry.is_dir;
 
         let editor = cx.new(|cx| {
             let mut editor = Editor::single_line(window, cx);
@@ -1403,19 +1528,17 @@ impl SftpPanel {
             return;
         }
 
-        let Some(client) = self.client.clone() else {
+        let Some(client) = self.active_connection().and_then(|c| c.client.clone()) else {
             return;
         };
-        let current_path = self.current_path.clone();
+        let current_path = self.active_connection().map(|c| c.current_path.clone()).unwrap_or_default();
         let tokio_handle = gpui_tokio::Tokio::handle(cx);
 
         if let Some(index) = edit_state.index {
             // Rename existing entry
-            let Some(entry) = self.entries.get(index) else {
+            let Some((old_path, parent_path)) = self.active_connection().and_then(|c| c.entries.get(index)).map(|e| (e.entry.path.clone(), e.parent_path.clone())) else {
                 return;
             };
-            let old_path = entry.entry.path.clone();
-            let parent_path = entry.parent_path.clone();
             let new_path = format!(
                 "{}/{}",
                 parent_path.trim_end_matches('/'),
@@ -1477,10 +1600,10 @@ impl SftpPanel {
         };
 
         let answer = window.prompt(PromptLevel::Warning, &message, None, &["OK", "Cancel"], cx);
-        let Some(client) = self.client.clone() else {
+        let Some(client) = self.active_connection().and_then(|c| c.client.clone()) else {
             return;
         };
-        let entries = self.entries.clone();
+        let entries = self.active_connection().map(|c| c.entries.clone()).unwrap_or_default();
         let tokio_handle = gpui_tokio::Tokio::handle(cx);
 
         cx.spawn(async move |this, cx| {
@@ -1504,7 +1627,9 @@ impl SftpPanel {
                     .await??;
                 this.update(cx, |this, cx| {
                     this.marked_entries.clear();
-                    this.selected_index = None;
+                    if let Some(conn) = this.active_connection_mut() {
+                        conn.selected_index = None;
+                    }
                     this.load_directory(cx);
                 })?;
             }
@@ -1514,9 +1639,11 @@ impl SftpPanel {
     }
 
     fn open_action(&mut self, _: &Open, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(index) = self.selected_index {
-            if let Some(entry) = self.entries.get(index) {
-                if entry.entry.is_dir {
+        let selected = self.active_connection().and_then(|c| c.selected_index);
+        if let Some(index) = selected {
+            let is_dir = self.active_connection().and_then(|c| c.entries.get(index)).map(|e| e.entry.is_dir);
+            if let Some(is_dir) = is_dir {
+                if is_dir {
                     self.navigate_into(index, cx);
                 } else {
                     self.open_file(index, window, cx);
@@ -1526,19 +1653,18 @@ impl SftpPanel {
     }
 
     fn open_file(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(entry) = self.entries.get(index) else {
+        let Some((remote_path, name)) = self.active_connection().and_then(|c| c.entries.get(index)).map(|e| (e.entry.path.clone(), e.entry.name.clone())) else {
             return;
         };
-        if entry.entry.is_dir {
+        let entry_is_dir = self.active_connection().and_then(|c| c.entries.get(index)).map(|e| e.entry.is_dir).unwrap_or(false);
+        if entry_is_dir {
             return;
         }
-        let Some(client) = self.client.clone() else {
+        let Some(client) = self.active_connection().and_then(|c| c.client.clone()) else {
             return;
         };
-        let remote_path = entry.entry.path.clone();
-        let name = entry.entry.name.clone();
         let host = self
-            .host_key
+            .active_host_key
             .as_ref()
             .map(|k| {
                 let user_part = k.username.as_deref().unwrap_or("anon");
@@ -1726,10 +1852,10 @@ impl SftpPanel {
         if paths.is_empty() {
             return;
         }
-        let Some(client) = self.client.clone() else {
+        let Some(client) = self.active_connection().and_then(|c| c.client.clone()) else {
             return;
         };
-        let entries = self.entries.clone();
+        let entries = self.active_connection().map(|c| c.entries.clone()).unwrap_or_default();
         let tokio_handle = gpui_tokio::Tokio::handle(cx);
         let workspace = self.workspace.clone();
 
@@ -1781,15 +1907,13 @@ impl SftpPanel {
     }
 
     fn chmod_action(&mut self, _: &Chmod, _window: &mut Window, cx: &mut Context<Self>) {
-        let Some(index) = self.selected_index else {
+        let Some(index) = self.active_connection().and_then(|c| c.selected_index) else {
             return;
         };
-        let Some(entry) = self.entries.get(index) else {
+        let Some((current_mode, remote_path)) = self.active_connection().and_then(|c| c.entries.get(index)).map(|e| (e.entry.permissions & 0o7777, e.entry.path.clone())) else {
             return;
         };
-        let current_mode = entry.entry.permissions & 0o7777;
-        let remote_path = entry.entry.path.clone();
-        let Some(client) = self.client.clone() else {
+        let Some(client) = self.active_connection().and_then(|c| c.client.clone()) else {
             return;
         };
         let tokio_handle = gpui_tokio::Tokio::handle(cx);
@@ -1856,11 +1980,13 @@ impl SftpPanel {
             if !self.marked_entries.contains(&idx) {
                 self.marked_entries.clear();
             }
-            self.selected_index = Some(idx);
+            if let Some(conn) = self.active_connection_mut() {
+                conn.selected_index = Some(idx);
+            }
         }
 
         let is_dir = index
-            .and_then(|idx| self.entries.get(idx))
+            .and_then(|idx| self.active_connection().and_then(|c| c.entries.get(idx)))
             .map(|e| e.entry.is_dir)
             .unwrap_or(false);
         let has_selection = index.is_some();
@@ -2031,7 +2157,7 @@ impl SftpPanel {
             return;
         }
 
-        let Some(client) = self.client.clone() else {
+        let Some(client) = self.active_connection().and_then(|c| c.client.clone()) else {
             return;
         };
         let tokio_handle = gpui_tokio::Tokio::handle(cx);
@@ -2051,7 +2177,9 @@ impl SftpPanel {
     // Rendering
 
     fn render_title_bar(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let status_text = match &self.status {
+        let status = self.active_connection().map(|c| c.status.clone()).unwrap_or(ConnectionStatus::Disconnected);
+        let watch_enabled = self.active_connection().map(|c| c.watch_enabled).unwrap_or(false);
+        let status_text = match &status {
             ConnectionStatus::Disconnected => t("sftp_panel.disconnected"),
             ConnectionStatus::Connecting => t("sftp_panel.connecting"),
             ConnectionStatus::Connected => t("sftp_panel.connected"),
@@ -2081,7 +2209,7 @@ impl SftpPanel {
             .child(
                 h_flex()
                     .gap_1()
-                    .when(self.status == ConnectionStatus::Connected, |this| {
+                    .when(status == ConnectionStatus::Connected, |this| {
                         let current_sort = self.sort_mode;
                         let weak = cx.weak_entity();
                         this.child(
@@ -2150,9 +2278,9 @@ impl SftpPanel {
                                 })),
                         )
                         .child(
-                            IconButton::new("sftp-watch", if self.watch_enabled { IconName::Eye } else { IconName::Close })
+                            IconButton::new("sftp-watch", if watch_enabled { IconName::Eye } else { IconName::Close })
                                 .icon_size(IconSize::Small)
-                                .tooltip(Tooltip::text(if self.watch_enabled {
+                                .tooltip(Tooltip::text(if watch_enabled {
                                     t("sftp_panel.watch_stop")
                                 } else {
                                     t("sftp_panel.watch_start")
@@ -2170,7 +2298,7 @@ impl SftpPanel {
                                 })),
                         )
                     })
-                    .child(match &self.status {
+                    .child(match &status {
                         ConnectionStatus::Connected => {
                             IconButton::new("sftp-connect", IconName::Disconnected)
                                 .icon_size(IconSize::Small)
@@ -2232,7 +2360,7 @@ impl SftpPanel {
                             this.start_path_edit(window, cx);
                         }))
                         .child(
-                            Label::new(self.current_path.clone())
+                            Label::new(self.active_connection().map(|c| c.current_path.clone()).unwrap_or_else(|| "/".to_string()))
                                 .size(LabelSize::Small)
                                 .color(Color::Muted),
                         ),
@@ -2258,46 +2386,38 @@ impl SftpPanel {
             .collect()
     }
 
-    fn clear_metadata_caches(&mut self) {
-        self.md5_cache.clear();
-        self.dir_count_cache.clear();
-        self.md5_available = None;
-        self.md5_task = None;
-        self.dir_count_task = None;
-    }
-
     fn fetch_entry_metadata(&mut self, cx: &mut Context<Self>) {
         self.fetch_md5_for_entries(cx);
         self.fetch_dir_item_counts(cx);
     }
 
     fn fetch_md5_for_entries(&mut self, cx: &mut Context<Self>) {
-        if self.md5_available == Some(false) {
+        let md5_available = self.active_connection().and_then(|c| c.md5_available);
+        if md5_available == Some(false) {
             return;
         }
 
-        let Some(host_key) = self.host_key.clone() else {
+        let Some(host_key) = self.active_host_key.clone() else {
             return;
         };
         let Some(session) = self.sftp_store.read(cx).get_session(&host_key) else {
             return;
         };
 
-        let file_paths: Vec<String> = self
-            .entries
-            .iter()
-            .filter(|e| !e.entry.is_dir && !self.md5_cache.contains_key(&e.entry.path))
-            .map(|e| e.entry.path.clone())
-            .collect();
+        let file_paths: Vec<String> = self.active_connection()
+            .map(|c| c.entries.iter()
+                .filter(|e| !e.entry.is_dir && !c.md5_cache.contains_key(&e.entry.path))
+                .map(|e| e.entry.path.clone())
+                .collect())
+            .unwrap_or_default();
 
         if file_paths.is_empty() {
             return;
         }
 
-        let md5_available = self.md5_available;
         let tokio_handle = gpui_tokio::Tokio::handle(cx);
 
-        self.md5_task = Some(cx.spawn(async move |this, cx| {
+        let md5_task = cx.spawn(async move |this, cx| {
             // Check md5sum availability if not yet determined
             if md5_available.is_none() {
                 let session_check = session.clone();
@@ -2312,7 +2432,9 @@ impl SftpPanel {
                     .unwrap_or(false);
 
                 this.update(cx, |this, _cx| {
-                    this.md5_available = Some(available);
+                    if let Some(conn) = this.active_connection_mut() {
+                        conn.md5_available = Some(available);
+                    }
                 })
                 .ok();
 
@@ -2354,27 +2476,32 @@ impl SftpPanel {
 
                     if !batch.is_empty() {
                         this.update(cx, |this, cx| {
-                            this.md5_cache.extend(batch);
+                            if let Some(conn) = this.active_connection_mut() {
+                                conn.md5_cache.extend(batch);
+                            }
                             cx.notify();
                         })
                         .ok();
                     }
                 }
             }
-        }));
+        });
+        if let Some(conn) = self.active_connection_mut() {
+            conn.md5_task = Some(md5_task);
+        }
     }
 
     fn fetch_dir_item_counts(&mut self, cx: &mut Context<Self>) {
-        let Some(client) = self.client.clone() else {
+        let Some(client) = self.active_connection().and_then(|c| c.client.clone()) else {
             return;
         };
 
-        let dir_paths: Vec<String> = self
-            .entries
-            .iter()
-            .filter(|e| e.entry.is_dir && !self.dir_count_cache.contains_key(&e.entry.path))
-            .map(|e| e.entry.path.clone())
-            .collect();
+        let dir_paths: Vec<String> = self.active_connection()
+            .map(|c| c.entries.iter()
+                .filter(|e| e.entry.is_dir && !c.dir_count_cache.contains_key(&e.entry.path))
+                .map(|e| e.entry.path.clone())
+                .collect())
+            .unwrap_or_default();
 
         if dir_paths.is_empty() {
             return;
@@ -2382,7 +2509,7 @@ impl SftpPanel {
 
         let tokio_handle = gpui_tokio::Tokio::handle(cx);
 
-        self.dir_count_task = Some(cx.spawn(async move |this, cx| {
+        let dir_count_task = cx.spawn(async move |this, cx| {
             let mut counts = Vec::new();
             for path in dir_paths {
                 let client = client.clone();
@@ -2397,24 +2524,32 @@ impl SftpPanel {
 
             if !counts.is_empty() {
                 this.update(cx, |this, cx| {
-                    for (path, count) in counts {
-                        this.dir_count_cache.insert(path, count);
+                    if let Some(conn) = this.active_connection_mut() {
+                        for (path, count) in counts {
+                            conn.dir_count_cache.insert(path, count);
+                        }
                     }
                     cx.notify();
                 })
                 .ok();
             }
-        }));
+        });
+        if let Some(conn) = self.active_connection_mut() {
+            conn.dir_count_task = Some(dir_count_task);
+        }
     }
 
     fn render_entry(&self, index: usize, cx: &mut Context<Self>) -> AnyElement {
-        let Some(file_entry) = self.entries.get(index) else {
+        let Some(conn) = self.active_connection() else {
+            return gpui::Empty.into_any();
+        };
+        let Some(file_entry) = conn.entries.get(index) else {
             return gpui::Empty.into_any();
         };
 
         let entry = &file_entry.entry;
-        let is_selected = self.selected_index == Some(index);
-        let is_expanded = self.expanded_dirs.contains(&entry.path);
+        let is_selected = conn.selected_index == Some(index);
+        let is_expanded = conn.expanded_dirs.contains(&entry.path);
         let is_dir = entry.is_dir;
         let depth = file_entry.depth;
         let entry_path = entry.path.clone();
@@ -2453,7 +2588,7 @@ impl SftpPanel {
         };
 
         let md5_suffix = if !is_dir {
-            self.md5_cache
+            conn.md5_cache
                 .get(&entry.path)
                 .map(|hash| hash[hash.len().saturating_sub(5)..].to_string())
         } else {
@@ -2461,7 +2596,7 @@ impl SftpPanel {
         };
 
         let dir_count_label = if is_dir {
-            self.dir_count_cache
+            conn.dir_count_cache
                 .get(&entry.path)
                 .map(|count| t("sftp_panel.items").replace("{}", &count.to_string()))
         } else {
@@ -2612,6 +2747,7 @@ impl SftpPanel {
     }
 
     fn render_empty_state(&self) -> impl IntoElement {
+        let status = self.active_connection().map(|c| c.status.clone()).unwrap_or(ConnectionStatus::Disconnected);
         v_flex()
             .size_full()
             .items_center()
@@ -2623,7 +2759,7 @@ impl SftpPanel {
                     .size(IconSize::Medium)
                     .color(Color::Muted),
             )
-            .child(match &self.status {
+            .child(match &status {
                 ConnectionStatus::Disconnected => Label::new(t("sftp_panel.click_connect"))
                     .size(LabelSize::Small)
                     .color(Color::Muted)
@@ -2655,7 +2791,7 @@ impl Render for SftpPanel {
             .map(|(idx, _)| idx)
             .collect();
         let item_count = self.cached_visible_indices.len();
-        let is_connected = self.status == ConnectionStatus::Connected;
+        let is_connected = self.active_connection().map(|c| c.status == ConnectionStatus::Connected).unwrap_or(false);
 
         v_flex()
             .id("sftp-panel")
