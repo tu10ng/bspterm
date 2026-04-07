@@ -31,7 +31,7 @@ pub use button_bar_config::{
 };
 
 pub use function_store::{
-    FunctionConfig, FunctionKind, FunctionProtocol, FunctionStore, FunctionStoreEntity,
+    FunctionConfig, FunctionKind, FunctionStore, FunctionStoreEntity,
     FunctionStoreEvent, GlobalFunctionStore,
 };
 
@@ -95,6 +95,7 @@ pub enum TerminalProtocol {
     All,
     Ssh,
     Telnet,
+    HuaweiVrp,
 }
 
 impl TerminalProtocol {
@@ -103,8 +104,18 @@ impl TerminalProtocol {
             TerminalProtocol::All => "通用",
             TerminalProtocol::Ssh => "SSH",
             TerminalProtocol::Telnet => "Telnet",
+            TerminalProtocol::HuaweiVrp => "华为设备",
         }
     }
+}
+
+/// Detected device type for a terminal connection.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum DetectedDeviceType {
+    #[default]
+    Unknown,
+    Linux,
+    HuaweiVrp { sysname: String },
 }
 
 mod pty_info;
@@ -578,6 +589,7 @@ impl TerminalBuilder {
             highlighted_line: None,
             word_highlights: Vec::new(),
             next_word_highlight_color_index: 0,
+            detected_device_type: DetectedDeviceType::default(),
         };
 
         Ok(TerminalBuilder {
@@ -837,8 +849,8 @@ impl TerminalBuilder {
                 highlighted_line: None,
                 word_highlights: Vec::new(),
                 next_word_highlight_color_index: 0,
+                detected_device_type: DetectedDeviceType::default(),
             };
-
             if !activation_script.is_empty() && no_task {
                 for activation_script in activation_script {
                     terminal.write_to_pty(activation_script.into_bytes());
@@ -1065,8 +1077,8 @@ impl TerminalBuilder {
                 highlighted_line: None,
                 word_highlights: Vec::new(),
                 next_word_highlight_color_index: 0,
+                detected_device_type: DetectedDeviceType::default(),
             };
-
             terminal.init_rule_engine();
             terminal.init_session_logger(session_logging_settings, session_logger_metadata);
 
@@ -1260,8 +1272,8 @@ impl TerminalBuilder {
                 highlighted_line: None,
                 word_highlights: Vec::new(),
                 next_word_highlight_color_index: 0,
+                detected_device_type: DetectedDeviceType::default(),
             };
-
             terminal.init_rule_engine();
             terminal.init_session_logger(session_logging_settings, session_logger_metadata);
 
@@ -1450,6 +1462,7 @@ impl TerminalBuilder {
             highlighted_line: None,
             word_highlights: Vec::new(),
             next_word_highlight_color_index: 0,
+            detected_device_type: DetectedDeviceType::default(),
         };
 
         terminal.init_rule_engine();
@@ -1724,6 +1737,8 @@ pub struct Terminal {
     word_highlights: Vec<WordHighlight>,
     /// Next color index for word highlights.
     next_word_highlight_color_index: usize,
+    /// Detected device type (Huawei VRP, Linux, etc.)
+    detected_device_type: DetectedDeviceType,
 }
 
 struct CopyTemplate {
@@ -3033,7 +3048,7 @@ impl Terminal {
         }
 
         // Get current protocol for filtering
-        let protocol = self.get_current_function_protocol();
+        let protocol = self.get_effective_protocol();
 
         // Find matching function
         let func = store.find_by_name(func_name, protocol.as_ref());
@@ -3118,7 +3133,7 @@ impl Terminal {
             return None;
         }
 
-        let protocol = self.get_current_function_protocol();
+        let protocol = self.get_effective_protocol();
         let func = store.find_abbreviation_by_trigger(word, protocol.as_ref())?;
 
         let expansion = match &func.kind {
@@ -3193,7 +3208,7 @@ impl Terminal {
             return None;
         }
 
-        let protocol = self.get_current_function_protocol();
+        let protocol = self.get_effective_protocol();
         let func = store.find_abbreviation_by_trigger(word, protocol.as_ref())?;
 
         let expansion = match &func.kind {
@@ -3282,15 +3297,6 @@ impl Terminal {
         }
 
         arguments
-    }
-
-    /// Get the current protocol as FunctionProtocol for function filtering.
-    pub fn get_current_function_protocol(&self) -> Option<FunctionProtocol> {
-        match &self.connection_info {
-            Some(ConnectionInfo::Ssh { .. }) => Some(FunctionProtocol::Ssh),
-            Some(ConnectionInfo::Telnet { .. }) => Some(FunctionProtocol::Telnet),
-            None => None,
-        }
     }
 
     pub fn clear_input_buffers(&mut self) {
@@ -4554,6 +4560,56 @@ impl Terminal {
         }
     }
 
+    pub fn detected_device_type(&self) -> &DetectedDeviceType {
+        &self.detected_device_type
+    }
+
+    /// Returns the effective protocol considering both connection type and detected device.
+    /// HuaweiVrp takes priority if detected, otherwise falls back to Ssh/Telnet/None.
+    pub fn get_effective_protocol(&self) -> Option<TerminalProtocol> {
+        if matches!(self.detected_device_type, DetectedDeviceType::HuaweiVrp { .. }) {
+            return Some(TerminalProtocol::HuaweiVrp);
+        }
+        self.get_current_protocol()
+    }
+
+    /// Detect device type from the current prompt in the terminal grid.
+    pub fn update_detected_device_type(&mut self) {
+        if self.connection_info.is_none() {
+            return;
+        }
+        if matches!(self.detected_device_type, DetectedDeviceType::HuaweiVrp { .. }) {
+            return;
+        }
+
+        let prompt = match self.read_prompt_from_grid() {
+            Some(p) => p,
+            None => return,
+        };
+
+        let context = command_history::classify_prompt(&prompt);
+        match context {
+            command_history::PromptContext::HuaweiUserView => {
+                let sysname = prompt
+                    .trim_start_matches('<')
+                    .trim_end_matches('>')
+                    .to_string();
+                self.detected_device_type = DetectedDeviceType::HuaweiVrp { sysname };
+            }
+            command_history::PromptContext::HuaweiSystemView { .. } => {
+                let inner = &prompt[1..prompt.len() - 1];
+                let sysname = inner.split('-').next().unwrap_or(inner).to_string();
+                self.detected_device_type = DetectedDeviceType::HuaweiVrp { sysname };
+            }
+            command_history::PromptContext::UnixShell => {
+                if self.detected_device_type == DetectedDeviceType::Unknown {
+                    self.detected_device_type = DetectedDeviceType::Linux;
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub fn is_disconnected(&self) -> bool {
         matches!(self.terminal_type, TerminalType::Disconnected)
     }
@@ -5237,6 +5293,7 @@ impl Terminal {
             return;
         }
         self.login_completed = true;
+        self.update_detected_device_type();
         for sender in self.login_waiters.drain(..) {
             let _ = sender.send(());
         }
@@ -5293,6 +5350,7 @@ impl Terminal {
     /// Reset login state (called on reconnection).
     pub fn reset_login_state(&mut self) {
         self.login_completed = false;
+        self.detected_device_type = DetectedDeviceType::Unknown;
     }
 }
 
@@ -6968,7 +7026,7 @@ mod tests {
     mod abbreviation_tests {
         use super::super::*;
         use crate::function_store::{
-            FunctionConfig, FunctionProtocol, FunctionStore, FunctionStoreEntity,
+            FunctionConfig, FunctionStore, FunctionStoreEntity,
             GlobalFunctionStore,
         };
         use gpui::{Entity, TestAppContext};
@@ -7035,7 +7093,7 @@ mod tests {
         #[gpui::test]
         async fn test_try_invoke_function_skips_abbreviation(cx: &mut TestAppContext) {
             let abbreviation =
-                FunctionConfig::new_abbreviation("l", "ls -lahtr", FunctionProtocol::All);
+                FunctionConfig::new_abbreviation("l", "ls -lahtr", TerminalProtocol::All);
             let terminal = build_terminal_with_functions(cx, vec![abbreviation]);
 
             terminal.update(cx, |term, cx| {
@@ -7071,7 +7129,7 @@ mod tests {
         #[gpui::test]
         async fn test_try_expand_abbreviation_for_enter(cx: &mut TestAppContext) {
             let abbreviation =
-                FunctionConfig::new_abbreviation("l", "ls -lahtr", FunctionProtocol::All);
+                FunctionConfig::new_abbreviation("l", "ls -lahtr", TerminalProtocol::All);
             let terminal = build_terminal_with_functions(cx, vec![abbreviation]);
 
             terminal.update(cx, |term, cx| {
@@ -7090,7 +7148,7 @@ mod tests {
         #[gpui::test]
         async fn test_abbreviation_enter_no_match_multiword(cx: &mut TestAppContext) {
             let abbreviation =
-                FunctionConfig::new_abbreviation("l", "ls -lahtr", FunctionProtocol::All);
+                FunctionConfig::new_abbreviation("l", "ls -lahtr", TerminalProtocol::All);
             let terminal = build_terminal_with_functions(cx, vec![abbreviation]);
 
             terminal.update(cx, |term, cx| {
@@ -7107,7 +7165,7 @@ mod tests {
         async fn test_script_and_abbreviation_coexist(cx: &mut TestAppContext) {
             let script = FunctionConfig::new("deploy", PathBuf::from("/scripts/deploy.py"));
             let abbreviation =
-                FunctionConfig::new_abbreviation("l", "ls -lahtr", FunctionProtocol::All);
+                FunctionConfig::new_abbreviation("l", "ls -lahtr", TerminalProtocol::All);
             let terminal = build_terminal_with_functions(cx, vec![script, abbreviation]);
 
             terminal.update(cx, |term, cx| {
@@ -7139,7 +7197,7 @@ mod tests {
         #[gpui::test]
         async fn test_abbreviation_disabled_skips_expansion(cx: &mut TestAppContext) {
             let abbreviation =
-                FunctionConfig::new_abbreviation("l", "ls -lahtr", FunctionProtocol::All);
+                FunctionConfig::new_abbreviation("l", "ls -lahtr", TerminalProtocol::All);
             let mut store = FunctionStore::new();
             store.add_function(abbreviation);
             store.abbreviation_enabled = false;

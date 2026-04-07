@@ -55,6 +55,8 @@ src/
 | `AutomationRule` | Trigger + condition + action definition |
 | `ContextExclusion` | Context-aware rule exclusion (pattern/case_insensitive/lines_before) |
 | `RecognizeConfig` / `RecognizeConfigEntity` | Quick Add auto-recognition rules (version-aware defaults) |
+| `DetectedDeviceType` | Enum: `Generic`, `HuaweiVrp` — detected from terminal sysname |
+| `TerminalProtocol` | Enum: `All`, `Ssh`, `Telnet`, `Local`, `HuaweiVrp` — used by FunctionStore and others |
 | `FunctionStore` | Function bar configurations with protocol filtering (Script + Abbreviation kinds) |
 | `FunctionKind` | Enum: `Script` (default) or `Abbreviation { trigger, expansion }` |
 | `AbbreviationExpansion` | Result of abbreviation trigger check (trigger_len + expansion text) |

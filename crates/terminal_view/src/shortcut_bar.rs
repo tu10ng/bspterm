@@ -495,6 +495,7 @@ fn shortcut_protocol_button(
         Some(TerminalProtocol::All) => t("shortcut.scope_all"),
         Some(TerminalProtocol::Ssh) => "SSH".into(),
         Some(TerminalProtocol::Telnet) => "Telnet".into(),
+        Some(TerminalProtocol::HuaweiVrp) => "华为设备".into(),
     };
 
     Button::new(SharedString::from(id.to_string()), label)
@@ -787,6 +788,12 @@ term = current_terminal()
                                 Some(TerminalProtocol::Telnet),
                                 &self.selected_protocol,
                                 cx,
+                            ))
+                            .child(shortcut_protocol_button(
+                                "protocol-huawei",
+                                Some(TerminalProtocol::HuaweiVrp),
+                                &self.selected_protocol,
+                                cx,
                             )),
                     ),
             )
@@ -901,6 +908,12 @@ term = current_terminal()
                                 Some(TerminalProtocol::Telnet),
                                 &self.selected_protocol,
                                 cx,
+                            ))
+                            .child(shortcut_protocol_button(
+                                "protocol-huawei-ex",
+                                Some(TerminalProtocol::HuaweiVrp),
+                                &self.selected_protocol,
+                                cx,
                             )),
                     ),
             )
@@ -990,6 +1003,7 @@ fn edit_shortcut_protocol_button(
         Some(TerminalProtocol::All) => t("shortcut.scope_all"),
         Some(TerminalProtocol::Ssh) => "SSH".into(),
         Some(TerminalProtocol::Telnet) => "Telnet".into(),
+        Some(TerminalProtocol::HuaweiVrp) => "华为设备".into(),
     };
 
     Button::new(SharedString::from(id.to_string()), label)
@@ -1202,6 +1216,12 @@ impl Render for EditShortcutModal {
                                     .child(edit_shortcut_protocol_button(
                                         "edit-protocol-telnet",
                                         Some(TerminalProtocol::Telnet),
+                                        &self.selected_protocol,
+                                        cx,
+                                    ))
+                                    .child(edit_shortcut_protocol_button(
+                                        "edit-protocol-huawei",
+                                        Some(TerminalProtocol::HuaweiVrp),
                                         &self.selected_protocol,
                                         cx,
                                     )),

@@ -345,7 +345,8 @@ class Terminal:
         Args:
             command: Command to execute
             timeout: Timeout in seconds
-            prompt_pattern: Regex pattern to detect command completion (default: shell prompt)
+            prompt_pattern: Regex pattern to detect command completion. Auto-detected by default:
+                Huawei VRP devices use [<\\[]\\S+[>\\]]$, others use [$#>]\\s*$
 
         Returns:
             Command output
@@ -380,7 +381,8 @@ class Terminal:
         Args:
             command: Command to execute
             timeout: Timeout in seconds
-            prompt_pattern: Regex pattern to detect prompt (default: [$#>]\\s*$)
+            prompt_pattern: Regex pattern to detect prompt. Auto-detected by default:
+                Huawei VRP devices use [<\\[]\\S+[>\\]]$, others use [$#>]\\s*$
 
         Returns:
             Clean command output without echo or prompt

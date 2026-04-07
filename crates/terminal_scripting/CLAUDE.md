@@ -42,7 +42,7 @@ src/
 - `terminal.wait_for` - Wait for regex pattern (30s timeout)
 - `terminal.wait_for_login` - Wait for login completion
 - `terminal.run` - Send command and wait for prompt
-- `terminal.sendcmd` - Send with optional echo stripping
+- `terminal.sendcmd` - Send with auto prompt detection (Huawei VRP / generic) and echo stripping
 - `terminal.close` - Close connection
 
 **Tracking Methods:**
@@ -86,5 +86,5 @@ cargo test -p terminal_scripting
   - Windows: TCP localhost on auto-assigned port
 - OutputTracker has limits: 10MB max, 1000 segments max
 - `terminal.wait_for` default timeout is 30 seconds
-- `terminal.run` default prompt regex is `[$#>]\s*$`
+- `terminal.run` / `terminal.sendcmd` default prompt regex is auto-detected: `[<\[]\S+[>\]]$` for Huawei VRP devices, `[$#>]\s*$` for others
 - Multiple independent readers can track output simultaneously

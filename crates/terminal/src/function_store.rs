@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::config_store::{ConfigItem, JsonConfigStore, default_true};
+use crate::TerminalProtocol;
 
 /// Kind of function: script-based or simple abbreviation.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,26 +30,6 @@ impl FunctionKind {
     }
 }
 
-/// Protocol type for function filtering.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FunctionProtocol {
-    #[default]
-    All,
-    Ssh,
-    Telnet,
-}
-
-impl FunctionProtocol {
-    pub fn label(&self) -> &'static str {
-        match self {
-            FunctionProtocol::All => "通用",
-            FunctionProtocol::Ssh => "SSH",
-            FunctionProtocol::Telnet => "Telnet",
-        }
-    }
-}
-
 /// Configuration for a single function.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FunctionConfig {
@@ -58,7 +39,7 @@ pub struct FunctionConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
     #[serde(default)]
-    pub protocol: FunctionProtocol,
+    pub protocol: TerminalProtocol,
     #[serde(default)]
     pub description: Option<String>,
     #[serde(flatten, default)]
@@ -78,7 +59,7 @@ impl FunctionConfig {
             name: name.into(),
             script_path,
             enabled: true,
-            protocol: FunctionProtocol::All,
+            protocol: TerminalProtocol::All,
             description: None,
             kind: FunctionKind::Script,
         }
@@ -87,7 +68,7 @@ impl FunctionConfig {
     pub fn with_protocol(
         name: impl Into<String>,
         script_path: PathBuf,
-        protocol: FunctionProtocol,
+        protocol: TerminalProtocol,
     ) -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -103,7 +84,7 @@ impl FunctionConfig {
     pub fn new_abbreviation(
         trigger: impl Into<String>,
         expansion: impl Into<String>,
-        protocol: FunctionProtocol,
+        protocol: TerminalProtocol,
     ) -> Self {
         let trigger = trigger.into();
         let name = trigger.clone();
@@ -200,7 +181,7 @@ impl FunctionStore {
     pub fn find_by_name(
         &self,
         name: &str,
-        protocol: Option<&FunctionProtocol>,
+        protocol: Option<&TerminalProtocol>,
     ) -> Option<&FunctionConfig> {
         self.functions.iter().find(|f| {
             f.enabled && f.name == name && Self::protocol_matches(&f.protocol, protocol)
@@ -209,7 +190,7 @@ impl FunctionStore {
 
     pub fn functions_for_protocol(
         &self,
-        protocol: Option<&FunctionProtocol>,
+        protocol: Option<&TerminalProtocol>,
     ) -> Vec<&FunctionConfig> {
         self.functions
             .iter()
@@ -218,13 +199,14 @@ impl FunctionStore {
     }
 
     fn protocol_matches(
-        func_protocol: &FunctionProtocol,
-        current: Option<&FunctionProtocol>,
+        func_protocol: &TerminalProtocol,
+        current: Option<&TerminalProtocol>,
     ) -> bool {
         match (func_protocol, current) {
-            (FunctionProtocol::All, _) => true,
-            (FunctionProtocol::Ssh, Some(FunctionProtocol::Ssh)) => true,
-            (FunctionProtocol::Telnet, Some(FunctionProtocol::Telnet)) => true,
+            (TerminalProtocol::All, _) => true,
+            (TerminalProtocol::Ssh, Some(TerminalProtocol::Ssh)) => true,
+            (TerminalProtocol::Telnet, Some(TerminalProtocol::Telnet)) => true,
+            (TerminalProtocol::HuaweiVrp, Some(TerminalProtocol::HuaweiVrp)) => true,
             _ => false,
         }
     }
@@ -236,7 +218,7 @@ impl FunctionStore {
     pub fn find_abbreviation_by_trigger(
         &self,
         trigger: &str,
-        protocol: Option<&FunctionProtocol>,
+        protocol: Option<&TerminalProtocol>,
     ) -> Option<&FunctionConfig> {
         self.functions.iter().find(|f| {
             f.enabled
@@ -378,7 +360,7 @@ impl FunctionStoreEntity {
     pub fn find_abbreviation_by_trigger(
         &self,
         trigger: &str,
-        protocol: Option<&FunctionProtocol>,
+        protocol: Option<&TerminalProtocol>,
     ) -> Option<&FunctionConfig> {
         self.store.find_abbreviation_by_trigger(trigger, protocol)
     }
@@ -448,7 +430,7 @@ impl FunctionStoreEntity {
     pub fn find_by_name(
         &self,
         name: &str,
-        protocol: Option<&FunctionProtocol>,
+        protocol: Option<&TerminalProtocol>,
     ) -> Option<&FunctionConfig> {
         self.store.find_by_name(name, protocol)
     }
@@ -456,7 +438,7 @@ impl FunctionStoreEntity {
     /// Get functions for a specific protocol (for function bar display).
     pub fn functions_for_protocol(
         &self,
-        protocol: Option<&FunctionProtocol>,
+        protocol: Option<&TerminalProtocol>,
     ) -> Vec<&FunctionConfig> {
         self.store.functions_for_protocol(protocol)
     }

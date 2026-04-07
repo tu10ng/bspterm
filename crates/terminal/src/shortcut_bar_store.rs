@@ -305,6 +305,7 @@ impl ShortcutBarStoreEntity {
         match protocol {
             Some(TerminalProtocol::Ssh) => "Terminal && protocol == ssh",
             Some(TerminalProtocol::Telnet) => "Terminal && protocol == telnet",
+            Some(TerminalProtocol::HuaweiVrp) => "Terminal && protocol == huawei_vrp",
             Some(TerminalProtocol::All) | None => "Terminal",
         }
     }

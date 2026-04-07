@@ -36,6 +36,7 @@ def main():
 
     right_term = Pane.split_right_clone(term.id, wait_for_login=True)
 
+    # user view 下的命令不需要手动传 prompt_pattern，sendcmd 会自动检测华为设备
     right_term.sendcmd("screen-length 0 temporary")
 
     output = right_term.sendcmd("display device")
@@ -45,8 +46,8 @@ def main():
         toast("No MPU boards found", "warning")
         return
 
-    right_term.sendcmd("sys", prompt_pattern=r"\[.*\]")
-    right_term.sendcmd("diagnose", prompt_pattern=r"\[.*-diagnose\]")
+    right_term.sendcmd("sys")
+    right_term.sendcmd("diagnose")
 
     failed_slots = []
     success_count = 0
@@ -73,6 +74,7 @@ def main():
         except Exception:
             failed_slots.append(slot_id)
 
+    # return 回到 user view，prompt 恢复为 <sysname>，自动检测可处理
     right_term.sendcmd("return")
 
     if failed_slots:
@@ -119,13 +121,13 @@ def get_mpu_ip(term, slot_id: str) -> str:
         IP address string or None if not found
 
     Note:
-        Uses prompt_pattern=r"\\[.*-diagnose\\]" to match VRP diagnose mode
-        prompt (e.g., [Huawei-diagnose]) instead of the default [$#>] pattern.
+        Huawei VRP device is auto-detected, so no explicit prompt_pattern needed.
+        The auto-detected pattern [<\\[]\\S+[>\\]]$ matches diagnose mode prompt
+        (e.g., [Huawei-diagnose]).
     """
     output = term.sendcmd(
         f'shell slot {slot_id} "ifconfig"',
         timeout=10,
-        prompt_pattern=r"\[.*-diagnose\]"
     )
 
     patterns = [

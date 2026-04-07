@@ -211,6 +211,7 @@ impl HighlightProtocol {
             TerminalProtocol::All => HighlightProtocol::All,
             TerminalProtocol::Ssh => HighlightProtocol::Ssh,
             TerminalProtocol::Telnet => HighlightProtocol::Telnet,
+            TerminalProtocol::HuaweiVrp => HighlightProtocol::All,
         }
     }
 }

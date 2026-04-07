@@ -288,7 +288,7 @@ def sendcmd(
 **参数:**
 - `command` (str) - 要执行的命令
 - `timeout` (float) - 超时时间（秒），默认 30 秒
-- `prompt_pattern` (str) - 检测命令完成的正则表达式，默认 `[$#>]\s*$`
+- `prompt_pattern` (str) - 检测命令完成的正则表达式。默认自动检测：华为 VRP 设备使用 `[<\[]\S+[>\]]$`（匹配 `<sysname>`、`[sysname]`、`[sysname-diagnose]` 等所有视图），其他设备使用 `[$#>]\s*$`
 
 **返回值:**
 - `str` - 命令的纯净输出（不含命令回显和提示符）
@@ -348,18 +348,15 @@ from bspterm import current_terminal
 
 term = current_terminal()
 
-# 网络设备通常使用不同的提示符
-# 华为设备: <hostname> 或 [hostname]
-# 思科设备: hostname# 或 hostname>
-
-# 华为设备示例
-output = term.sendcmd(
-    "display version",
-    prompt_pattern=r"[<\[].*[>\]]$"
-)
+# 华为 VRP 设备会自动检测，所有视图（user/system/diagnose）都无需手动传 prompt_pattern
+output = term.sendcmd("display version")
 print(output)
 
-# 思科设备示例
+# 切换视图也不需要，自动检测的 pattern 匹配 <sysname>、[sysname]、[sysname-diagnose] 等
+term.sendcmd("sys")
+term.sendcmd("diagnose")
+
+# 思科等其他网络设备，如果默认 [$#>] 不匹配，需要手动指定
 output = term.sendcmd(
     "show version",
     prompt_pattern=r"\S+[#>]$"
@@ -1419,7 +1416,7 @@ if __name__ == "__main__":
 
 5. **关闭连接**: 对于后台创建的 SSH/Telnet 连接，使用完毕后调用 `close()` 释放资源。
 
-6. **自定义提示符**: 对于非标准 shell（如网络设备），提供正确的 `prompt_pattern`。
+6. **自定义提示符**: `sendcmd()` 会自动检测华为 VRP 设备并使用匹配的 prompt pattern（覆盖所有视图）。对于其他非标准 shell（如思科设备），仍需提供正确的 `prompt_pattern`。
 
 ---
 

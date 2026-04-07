@@ -457,9 +457,24 @@ async fn handle_terminal_sendcmd(
     let params: SendCmdParams = serde_json::from_value(request.params.clone())
         .map_err(|e| JsonRpcError::invalid_params(e.to_string()))?;
 
-    let prompt_pattern = params
-        .prompt_pattern
-        .unwrap_or_else(|| r"[$#>]\s*$".to_string());
+    let prompt_pattern = match params.prompt_pattern {
+        Some(pattern) => pattern,
+        None => {
+            // Auto-detect prompt pattern based on detected device type
+            let pattern = cx.update(|cx| {
+                let terminal = TerminalRegistry::get_by_id_str(&params.terminal_id, cx)
+                    .map_err(|e| JsonRpcError::terminal_not_found(&e.to_string()))?;
+                let device_type = terminal.read(cx).detected_device_type().clone();
+                Ok::<_, JsonRpcError>(match device_type {
+                    terminal::DetectedDeviceType::HuaweiVrp { .. } => {
+                        r"[<\[]\S+[>\]]$".to_string()
+                    }
+                    _ => r"[$#>]\s*$".to_string(),
+                })
+            })?;
+            pattern
+        }
+    };
     let regex = Regex::new(&prompt_pattern)
         .map_err(|e| JsonRpcError::invalid_params(format!("Invalid prompt pattern: {}", e)))?;
 

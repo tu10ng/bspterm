@@ -98,7 +98,7 @@ use function_bar::{FunctionBarConfigModal, AddFunctionModal, EditAbbreviationMod
 use shortcut_bar::{AddShortcutModal, EditShortcutModal, ShortcutBarConfigModal};
 use terminal::{
     SessionStoreEntity, get_action_label,
-    ButtonBarStoreEntity, ButtonBarStoreEvent, FunctionKind, FunctionProtocol,
+    ButtonBarStoreEntity, ButtonBarStoreEvent, FunctionKind, TerminalProtocol,
     FunctionStoreEntity, RuleStoreEntity, RuleStoreEvent,
     ShortcutBarStoreEntity, ShortcutBarStoreEvent, SuggestionHistoryEntity,
     ALL_SYSTEM_ACTIONS,
@@ -2096,7 +2096,7 @@ print(output)
             return h_flex().id("terminal-function-bar").into_any_element();
         };
 
-        let protocol = self.terminal.read(cx).get_current_function_protocol();
+        let protocol = self.terminal.read(cx).get_effective_protocol();
         let functions: Vec<_> = store
             .read(cx)
             .functions_for_protocol(protocol.as_ref())
@@ -2384,8 +2384,8 @@ print(output)
     }
 
     fn add_function(&mut self, _: &AddFunction, window: &mut Window, cx: &mut Context<Self>) {
-        let protocol = self.terminal.read(cx).get_current_function_protocol();
-        let default_protocol = protocol.unwrap_or(FunctionProtocol::All);
+        let protocol = self.terminal.read(cx).get_effective_protocol();
+        let default_protocol = protocol.unwrap_or(TerminalProtocol::All);
         let workspace = self.workspace.clone();
         self.workspace
             .update(cx, |ws, cx| {
@@ -3329,6 +3329,7 @@ print(output)
         match terminal.get_current_protocol() {
             Some(terminal::TerminalProtocol::Ssh) => dispatch_context.set("protocol", "ssh"),
             Some(terminal::TerminalProtocol::Telnet) => dispatch_context.set("protocol", "telnet"),
+            Some(terminal::TerminalProtocol::HuaweiVrp) => dispatch_context.set("protocol", "huawei_vrp"),
             Some(terminal::TerminalProtocol::All) | None => dispatch_context.set("protocol", "local"),
         }
 
@@ -3912,6 +3913,7 @@ fn subscribe_for_terminal_events(
                 }
                 Event::LoginCompleted => {
                     log::debug!("Terminal login completed");
+                    cx.notify();
                 }
                 Event::CommandHistoryChanged => {
                     // Command history panel will subscribe to this event

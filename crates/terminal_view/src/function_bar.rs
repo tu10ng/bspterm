@@ -8,7 +8,7 @@ use gpui::{
 };
 use i18n::t;
 use terminal::{
-    FunctionConfig, FunctionKind, FunctionProtocol, FunctionStoreEntity, FunctionStoreEvent,
+    FunctionConfig, FunctionKind, TerminalProtocol, FunctionStoreEntity, FunctionStoreEvent,
 };
 use ui::Tooltip;
 use ui::{
@@ -391,8 +391,8 @@ fn scan_available_scripts() -> Vec<PathBuf> {
 
 fn protocol_button(
     id: &str,
-    protocol: FunctionProtocol,
-    current: &FunctionProtocol,
+    protocol: TerminalProtocol,
+    current: &TerminalProtocol,
     cx: &mut Context<AddFunctionModal>,
 ) -> impl IntoElement {
     let is_selected = &protocol == current;
@@ -428,7 +428,7 @@ pub struct AddFunctionModal {
     name_editor: Entity<Editor>,
     trigger_editor: Entity<Editor>,
     expansion_editor: Entity<Editor>,
-    protocol: FunctionProtocol,
+    protocol: TerminalProtocol,
     selected_script: Option<PathBuf>,
     available_scripts: Vec<PathBuf>,
 }
@@ -446,7 +446,7 @@ impl Focusable for AddFunctionModal {
 impl AddFunctionModal {
     pub fn new(
         workspace: WeakEntity<Workspace>,
-        default_protocol: FunctionProtocol,
+        default_protocol: TerminalProtocol,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -490,7 +490,7 @@ impl AddFunctionModal {
         cx.emit(DismissEvent);
     }
 
-    fn set_protocol(&mut self, protocol: FunctionProtocol, cx: &mut Context<Self>) {
+    fn set_protocol(&mut self, protocol: TerminalProtocol, cx: &mut Context<Self>) {
         self.protocol = protocol;
         cx.notify();
     }
@@ -704,19 +704,25 @@ term = current_terminal()
                             .gap_1()
                             .child(protocol_button(
                                 "protocol-all-abbr",
-                                FunctionProtocol::All,
+                                TerminalProtocol::All,
                                 &self.protocol,
                                 cx,
                             ))
                             .child(protocol_button(
                                 "protocol-ssh-abbr",
-                                FunctionProtocol::Ssh,
+                                TerminalProtocol::Ssh,
                                 &self.protocol,
                                 cx,
                             ))
                             .child(protocol_button(
                                 "protocol-telnet-abbr",
-                                FunctionProtocol::Telnet,
+                                TerminalProtocol::Telnet,
+                                &self.protocol,
+                                cx,
+                            ))
+                            .child(protocol_button(
+                                "protocol-huawei-abbr",
+                                TerminalProtocol::HuaweiVrp,
                                 &self.protocol,
                                 cx,
                             )),
@@ -824,19 +830,25 @@ term = current_terminal()
                             .gap_1()
                             .child(protocol_button(
                                 "protocol-all",
-                                FunctionProtocol::All,
+                                TerminalProtocol::All,
                                 &self.protocol,
                                 cx,
                             ))
                             .child(protocol_button(
                                 "protocol-ssh",
-                                FunctionProtocol::Ssh,
+                                TerminalProtocol::Ssh,
                                 &self.protocol,
                                 cx,
                             ))
                             .child(protocol_button(
                                 "protocol-telnet",
-                                FunctionProtocol::Telnet,
+                                TerminalProtocol::Telnet,
+                                &self.protocol,
+                                cx,
+                            ))
+                            .child(protocol_button(
+                                "protocol-huawei",
+                                TerminalProtocol::HuaweiVrp,
                                 &self.protocol,
                                 cx,
                             )),
@@ -942,19 +954,25 @@ term = current_terminal()
                             .gap_1()
                             .child(protocol_button(
                                 "protocol-all-ex",
-                                FunctionProtocol::All,
+                                TerminalProtocol::All,
                                 &self.protocol,
                                 cx,
                             ))
                             .child(protocol_button(
                                 "protocol-ssh-ex",
-                                FunctionProtocol::Ssh,
+                                TerminalProtocol::Ssh,
                                 &self.protocol,
                                 cx,
                             ))
                             .child(protocol_button(
                                 "protocol-telnet-ex",
-                                FunctionProtocol::Telnet,
+                                TerminalProtocol::Telnet,
+                                &self.protocol,
+                                cx,
+                            ))
+                            .child(protocol_button(
+                                "protocol-huawei-ex",
+                                TerminalProtocol::HuaweiVrp,
                                 &self.protocol,
                                 cx,
                             )),
@@ -1034,8 +1052,8 @@ impl Render for AddFunctionModal {
 
 fn rename_protocol_button(
     id: &str,
-    protocol: FunctionProtocol,
-    current: &FunctionProtocol,
+    protocol: TerminalProtocol,
+    current: &TerminalProtocol,
     cx: &mut Context<RenameFunctionModal>,
 ) -> impl IntoElement {
     let is_selected = &protocol == current;
@@ -1058,7 +1076,7 @@ pub struct RenameFunctionModal {
     focus_handle: FocusHandle,
     func_id: Uuid,
     name_editor: Entity<Editor>,
-    protocol: FunctionProtocol,
+    protocol: TerminalProtocol,
 }
 
 impl ModalView for RenameFunctionModal {}
@@ -1097,7 +1115,7 @@ impl RenameFunctionModal {
         }
     }
 
-    fn set_protocol(&mut self, protocol: FunctionProtocol, cx: &mut Context<Self>) {
+    fn set_protocol(&mut self, protocol: TerminalProtocol, cx: &mut Context<Self>) {
         self.protocol = protocol;
         cx.notify();
     }
@@ -1170,19 +1188,25 @@ impl Render for RenameFunctionModal {
                                     .gap_2()
                                     .child(rename_protocol_button(
                                         "rename-all",
-                                        FunctionProtocol::All,
+                                        TerminalProtocol::All,
                                         &current_protocol,
                                         cx,
                                     ))
                                     .child(rename_protocol_button(
                                         "rename-ssh",
-                                        FunctionProtocol::Ssh,
+                                        TerminalProtocol::Ssh,
                                         &current_protocol,
                                         cx,
                                     ))
                                     .child(rename_protocol_button(
                                         "rename-telnet",
-                                        FunctionProtocol::Telnet,
+                                        TerminalProtocol::Telnet,
+                                        &current_protocol,
+                                        cx,
+                                    ))
+                                    .child(rename_protocol_button(
+                                        "rename-huawei",
+                                        TerminalProtocol::HuaweiVrp,
                                         &current_protocol,
                                         cx,
                                     )),
@@ -1212,8 +1236,8 @@ impl Render for RenameFunctionModal {
 
 fn edit_abbr_protocol_button(
     id: &str,
-    protocol: FunctionProtocol,
-    current: &FunctionProtocol,
+    protocol: TerminalProtocol,
+    current: &TerminalProtocol,
     cx: &mut Context<EditAbbreviationModal>,
 ) -> impl IntoElement {
     let is_selected = &protocol == current;
@@ -1238,7 +1262,7 @@ pub struct EditAbbreviationModal {
     func_id: Uuid,
     trigger_editor: Entity<Editor>,
     expansion_editor: Entity<Editor>,
-    protocol: FunctionProtocol,
+    protocol: TerminalProtocol,
 }
 
 impl ModalView for EditAbbreviationModal {}
@@ -1368,19 +1392,25 @@ impl Render for EditAbbreviationModal {
                                     .gap_2()
                                     .child(edit_abbr_protocol_button(
                                         "edit-abbr-all",
-                                        FunctionProtocol::All,
+                                        TerminalProtocol::All,
                                         &current_protocol,
                                         cx,
                                     ))
                                     .child(edit_abbr_protocol_button(
                                         "edit-abbr-ssh",
-                                        FunctionProtocol::Ssh,
+                                        TerminalProtocol::Ssh,
                                         &current_protocol,
                                         cx,
                                     ))
                                     .child(edit_abbr_protocol_button(
                                         "edit-abbr-telnet",
-                                        FunctionProtocol::Telnet,
+                                        TerminalProtocol::Telnet,
+                                        &current_protocol,
+                                        cx,
+                                    ))
+                                    .child(edit_abbr_protocol_button(
+                                        "edit-abbr-huawei",
+                                        TerminalProtocol::HuaweiVrp,
                                         &current_protocol,
                                         cx,
                                     )),
