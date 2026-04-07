@@ -269,6 +269,9 @@ script_params:
 command_panel:
   title: "命令发送区域"
   hint: "Enter: 换行 | Ctrl+Enter: 发送"
+  hint_enter_sends: "Enter: 发送 | Ctrl+Enter: 换行"
+  toggle_enter_mode: "切换 Enter 行为"
+  custom_keybinding_conflict: "已检测到自定义快捷键，请在 keymap 中管理"
   send_tooltip: "发送到终端"
   clear_tooltip: "清除"
   placeholder: "在此输入命令..."

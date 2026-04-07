@@ -269,6 +269,9 @@ script_params:
 command_panel:
   title: "Command Send Area"
   hint: "Enter: New line | Ctrl+Enter: Send"
+  hint_enter_sends: "Enter: Send | Ctrl+Enter: New line"
+  toggle_enter_mode: "Toggle Enter behavior"
+  custom_keybinding_conflict: "Custom keybinding detected, manage in keymap"
   send_tooltip: "Send to Terminal"
   clear_tooltip: "Clear"
   placeholder: "Type commands here..."

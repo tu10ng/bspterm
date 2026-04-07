@@ -7,9 +7,10 @@ use collections::HashMap;
 use editor::{Editor, EditorEvent, EditorMode, HighlightKey, MultiBuffer, SizingBehavior, ToPoint};
 use gpui::{
     Action, App, ClickEvent, Context, Entity, EntityId, EventEmitter, FocusHandle,
-    Focusable, FontStyle, HighlightStyle, IntoElement, MouseButton, Pixels, Render, SharedString,
-    Styled, Subscription, Task, WeakEntity, Window, px,
+    Focusable, FontStyle, HighlightStyle, IntoElement, MouseButton, Pixels,
+    Render, SharedString, Styled, Subscription, Task, WeakEntity, Window, px,
 };
+use settings::KeybindSource;
 use i18n::t;
 use language::Buffer;
 use multi_buffer::MultiBufferRow;
@@ -19,8 +20,8 @@ use terminal::Terminal;
 use terminal_view::TerminalView;
 use text::Point;
 use ui::{
-    Color, ContextMenu, Icon, IconName, IconSize, Label, LabelSize, Tooltip, h_flex, prelude::*,
-    right_click_menu, v_flex,
+    Color, ContextMenu, Icon, IconName, IconSize, Label, LabelSize, Tooltip,
+    h_flex, prelude::*, right_click_menu, v_flex,
 };
 use uuid::Uuid;
 use workspace::{
@@ -94,6 +95,8 @@ struct CommandTabsConfig {
     cycle_content: String,
     #[serde(default)]
     per_terminal: Vec<PerTerminalPersistConfig>,
+    #[serde(default)]
+    enter_sends: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -126,6 +129,7 @@ pub struct CommandPanel {
     rename_focus_subscription: Option<Subscription>,
     save_task: Option<Task<()>>,
     initialized: bool,
+    enter_sends: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -151,8 +155,10 @@ impl CommandPanel {
 
         let mut tabs = vec![terminal_tab, cycle_tab];
         let mut pending_session_states: HashMap<Uuid, PerTerminalPersistConfig> = HashMap::default();
+        let mut enter_sends = false;
 
         if let Some(config) = Self::load_tabs_config() {
+            enter_sends = config.enter_sends;
             // Load per-terminal configs into pending states
             for per_term in config.per_terminal {
                 if let Ok(session_id) = Uuid::parse_str(&per_term.session_id) {
@@ -234,6 +240,7 @@ impl CommandPanel {
             rename_focus_subscription: None,
             save_task: None,
             initialized: false,
+            enter_sends,
             _subscriptions: subscriptions,
         }
     }
@@ -1056,6 +1063,7 @@ impl CommandPanel {
             cycle_interval_ms: 0,
             cycle_content: String::new(),
             per_terminal,
+            enter_sends: self.enter_sends,
         };
 
         cx.background_spawn(async move {
@@ -1125,8 +1133,32 @@ impl CommandPanel {
         });
     }
 
-    fn render_hint_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn has_user_custom_send_binding(&self, window: &Window, cx: &App) -> bool {
+        let editor = self.active_editor();
+        let bindings = window.bindings_for_action_in(&Send, &editor.focus_handle(cx));
+        bindings.iter().any(|binding| {
+            binding
+                .meta()
+                .map(|m| KeybindSource::from_meta(m) == KeybindSource::User)
+                .unwrap_or(false)
+        })
+    }
+
+    fn render_hint_bar(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = cx.theme().colors();
+        let has_custom_binding = self.has_user_custom_send_binding(window, cx);
+
+        let hint_key = if self.enter_sends {
+            "command_panel.hint_enter_sends"
+        } else {
+            "command_panel.hint"
+        };
+
+        let tooltip_text: SharedString = if has_custom_binding {
+            t("command_panel.custom_keybinding_conflict")
+        } else {
+            t("command_panel.toggle_enter_mode")
+        };
 
         h_flex()
             .w_full()
@@ -1141,9 +1173,20 @@ impl CommandPanel {
                     .color(Color::Muted),
             )
             .child(
-                Label::new(t("command_panel.hint"))
+                Label::new(t(hint_key))
                     .size(LabelSize::Small)
                     .color(Color::Muted),
+            )
+            .child(
+                IconButton::new("toggle-enter-mode", IconName::Return)
+                    .icon_size(IconSize::Small)
+                    .disabled(has_custom_binding)
+                    .tooltip(Tooltip::text(tooltip_text))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                        this.enter_sends = !this.enter_sends;
+                        this.schedule_save(cx);
+                        cx.notify();
+                    })),
             )
     }
 
@@ -1497,8 +1540,26 @@ impl Render for CommandPanel {
             .size_full()
             .bg(cx.theme().colors().panel_background)
             .on_action(cx.listener(|this, _: &Send, window, cx| {
-                this.send_to_terminal(window, cx);
+                if this.enter_sends {
+                    // Ctrl+Enter inserts newline when enter_sends mode is active
+                    let editor = this.active_editor().clone();
+                    editor.update(cx, |editor, cx| {
+                        editor.newline(&editor::actions::Newline, window, cx);
+                    });
+                } else {
+                    this.send_to_terminal(window, cx);
+                }
             }))
+            .capture_action(cx.listener(
+                |this, _: &editor::actions::Newline, window, cx| {
+                    if this.enter_sends {
+                        cx.stop_propagation();
+                        this.send_to_terminal(window, cx);
+                    } else {
+                        cx.propagate();
+                    }
+                },
+            ))
             .on_action(cx.listener(|this, _: &Clear, window, cx| {
                 this.clear_editor(window, cx);
             }))
@@ -1524,7 +1585,7 @@ impl Render for CommandPanel {
             .on_action(cx.listener(|this, _: &ConvertToScript, window, cx| {
                 this.convert_to_script(window, cx);
             }))
-            .child(self.render_hint_bar(cx))
+            .child(self.render_hint_bar(window, cx))
             .map(|el| {
                 search_bar.update(cx, |bar, cx| {
                     if bar.is_dismissed() {
