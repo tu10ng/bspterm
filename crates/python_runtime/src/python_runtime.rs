@@ -4,6 +4,8 @@ use std::path::Path;
 use std::process::Stdio;
 use std::sync::OnceLock;
 
+use util::command::new_std_command;
+
 const PYTHON_CANDIDATES: &[&str] = &["python3", "python", "py"];
 
 static PYTHON_PATH: OnceLock<PathBuf> = OnceLock::new();
@@ -29,7 +31,7 @@ pub fn python_executable() -> anyhow::Result<PathBuf> {
 fn find_python_executable() -> anyhow::Result<PathBuf> {
     log::info!("[python-runtime] Searching for Python executable...");
 
-    for candidate in PYTHON_CANDIDATES {
+    'candidates: for candidate in PYTHON_CANDIDATES {
         let Ok(path) = which::which(candidate) else {
             log::info!("[python-runtime] Candidate '{}' not found in PATH", candidate);
             continue;
@@ -46,18 +48,62 @@ fn find_python_executable() -> anyhow::Result<PathBuf> {
             continue;
         }
 
-        let Ok(output) = std::process::Command::new(&path)
+        let Ok(mut child) = new_std_command(&path)
             .args(["-c", "print(1 + 2)"])
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .output()
+            .spawn()
         else {
-            log::info!("[python-runtime] Candidate '{}' found at {:?} but failed validation", candidate, path);
+            log::info!(
+                "[python-runtime] Candidate '{}' found at {:?} but failed to spawn",
+                candidate,
+                path
+            );
             continue;
         };
 
-        if output.stdout.trim_ascii() != b"3" {
-            log::info!("[python-runtime] Candidate '{}' at {:?} returned unexpected output", candidate, path);
+        // Wait with a 5-second timeout to avoid hanging on broken Python installs
+        // (e.g. undetected Microsoft Store stubs).
+        let start = std::time::Instant::now();
+        let timeout = std::time::Duration::from_secs(5);
+        loop {
+            match child.try_wait() {
+                Ok(Some(_status)) => break,
+                Ok(None) if start.elapsed() > timeout => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    log::info!(
+                        "[python-runtime] Candidate '{}' at {:?} timed out after 5s",
+                        candidate,
+                        path
+                    );
+                    continue 'candidates;
+                }
+                Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
+                Err(error) => {
+                    log::info!(
+                        "[python-runtime] Candidate '{}' at {:?} wait error: {}",
+                        candidate,
+                        path,
+                        error
+                    );
+                    continue 'candidates;
+                }
+            }
+        }
+
+        // Child has exited — safe to read stdout without deadlock.
+        let mut stdout_buf = Vec::new();
+        if let Some(mut stdout) = child.stdout.take() {
+            let _ = std::io::Read::read_to_end(&mut stdout, &mut stdout_buf);
+        }
+
+        if stdout_buf.trim_ascii() != b"3" {
+            log::info!(
+                "[python-runtime] Candidate '{}' at {:?} returned unexpected output",
+                candidate,
+                path
+            );
             continue;
         }
 
@@ -112,10 +158,31 @@ pub fn ensure_user_site_packages() -> anyhow::Result<PathBuf> {
 }
 
 /// Returns true if the path is a Microsoft Store App Execution Alias.
-/// These live under `%LOCALAPPDATA%\Microsoft\WindowsApps\`.
+/// Checks both the `WindowsApps` path component and the reparse point + 0-byte
+/// signature that App Execution Aliases use.
 #[cfg(windows)]
 fn is_windows_store_python(path: &Path) -> bool {
-    path.components().any(|component| {
-        component.as_os_str().eq_ignore_ascii_case("WindowsApps")
-    })
+    // Check 1: path contains WindowsApps directory
+    if path
+        .components()
+        .any(|component| component.as_os_str().eq_ignore_ascii_case("WindowsApps"))
+    {
+        return true;
+    }
+
+    // Check 2: App Execution Alias — reparse point with 0 bytes
+    if let Ok(metadata) = std::fs::metadata(path) {
+        use std::os::windows::fs::MetadataExt;
+        let attributes = metadata.file_attributes();
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        if attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 && metadata.len() == 0 {
+            log::info!(
+                "[python-runtime] Detected App Execution Alias (reparse point): {:?}",
+                path
+            );
+            return true;
+        }
+    }
+
+    false
 }
