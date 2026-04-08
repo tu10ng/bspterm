@@ -72,12 +72,15 @@ impl ScriptParams {
 fn extract_docstring(content: &str) -> Option<String> {
     let content = content.trim();
 
-    // Skip shebang if present
-    let content = if content.starts_with("#!") {
-        content.lines().skip(1).collect::<Vec<_>>().join("\n")
-    } else {
-        content.to_string()
-    };
+    // Skip shebang, comment lines, and blank lines before docstring
+    let content: String = content
+        .lines()
+        .skip_while(|line| {
+            let trimmed = line.trim();
+            trimmed.starts_with('#') || trimmed.is_empty()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
 
     let content = content.trim();
 
@@ -317,6 +320,22 @@ from bspterm import params
         assert_eq!(verbose.name, "verbose");
         assert_eq!(verbose.param_type, ParamType::Boolean);
         assert_eq!(verbose.default.as_deref(), Some("false"));
+    }
+
+    #[test]
+    fn test_extract_docstring_with_comments() {
+        let script = r#"#!/usr/bin/env python3
+# This is a comment
+# Another comment
+"""
+@params
+- host: string
+@end_params
+"""
+"#;
+        let docstring = extract_docstring(script).unwrap();
+        assert!(docstring.contains("@params"));
+        assert!(docstring.contains("host: string"));
     }
 
     #[test]

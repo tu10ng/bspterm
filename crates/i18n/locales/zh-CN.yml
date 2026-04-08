@@ -468,6 +468,11 @@ shortcut:
   select_script: "选择脚本"
   click_to_record: "点击录制"
   recording_hint: "按下快捷键 (回车确认)"
+  edit_script_content: "编辑脚本内容"
+  edit_shortcut_config: "修改快捷键配置"
+  change_script: "更换脚本"
+  current_script: "当前脚本"
+  create_new_script: "新建脚本"
 
 # Welcome Page
 welcome:

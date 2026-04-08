@@ -468,6 +468,11 @@ shortcut:
   select_script: "Select Script"
   click_to_record: "Click to record"
   recording_hint: "Press keys (Enter to confirm)"
+  edit_script_content: "Edit Script Content"
+  edit_shortcut_config: "Edit Shortcut Config"
+  change_script: "Change Script"
+  current_script: "Current Script"
+  create_new_script: "Create New Script"
 
 # Welcome Page
 welcome:

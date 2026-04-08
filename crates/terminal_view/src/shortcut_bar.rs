@@ -211,9 +211,10 @@ impl ShortcutBarConfigModal {
     }
 
     fn open_edit_modal_static(workspace: &WeakEntity<Workspace>, id: Uuid, window: &mut Window, cx: &mut App) {
+        let ws_weak = workspace.clone();
         workspace
             .update(cx, |ws, cx| {
-                ws.toggle_modal(window, cx, |window, cx| EditShortcutModal::new(id, window, cx));
+                ws.toggle_modal(window, cx, |window, cx| EditShortcutModal::new(id, ws_weak, window, cx));
             })
             .ok();
     }
@@ -410,7 +411,13 @@ impl Render for ShortcutBarConfigModal {
                                                         .font_weight(gpui::FontWeight::MEDIUM)
                                                         .overflow_x_hidden()
                                                         .text_ellipsis()
-                                                        .child(shortcut.label.clone()),
+                                                        .child({
+                                                            let label = std::path::Path::new(&shortcut.script_path)
+                                                                .file_stem()
+                                                                .map(|s| s.to_string_lossy().into_owned())
+                                                                .unwrap_or_else(|| shortcut.label.clone());
+                                                            label
+                                                        }),
                                                 ),
                                         )
                                         .child(
@@ -1021,9 +1028,12 @@ fn edit_shortcut_protocol_button(
 pub struct EditShortcutModal {
     focus_handle: FocusHandle,
     shortcut_id: Uuid,
-    label_editor: Entity<Editor>,
     keybinding_recorder: Entity<KeystrokeRecorder>,
     selected_protocol: Option<TerminalProtocol>,
+    script_path: PathBuf,
+    available_scripts: Vec<PathBuf>,
+    show_script_picker: bool,
+    workspace: WeakEntity<Workspace>,
     _subscription: Subscription,
 }
 
@@ -1032,22 +1042,16 @@ impl ModalView for EditShortcutModal {}
 impl EventEmitter<DismissEvent> for EditShortcutModal {}
 
 impl EditShortcutModal {
-    pub fn new(shortcut_id: Uuid, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(shortcut_id: Uuid, workspace: WeakEntity<Workspace>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
         focus_handle.focus(window, cx);
 
         let store = ShortcutBarStoreEntity::global(cx);
         let shortcut = store.read(cx).find_script_shortcut(shortcut_id);
 
-        let (label_text, keybinding_text, protocol) = shortcut
-            .map(|s| (s.label.clone(), s.keybinding.clone(), s.protocol.clone()))
+        let (keybinding_text, protocol, script_path) = shortcut
+            .map(|s| (s.keybinding.clone(), s.protocol.clone(), s.script_path.clone()))
             .unwrap_or_default();
-
-        let label_editor = cx.new(|cx| {
-            let mut editor = Editor::single_line(window, cx);
-            editor.set_text(label_text, window, cx);
-            editor
-        });
 
         let keybinding_recorder = cx.new(|cx| {
             KeystrokeRecorder::new(
@@ -1061,6 +1065,8 @@ impl EditShortcutModal {
             )
         });
 
+        let available_scripts = scan_scripts();
+
         let subscription = cx.subscribe(
             &ShortcutBarStoreEntity::global(cx),
             |_this, _, _event: &ShortcutBarStoreEvent, cx| {
@@ -1071,9 +1077,12 @@ impl EditShortcutModal {
         Self {
             focus_handle,
             shortcut_id,
-            label_editor,
             keybinding_recorder,
             selected_protocol: protocol,
+            script_path,
+            available_scripts,
+            show_script_picker: false,
+            workspace,
             _subscription: subscription,
         }
     }
@@ -1087,29 +1096,115 @@ impl EditShortcutModal {
         cx.notify();
     }
 
+    fn toggle_script_picker(&mut self, cx: &mut Context<Self>) {
+        self.show_script_picker = !self.show_script_picker;
+        if self.show_script_picker {
+            self.available_scripts = scan_scripts();
+        }
+        cx.notify();
+    }
+
+    fn select_script(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        self.script_path = path;
+        self.show_script_picker = false;
+        cx.notify();
+    }
+
+    fn create_new_script_for_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let script_name = format!(
+            "shortcut_{}",
+            chrono::Local::now().format("%Y%m%d_%H%M%S")
+        );
+
+        let dir = scripts_dir();
+        if let Err(e) = fs::create_dir_all(&dir) {
+            log::error!("Failed to create scripts directory: {}", e);
+            return;
+        }
+
+        let script_path = dir.join(format!("{}.py", script_name));
+
+        let template = format!(
+            r#"#!/usr/bin/env python3
+"""
+{} - 终端自动化脚本
+
+# 如需传参，取消下方注释，运行时会弹出参数填写窗口
+# 参数在脚本中通过 params.参数名 访问
+#
+# @params
+# - input1: string
+#   description: 参数1
+#   required: true
+#   default: ""
+#
+# - input2: number
+#   description: 参数2
+#   default: 0
+#
+# - input3: boolean
+#   description: 参数3
+#   default: false
+# @end_params
+"""
+from bspterm import current_terminal
+from bspterm import params
+
+term = current_terminal()
+# 在此编写你的自动化逻辑
+# term.send("命令\n")       # 发送命令
+# term.wait_for("模式")     # 等待输出匹配
+# output = term.run("命令") # 执行命令并返回输出
+
+# --- 传参示例（全部取消注释即可运行） ---
+# input1 = params.input1
+# input2 = params.get("input2", 0)
+# input3 = params.get("input3", False)
+# term.send(f"{{input1}}\n")
+"#,
+            script_name
+        );
+
+        if let Err(e) = fs::write(&script_path, &template) {
+            log::error!("Failed to write script file: {}", e);
+            return;
+        }
+
+        self.script_path = script_path.clone();
+        self.show_script_picker = false;
+        cx.notify();
+
+        let workspace = self.workspace.clone();
+        cx.defer_in(window, move |_, window, cx| {
+            workspace
+                .update(cx, |workspace, cx| {
+                    workspace
+                        .open_abs_path(script_path, OpenOptions::default(), window, cx)
+                        .detach_and_log_err(cx);
+                })
+                .ok();
+        });
+    }
+
     fn save_changes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let label = self.label_editor.read(cx).text(cx).trim().to_string();
         let keybinding = self
             .keybinding_recorder
             .read(cx)
             .current_value()
             .unwrap_or_default();
 
-        if label.is_empty() {
-            return;
-        }
-
         let protocol = self.selected_protocol.clone();
         let shortcut_id = self.shortcut_id;
+        let script_path = self.script_path.clone();
 
         if let Some(store) = ShortcutBarStoreEntity::try_global(cx) {
             store.update(cx, |store, cx| {
                 store.update_script_shortcut(
                     shortcut_id,
                     move |shortcut| {
-                        shortcut.label = label;
                         shortcut.keybinding = keybinding;
                         shortcut.protocol = protocol;
+                        shortcut.script_path = script_path;
                     },
                     cx,
                 );
@@ -1128,6 +1223,15 @@ impl Focusable for EditShortcutModal {
 
 impl Render for EditShortcutModal {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let script_file_name = self
+            .script_path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let show_picker = self.show_script_picker;
+        let scripts = self.available_scripts.clone();
+        let current_script_path = self.script_path.clone();
+
         v_flex()
             .id("edit-shortcut-modal")
             .elevation_3(cx)
@@ -1145,7 +1249,7 @@ impl Render for EditShortcutModal {
                         div()
                             .text_sm()
                             .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .child(t("shortcut.edit")),
+                            .child(t("shortcut.edit_shortcut_config")),
                     )
                     .child(
                         IconButton::new("close-modal", IconName::Close)
@@ -1158,6 +1262,7 @@ impl Render for EditShortcutModal {
             .child(
                 v_flex()
                     .gap_3()
+                    // Current script display with change button
                     .child(
                         v_flex()
                             .gap_1()
@@ -1165,19 +1270,98 @@ impl Render for EditShortcutModal {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().colors().text_muted)
-                                    .child(t("shortcut.script_name")),
+                                    .child(t("shortcut.current_script")),
                             )
                             .child(
-                                div()
-                                    .w_full()
-                                    .px_2()
-                                    .py_1()
-                                    .rounded_sm()
-                                    .border_1()
-                                    .border_color(cx.theme().colors().border)
-                                    .child(self.label_editor.clone()),
-                            ),
+                                h_flex()
+                                    .gap_1()
+                                    .items_center()
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .px_2()
+                                            .py_1()
+                                            .rounded_sm()
+                                            .border_1()
+                                            .border_color(cx.theme().colors().border)
+                                            .text_sm()
+                                            .text_color(cx.theme().colors().text)
+                                            .overflow_x_hidden()
+                                            .child(script_file_name),
+                                    )
+                                    .child(
+                                        Button::new("change-script-btn", t("shortcut.change_script"))
+                                            .style(ButtonStyle::Subtle)
+                                            .on_click(cx.listener(|this, _, _window, cx| {
+                                                this.toggle_script_picker(cx);
+                                            })),
+                                    ),
+                            )
+                            // Script picker (shown when toggled)
+                            .when(show_picker, |this| {
+                                this.child(
+                                    v_flex()
+                                        .id("edit-script-list")
+                                        .gap_1()
+                                        .max_h(px(150.0))
+                                        .overflow_y_scroll()
+                                        .border_1()
+                                        .border_color(cx.theme().colors().border)
+                                        .rounded_sm()
+                                        .p_1()
+                                        .children(scripts.iter().map(|path| {
+                                            let path_clone = path.clone();
+                                            let is_selected = *path == current_script_path;
+                                            let file_name = path
+                                                .file_name()
+                                                .map(|n| n.to_string_lossy().to_string())
+                                                .unwrap_or_default();
+
+                                            ListItem::new(SharedString::from(format!(
+                                                "edit-script-{}",
+                                                file_name
+                                            )))
+                                            .spacing(ListItemSpacing::Sparse)
+                                            .start_slot(
+                                                ui::Icon::new(IconName::FileCode)
+                                                    .size(IconSize::Small)
+                                                    .color(if is_selected {
+                                                        Color::Accent
+                                                    } else {
+                                                        Color::Muted
+                                                    }),
+                                            )
+                                            .child(file_name)
+                                            .on_click(cx.listener(
+                                                move |this, _, _window, cx| {
+                                                    this.select_script(
+                                                        path_clone.clone(),
+                                                        cx,
+                                                    );
+                                                },
+                                            ))
+                                        }))
+                                        .child(
+                                            ListItem::new("create-new-script-option")
+                                                .spacing(ListItemSpacing::Sparse)
+                                                .start_slot(
+                                                    ui::Icon::new(IconName::Plus)
+                                                        .size(IconSize::Small)
+                                                        .color(Color::Accent),
+                                                )
+                                                .child(t("shortcut.create_new_script"))
+                                                .on_click(cx.listener(
+                                                    |this, _, window, cx| {
+                                                        this.create_new_script_for_change(
+                                                            window, cx,
+                                                        );
+                                                    },
+                                                )),
+                                        ),
+                                )
+                            }),
                     )
+                    // Shortcut key
                     .child(
                         v_flex()
                             .gap_1()
@@ -1189,6 +1373,7 @@ impl Render for EditShortcutModal {
                             )
                             .child(self.keybinding_recorder.clone()),
                     )
+                    // Scope
                     .child(
                         v_flex()
                             .gap_1()
@@ -1227,6 +1412,7 @@ impl Render for EditShortcutModal {
                                     )),
                             ),
                     )
+                    // Buttons
                     .child(
                         h_flex()
                             .gap_2()

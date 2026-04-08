@@ -2656,6 +2656,16 @@ print(output)
         cx: &mut Context<Self>,
     ) {
         let workspace = self.workspace.clone();
+        // Pre-read script_path before entering ContextMenu::build closure
+        let script_path_for_menu = match &shortcut_info {
+            ShortcutContextInfo::Script { id } => {
+                ShortcutBarStoreEntity::try_global(cx)
+                    .and_then(|store| {
+                        store.read(cx).find_script_shortcut(*id).map(|s| s.script_path.clone())
+                    })
+            }
+            _ => None,
+        };
         let context_menu = ContextMenu::build(window, cx, |menu, _, _| {
             match shortcut_info {
                 ShortcutContextInfo::System { keybinding, action_type } => {
@@ -2673,21 +2683,46 @@ print(output)
                         )
                 }
                 ShortcutContextInfo::Script { id } => {
+                    let workspace_for_edit_script = workspace.clone();
                     let workspace_for_edit = workspace.clone();
-                    menu.context(self.focus_handle.clone())
+                    let mut menu = menu.context(self.focus_handle.clone())
                         .entry(
-                            t("shortcut.edit"),
+                            t("shortcut.edit_shortcut_config"),
                             None,
                             move |window, cx| {
+                                let ws_weak = workspace_for_edit.clone();
                                 workspace_for_edit
                                     .update(cx, |ws, cx| {
                                         ws.toggle_modal(window, cx, |window, cx| {
-                                            EditShortcutModal::new(id, window, cx)
+                                            EditShortcutModal::new(id, ws_weak, window, cx)
                                         });
                                     })
                                     .ok();
                             },
-                        )
+                        );
+                    if let Some(script_path) = script_path_for_menu {
+                        menu = menu.entry(
+                            t("shortcut.edit_script_content"),
+                            None,
+                            move |window, cx| {
+                                let script_path = script_path.clone();
+                                workspace_for_edit_script
+                                    .update(cx, |workspace, cx| {
+                                        workspace
+                                            .open_abs_path(
+                                                script_path,
+                                                workspace::OpenOptions::default(),
+                                                window,
+                                                cx,
+                                            )
+                                            .detach();
+                                    })
+                                    .ok();
+                            },
+                        );
+                    }
+                    menu
+                        .separator()
                         .entry(
                             t("shortcut.hide"),
                             None,
@@ -2815,10 +2850,14 @@ print(output)
         }
 
         for shortcut in store_ref.visible_script_shortcuts_for_protocol(current_protocol.as_ref()) {
+            let label = std::path::Path::new(&shortcut.script_path)
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| shortcut.label.clone());
             display_items.push(DisplayItem::Script {
                 id: shortcut.id,
                 keybinding: shortcut.keybinding.clone(),
-                label: shortcut.label.clone(),
+                label,
             });
         }
 
