@@ -84,6 +84,7 @@ use bspterm_actions::{
     assistant::InlineAssist,
     log_tracer::TraceCallGraph,
     terminal_button_bar::{ConfigureButtonBar, ToggleButtonBar},
+    terminal_bars::ToggleAllBars,
     terminal_function_bar::{
         AddFunction, ConfigureFunctionBar, DeleteFunction, EditAbbreviationInBar,
         EditFunctionScript, RenameFunctionButton, ToggleAbbreviationEnabled,
@@ -333,6 +334,8 @@ pub struct TerminalView {
     _subscriptions: Vec<Subscription>,
     _terminal_subscriptions: Vec<Subscription>,
     timestamp_tick_task: Option<Task<()>>,
+    /// Whether all bars are temporarily hidden via ToggleAllBars (not persisted).
+    bars_temporarily_hidden: bool,
     /// Background task for auto-reconnect loop.
     auto_reconnect_task: Option<Task<()>>,
     /// Background task for manual reconnection.
@@ -553,6 +556,7 @@ impl TerminalView {
             _subscriptions: subscriptions,
             _terminal_subscriptions: terminal_subscriptions,
             timestamp_tick_task,
+            bars_temporarily_hidden: false,
             auto_reconnect_task: None,
             reconnect_task: None,
         }
@@ -1012,6 +1016,11 @@ impl TerminalView {
                 store.toggle_visibility(cx);
             });
         }
+    }
+
+    fn toggle_all_bars(&mut self, _: &ToggleAllBars, _window: &mut Window, cx: &mut Context<Self>) {
+        self.bars_temporarily_hidden = !self.bars_temporarily_hidden;
+        cx.notify();
     }
 
     fn configure_button_bar(&mut self, _: &ConfigureButtonBar, window: &mut Window, cx: &mut Context<Self>) {
@@ -4281,15 +4290,23 @@ impl Render for TerminalView {
         let terminal_view_handle = cx.entity();
 
         let focused = self.focus_handle.is_focused(window);
-        let show_button_bar = ButtonBarStoreEntity::try_global(cx)
-            .map(|store| store.read(cx).show_button_bar())
-            .unwrap_or(false);
-        let show_function_bar = FunctionStoreEntity::try_global(cx)
-            .map(|store| store.read(cx).show_function_bar())
-            .unwrap_or(false);
-        let show_shortcut_bar = ShortcutBarStoreEntity::try_global(cx)
-            .map(|store| store.read(cx).show_shortcut_bar())
-            .unwrap_or(false);
+        let bars_hidden = self.bars_temporarily_hidden;
+        let bars_settings = TerminalSettings::get_global(cx).bars;
+        let show_button_bar = !bars_hidden
+            && bars_settings.show_button_bar
+            && ButtonBarStoreEntity::try_global(cx)
+                .map(|store| store.read(cx).show_button_bar())
+                .unwrap_or(false);
+        let show_function_bar = !bars_hidden
+            && bars_settings.show_function_bar
+            && FunctionStoreEntity::try_global(cx)
+                .map(|store| store.read(cx).show_function_bar())
+                .unwrap_or(false);
+        let show_shortcut_bar = !bars_hidden
+            && bars_settings.show_shortcut_bar
+            && ShortcutBarStoreEntity::try_global(cx)
+                .map(|store| store.read(cx).show_shortcut_bar())
+                .unwrap_or(false);
 
         v_flex()
             .id("terminal-view")
@@ -4325,6 +4342,7 @@ impl Render for TerminalView {
                 this.duplicate_terminal(window, cx);
             }))
             .on_action(cx.listener(Self::toggle_button_bar))
+            .on_action(cx.listener(Self::toggle_all_bars))
             .on_action(cx.listener(Self::configure_button_bar))
             .on_action(cx.listener(Self::add_button_bar_button))
             .on_action(cx.listener(Self::edit_button_bar_button_script))

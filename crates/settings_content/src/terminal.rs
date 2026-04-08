@@ -258,6 +258,9 @@ pub struct TerminalSettingsContent {
     ///
     /// Default: 7
     pub autosuggestion_max_age_days: Option<u64>,
+    /// Settings for terminal bottom bars (button bar, function bar, shortcut bar).
+    /// 终端底部栏（按钮栏、函数栏、快捷栏）的显隐设置。
+    pub bars: Option<TerminalBarsContent>,
 }
 
 /// Shell configuration to open the terminal with.
@@ -471,6 +474,27 @@ pub struct TerminalToolbarContent {
     ///
     /// Default: true
     pub breadcrumbs: Option<bool>,
+}
+
+// Terminal bars visibility settings
+#[with_fallible_options]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema, MergeFrom, PartialEq, Eq)]
+pub struct TerminalBarsContent {
+    /// Whether to show the button bar at the bottom of the terminal.
+    /// 是否在终端底部显示按钮栏。
+    ///
+    /// Default: true
+    pub show_button_bar: Option<bool>,
+    /// Whether to show the function bar at the bottom of the terminal.
+    /// 是否在终端底部显示函数栏。
+    ///
+    /// Default: true
+    pub show_function_bar: Option<bool>,
+    /// Whether to show the shortcut bar at the bottom of the terminal.
+    /// 是否在终端底部显示快捷栏。
+    ///
+    /// Default: true
+    pub show_shortcut_bar: Option<bool>,
 }
 
 // Gutter related settings

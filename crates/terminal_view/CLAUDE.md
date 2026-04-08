@@ -106,6 +106,18 @@ Key implementation:
 - Persistent highlights use `word_highlight_colors()` 8-color rotation, NOT saved across restart
 - Word boundaries use `semantic_escape_chars`
 
+## Bars Visibility
+
+Three bottom bars (button bar, function bar, shortcut bar) have a three-layer visibility model:
+
+1. **Settings** (`terminal.bars.show_button_bar`, etc.) — persistent per-bar enable/disable in `settings.json`
+2. **Store** (`ButtonBarStoreEntity`, `FunctionStoreEntity`, `ShortcutBarStoreEntity`) — runtime toggle via individual `Toggle*Bar` actions
+3. **ToggleAllBars** — `bars_temporarily_hidden` field on `TerminalView`, quick hide/show all enabled bars at once (not persisted)
+
+Final visibility: `!bars_temporarily_hidden && bars_settings.show_* && store.show_*()`
+
+Settings are defined in `BarsSettings` (`terminal_settings.rs`) and `TerminalBarsContent` (`settings_content/terminal.rs`). The `ToggleAllBars` action is in `bspterm_actions::terminal_bars`. Settings UI is in the "Bars" section of the Terminal settings page.
+
 ## Testing
 
 ```sh

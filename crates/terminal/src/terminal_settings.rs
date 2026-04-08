@@ -25,6 +25,23 @@ pub struct Toolbar {
     pub breadcrumbs: bool,
 }
 
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub struct BarsSettings {
+    pub show_button_bar: bool,
+    pub show_function_bar: bool,
+    pub show_shortcut_bar: bool,
+}
+
+impl Default for BarsSettings {
+    fn default() -> Self {
+        Self {
+            show_button_bar: true,
+            show_function_bar: true,
+            show_shortcut_bar: true,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub struct GutterSettings {
     pub line_numbers: bool,
@@ -111,6 +128,7 @@ pub struct TerminalSettings {
     pub group_tabs_by_session: bool,
     pub autosuggestion: bool,
     pub autosuggestion_max_age_days: u64,
+    pub bars: BarsSettings,
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -240,6 +258,23 @@ impl settings::Settings for TerminalSettings {
             group_tabs_by_session: user_content.group_tabs_by_session.unwrap_or(true),
             autosuggestion: user_content.autosuggestion.unwrap_or(true),
             autosuggestion_max_age_days: user_content.autosuggestion_max_age_days.unwrap_or(7),
+            bars: {
+                let default = BarsSettings::default();
+                match user_content.bars {
+                    Some(bars_content) => BarsSettings {
+                        show_button_bar: bars_content
+                            .show_button_bar
+                            .unwrap_or(default.show_button_bar),
+                        show_function_bar: bars_content
+                            .show_function_bar
+                            .unwrap_or(default.show_function_bar),
+                        show_shortcut_bar: bars_content
+                            .show_shortcut_bar
+                            .unwrap_or(default.show_shortcut_bar),
+                    },
+                    None => default,
+                }
+            },
         }
     }
 }

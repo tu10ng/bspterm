@@ -6432,6 +6432,90 @@ fn terminal_page() -> SettingsPage {
         ]
     }
 
+    fn bars_section() -> [SettingsPageItem; 4] {
+        [
+            SettingsPageItem::SectionHeader("Bars"),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Show Button Bar",
+                description: "Whether to show the button bar at the bottom of the terminal.",
+                field: Box::new(SettingField {
+                    json_path: Some("terminal.bars.show_button_bar"),
+                    pick: |settings_content| {
+                        settings_content
+                            .terminal
+                            .as_ref()?
+                            .bars
+                            .as_ref()?
+                            .show_button_bar
+                            .as_ref()
+                    },
+                    write: |settings_content, value| {
+                        settings_content
+                            .terminal
+                            .get_or_insert_default()
+                            .bars
+                            .get_or_insert_default()
+                            .show_button_bar = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Show Function Bar",
+                description: "Whether to show the function bar at the bottom of the terminal.",
+                field: Box::new(SettingField {
+                    json_path: Some("terminal.bars.show_function_bar"),
+                    pick: |settings_content| {
+                        settings_content
+                            .terminal
+                            .as_ref()?
+                            .bars
+                            .as_ref()?
+                            .show_function_bar
+                            .as_ref()
+                    },
+                    write: |settings_content, value| {
+                        settings_content
+                            .terminal
+                            .get_or_insert_default()
+                            .bars
+                            .get_or_insert_default()
+                            .show_function_bar = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
+                title: "Show Shortcut Bar",
+                description: "Whether to show the shortcut bar at the bottom of the terminal.",
+                field: Box::new(SettingField {
+                    json_path: Some("terminal.bars.show_shortcut_bar"),
+                    pick: |settings_content| {
+                        settings_content
+                            .terminal
+                            .as_ref()?
+                            .bars
+                            .as_ref()?
+                            .show_shortcut_bar
+                            .as_ref()
+                    },
+                    write: |settings_content, value| {
+                        settings_content
+                            .terminal
+                            .get_or_insert_default()
+                            .bars
+                            .get_or_insert_default()
+                            .show_shortcut_bar = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+        ]
+    }
+
     SettingsPage {
         title: "Terminal",
         items: concat_sections![
@@ -6443,6 +6527,7 @@ fn terminal_page() -> SettingsPage {
             advanced_settings_section(),
             toolbar_section(),
             scrollbar_section(),
+            bars_section(),
             remote_sessions_section(),
             session_logging_section(),
         ],

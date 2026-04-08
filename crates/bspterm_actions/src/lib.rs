@@ -524,6 +524,18 @@ pub mod terminal_button_bar {
     );
 }
 
+pub mod terminal_bars {
+    use gpui::actions;
+
+    actions!(
+        terminal_bars,
+        [
+            /// Toggles all enabled terminal bars (button bar, function bar, shortcut bar) at once.
+            ToggleAllBars
+        ]
+    );
+}
+
 pub mod terminal_function_bar {
     use gpui::actions;
 

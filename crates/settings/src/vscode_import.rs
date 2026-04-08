@@ -889,6 +889,7 @@ impl VsCodeSettings {
             group_tabs_by_session: None,
             autosuggestion: None,
             autosuggestion_max_age_days: None,
+            bars: None,
         })
     }
 

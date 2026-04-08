@@ -62,6 +62,8 @@ src/
 | `AbbreviationExpansion` | Result of abbreviation trigger check (trigger_len + expansion text) |
 | `HighlightStore` | Highlight rules with priority sorting |
 | `ButtonBarStore` | Button bar configurations |
+| `ShortcutBarStore` | Keyboard/script shortcuts (custom keybinding logic) |
+| `BarsSettings` | Settings for bars visibility (`terminal.bars.*` in settings.json) |
 | `Event` | Terminal events (title changed, disconnected, login complete) |
 | `WordHighlight` | Persistent word highlight entry (text + color_index) |
 
