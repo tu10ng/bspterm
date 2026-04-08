@@ -18,6 +18,7 @@ editor.workspace = true
 gpui.workspace = true
 i18n.workspace = true
 log.workspace = true
+menu.workspace = true
 parking_lot.workspace = true
 serde.workspace = true
 terminal_scripting.workspace = true

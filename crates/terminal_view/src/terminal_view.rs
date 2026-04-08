@@ -2579,7 +2579,7 @@ print(output)
     fn run_script_shortcut(
         &mut self,
         action: &RunScriptShortcut,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let script_id = match uuid::Uuid::parse_str(&action.script_id) {
@@ -2610,33 +2610,86 @@ print(output)
             return;
         };
 
-        if let Some(runner) = &mut self.button_bar_runner {
-            runner.stop();
-        }
-
-        let terminal_id = self.scripting_id.map(|id| id.to_string());
-        let script_path =
+        let expanded_path =
             shellexpand::tilde(&shortcut.script_path.to_string_lossy()).into_owned();
-        let script_path_owned = PathBuf::from(&script_path);
-        log::info!("[script] Shortcut triggered: label='{}', keybinding='{}', path={:?}", shortcut.label, shortcut.keybinding, script_path);
+        log::info!("[script] Shortcut triggered: label='{}', keybinding='{}', path={:?}", shortcut.label, shortcut.keybinding, expanded_path);
 
-        let mut runner = ButtonBarScriptRunner::new(
-            script_path_owned,
-            connection_info.to_env_string(),
-            terminal_id,
-        );
+        // Check if script has @params
+        let has_params = std::fs::read_to_string(&expanded_path)
+            .ok()
+            .and_then(|content| {
+                script_panel::script_params::ScriptParams::parse_from_script(&content)
+            })
+            .is_some_and(|params| !params.is_empty());
 
-        if let Err(err) = runner.start() {
-            log::error!("Failed to start script shortcut: {}", err);
-            self.show_script_error(&err.to_string(), cx);
-            return;
+        if has_params {
+            let workspace = self.workspace.clone();
+            let terminal_view = cx.entity().downgrade();
+            let script_path = shortcut.script_path.clone();
+            let shortcut_label = shortcut.label.clone();
+
+            if let Some(workspace) = workspace.upgrade() {
+                workspace.update(cx, |workspace, cx| {
+                    workspace.toggle_modal(window, cx, move |window, cx| {
+                        let content = std::fs::read_to_string(
+                            shellexpand::tilde(&script_path.to_string_lossy()).as_ref(),
+                        )
+                        .unwrap_or_default();
+                        let params =
+                            script_panel::script_params::ScriptParams::parse_from_script(&content)
+                                .unwrap_or_default();
+
+                        let on_run = Box::new(
+                            move |script_path: PathBuf,
+                                  env_params: std::collections::HashMap<String, String>,
+                                  cx: &mut App| {
+                                if let Some(view) = terminal_view.upgrade() {
+                                    view.update(cx, |this, cx| {
+                                        this.run_button_script_with_params(
+                                            script_path, env_params, cx,
+                                        );
+                                    });
+                                }
+                            },
+                        );
+
+                        script_panel::script_params_modal::ScriptParamsModal::new(
+                            shortcut_label,
+                            script_path,
+                            params,
+                            on_run,
+                            window,
+                            cx,
+                        )
+                    });
+                });
+            }
+        } else {
+            if let Some(runner) = &mut self.button_bar_runner {
+                runner.stop();
+            }
+
+            let terminal_id = self.scripting_id.map(|id| id.to_string());
+            let script_path_owned = PathBuf::from(&expanded_path);
+
+            let mut runner = ButtonBarScriptRunner::new(
+                script_path_owned,
+                connection_info.to_env_string(),
+                terminal_id,
+            );
+
+            if let Err(err) = runner.start() {
+                log::error!("Failed to start script shortcut: {}", err);
+                self.show_script_error(&err.to_string(), cx);
+                return;
+            }
+
+            let script_name = runner.script_name();
+            self.button_bar_runner = Some(runner);
+            self.register_button_bar_script(script_name, ScriptSource::Shortcut, cx);
+            self.ensure_script_poll_task(cx);
+            cx.notify();
         }
-
-        let script_name = runner.script_name();
-        self.button_bar_runner = Some(runner);
-        self.register_button_bar_script(script_name, ScriptSource::Shortcut, cx);
-        self.ensure_script_poll_task(cx);
-        cx.notify();
     }
 
     fn trace_call_graph(

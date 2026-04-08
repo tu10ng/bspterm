@@ -14015,6 +14015,7 @@ dependencies = [
  "i18n",
  "libc",
  "log",
+ "menu",
  "parking_lot",
  "paths",
  "python_runtime",

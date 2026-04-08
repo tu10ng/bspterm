@@ -7,6 +7,7 @@ use gpui::{
     IntoElement, ParentElement, Render, Styled, Window, px,
 };
 use i18n::t;
+use menu;
 use ui::{prelude::*, Button, ButtonStyle, Checkbox, Label, LabelSize, h_flex, v_flex};
 use workspace::ModalView;
 
@@ -23,6 +24,7 @@ pub struct ScriptParamsModal {
     checkbox_states: Vec<bool>,
     choice_selections: Vec<usize>,
     focus_handle: FocusHandle,
+    initial_focus: FocusHandle,
 }
 
 impl ScriptParamsModal {
@@ -85,6 +87,13 @@ impl ScriptParamsModal {
             }
         }
 
+        let initial_focus = script_params
+            .params
+            .iter()
+            .position(|p| !matches!(p.param_type, ParamType::Boolean | ParamType::Choice))
+            .map(|idx| editors[idx].focus_handle(cx))
+            .unwrap_or_else(|| focus_handle.clone());
+
         Self {
             script_name,
             script_path,
@@ -94,6 +103,7 @@ impl ScriptParamsModal {
             checkbox_states,
             choice_selections,
             focus_handle,
+            initial_focus,
         }
     }
 
@@ -276,6 +286,9 @@ impl Render for ScriptParamsModal {
             .id("script-params-modal")
             .key_context("ScriptParamsModal")
             .track_focus(&self.focus_handle)
+            .on_action(cx.listener(|this, _: &menu::Confirm, window, cx| {
+                this.run(window, cx);
+            }))
             .elevation_3(cx)
             .p_4()
             .gap_3()
@@ -310,7 +323,7 @@ impl Render for ScriptParamsModal {
 
 impl Focusable for ScriptParamsModal {
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
-        self.focus_handle.clone()
+        self.initial_focus.clone()
     }
 }
 

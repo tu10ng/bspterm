@@ -133,6 +133,62 @@ window.on_next_frame(move |window, cx| {
 
 **适用场景：** 任何在程序控制下（非用户交互触发）创建新 UI 元素并立即 focus 的情况，例如：新建 tab 后自动进入重命名、动态创建 inline editor 等。用户交互触发的 focus（如点击）不受影响，因为点击发生时元素已在 dispatch tree 中。
 
+### Modal 自动聚焦子 Editor
+
+`modal_layer.show_modal()` 内部用 `cx.defer_in` 调用 `window.focus(&new_modal.focus_handle(cx), cx)` 聚焦 modal。如果 modal 包含子 editor 且希望打开时自动聚焦到某个 editor，**不要用 `on_focus_in` 重定向或 `on_next_frame` 延迟**——这些方案会被 `show_modal` 的 `defer_in` 覆盖或时序不对。
+
+**正确做法：** 让 `Focusable::focus_handle()` 直接返回目标 editor 的 focus handle（参考 `BufferSearchBar` 模式）。`show_modal` 的 `defer_in` 会直接聚焦到 editor，无需任何 subscription。
+
+```rust
+pub struct MyModal {
+    focus_handle: FocusHandle,      // 容器 handle，用于 render 中的 track_focus
+    initial_focus: FocusHandle,     // Focusable 返回的目标 handle
+}
+
+// new() 中：
+let initial_focus = find_first_editor_focus_handle()
+    .unwrap_or_else(|| focus_handle.clone());
+
+// render() 中仍用容器 handle：
+v_flex().track_focus(&self.focus_handle) ...
+
+// Focusable 返回目标 handle：
+impl Focusable for MyModal {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.initial_focus.clone()
+    }
+}
+```
+
+**关键点：**
+- `track_focus` 仍用容器的 `focus_handle`，保证 dispatch tree 层级正确（Esc 关闭等不受影响）
+- editor 是容器的后代，focus 到 editor 不会触发容器的 `on_focus_out`
+- 如果没有可聚焦的子 editor，fallback 到容器 handle
+- 实例：`ScriptParamsModal`（`script_params_modal.rs`）、`BufferSearchBar`（`buffer_search.rs`）
+
+### Modal 必须支持自动聚焦 + Enter 确认
+
+所有新建的 Modal（实现 `ModalView` 的弹窗）必须同时满足：
+
+1. **自动聚焦子 Editor**：按上一节「Modal 自动聚焦子 Editor」的模式，`Focusable::focus_handle()` 返回第一个 editor 的 focus handle
+2. **Enter 触发确认**：在 `render()` 的根元素上添加 `.on_action` 处理 `menu::Confirm`，调用确认/运行逻辑。全局 keymap 已将 `enter` 绑定到 `menu::Confirm`，无需额外 keymap
+
+```rust
+v_flex()
+    .id("my-modal")
+    .key_context("MyModal")
+    .track_focus(&self.focus_handle)
+    .on_action(cx.listener(|this, _: &menu::Confirm, window, cx| {
+        this.confirm(window, cx);  // 内部应有 validation guard
+    }))
+    // ...
+```
+
+**要点：**
+- 确认方法内部必须有校验（如 `can_run()` / `is_valid()`），防止无效状态下提交
+- Esc 关闭已由 `ModalView` 自动处理，无需额外绑定
+- 实例：`ScriptParamsModal`（`script_params_modal.rs`）
+
 ### Drag and Drop
 
 **Pitfall:** `on_drag_move` fires for ALL handlers (Capture phase). Always check `event.bounds.contains(&event.event.position)`.
