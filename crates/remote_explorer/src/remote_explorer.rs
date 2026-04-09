@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use editor::Editor;
+use editor::actions::{Backtab, Tab};
 use gpui::{
     Action, AnyElement, App, AppContext as _, AsyncWindowContext, ClickEvent, ClipboardItem,
     Context, DismissEvent, DragMoveEvent, Entity, EventEmitter, FocusHandle, Focusable,
@@ -1007,6 +1008,63 @@ impl RemoteExplorer {
             )
     }
 
+    fn quick_add_editors(&self) -> Vec<Entity<Editor>> {
+        let mut editors = Vec::new();
+        editors.push(self.quick_add_area.auto_recognize.editor().clone());
+        editors.push(self.quick_add_area.telnet_section.ip_editor.clone());
+        editors.push(self.quick_add_area.telnet_section.port_editor.clone());
+        editors.push(self.quick_add_area.telnet_section.username_editor.clone());
+        editors.push(self.quick_add_area.telnet_section.password_editor.clone());
+        editors.push(self.quick_add_area.ssh_section.editor().clone());
+        editors.push(self.quick_add_area.ssh_section.username_editor().clone());
+        editors.push(self.quick_add_area.ssh_section.password_editor().clone());
+        editors
+    }
+
+    fn focus_next_quick_add_editor(
+        &mut self,
+        _: &Tab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let editors = self.quick_add_editors();
+        if editors.len() <= 1 {
+            return;
+        }
+        if let Some(current) = editors
+            .iter()
+            .position(|e| e.focus_handle(cx).is_focused(window))
+        {
+            let next = (current + 1) % editors.len();
+            window.focus(&editors[next].focus_handle(cx), cx);
+            cx.stop_propagation();
+        }
+    }
+
+    fn focus_prev_quick_add_editor(
+        &mut self,
+        _: &Backtab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let editors = self.quick_add_editors();
+        if editors.len() <= 1 {
+            return;
+        }
+        if let Some(current) = editors
+            .iter()
+            .position(|e| e.focus_handle(cx).is_focused(window))
+        {
+            let prev = if current == 0 {
+                editors.len() - 1
+            } else {
+                current - 1
+            };
+            window.focus(&editors[prev].focus_handle(cx), cx);
+            cx.stop_propagation();
+        }
+    }
+
     fn render_quick_add_content(
         &mut self,
         window: &mut Window,
@@ -1017,6 +1075,8 @@ impl RemoteExplorer {
             .px_2()
             .pb_2()
             .gap_3()
+            .capture_action(cx.listener(Self::focus_next_quick_add_editor))
+            .capture_action(cx.listener(Self::focus_prev_quick_add_editor))
             .child(self.render_auto_recognize_section(window, cx))
             .child(self.render_telnet_section(window, cx))
             .child(self.render_ssh_section(window, cx))

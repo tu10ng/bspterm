@@ -1,4 +1,5 @@
 use editor::Editor;
+use editor::actions::{Backtab, Tab};
 use gpui::{
     App, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable, IntoElement,
     ParentElement, Render, Styled, Subscription, Window,
@@ -418,6 +419,52 @@ impl SessionEditModal {
             Some((username, password)) => format!("{}/{}", username, password),
         }
     }
+
+    fn editors_for_tab_cycle(&self) -> Vec<Entity<Editor>> {
+        let mut editors = Vec::new();
+        if !self.is_create_mode {
+            editors.push(self.name_editor.clone());
+        }
+        editors.push(self.host_editor.clone());
+        editors.push(self.port_editor.clone());
+        editors.push(self.username_editor.clone());
+        editors.push(self.password_editor.clone());
+        editors
+    }
+
+    fn focus_next_editor(&mut self, _: &Tab, window: &mut Window, cx: &mut Context<Self>) {
+        let editors = self.editors_for_tab_cycle();
+        if editors.len() <= 1 {
+            return;
+        }
+        if let Some(current) = editors
+            .iter()
+            .position(|e| e.focus_handle(cx).is_focused(window))
+        {
+            let next = (current + 1) % editors.len();
+            window.focus(&editors[next].focus_handle(cx), cx);
+            cx.stop_propagation();
+        }
+    }
+
+    fn focus_prev_editor(&mut self, _: &Backtab, window: &mut Window, cx: &mut Context<Self>) {
+        let editors = self.editors_for_tab_cycle();
+        if editors.len() <= 1 {
+            return;
+        }
+        if let Some(current) = editors
+            .iter()
+            .position(|e| e.focus_handle(cx).is_focused(window))
+        {
+            let prev = if current == 0 {
+                editors.len() - 1
+            } else {
+                current - 1
+            };
+            window.focus(&editors[prev].focus_handle(cx), cx);
+            cx.stop_propagation();
+        }
+    }
 }
 
 fn extract_session_data(
@@ -542,6 +589,8 @@ impl Render for SessionEditModal {
         v_flex()
             .key_context("SessionEditModal")
             .track_focus(&self.focus_handle)
+            .capture_action(cx.listener(Self::focus_next_editor))
+            .capture_action(cx.listener(Self::focus_prev_editor))
             .elevation_3(cx)
             .w_80()
             .overflow_hidden()

@@ -270,6 +270,9 @@ impl Render for MyContainer {
 **参考实现：**
 - `ScriptParamsModal`（`script_params_modal.rs`）— Modal 中多参数 editor 的 Tab 切换，跳过 Boolean/Choice 类型
 - `BufferSearchBar`（`buffer_search.rs:551-552, 1678-1706`）— 搜索栏中 query/replacement editor 的 Tab 切换（原始参考）
+- `SessionEditModal`（`session_edit_modal.rs`）— 编辑连接 Modal，创建模式跳过 name editor
+- `MultiConnectionModal`（`multi_connection_modal.rs`）— 多连接 Modal，动态数量 editor + 全局 apply-all editor
+- `RemoteExplorer`（`remote_explorer.rs`）— Quick Connect 区域，跨 auto-recognize/telnet/ssh 三个 section 的 editor 循环
 
 ### Drag and Drop
 
