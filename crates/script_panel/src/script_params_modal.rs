@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use editor::actions::{Backtab, Tab};
 use editor::Editor;
 use gpui::{
     AnyElement, App, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable,
@@ -173,6 +174,50 @@ impl ScriptParamsModal {
         cx.emit(DismissEvent);
     }
 
+    fn focusable_editor_indices(&self) -> Vec<usize> {
+        self.script_params
+            .params
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| !matches!(p.param_type, ParamType::Boolean | ParamType::Choice))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    fn focus_next_param(&mut self, _: &Tab, window: &mut Window, cx: &mut Context<Self>) {
+        let indices = self.focusable_editor_indices();
+        if indices.len() <= 1 {
+            return;
+        }
+        if let Some(current) = indices
+            .iter()
+            .position(|&i| self.editors[i].focus_handle(cx).is_focused(window))
+        {
+            let next = (current + 1) % indices.len();
+            window.focus(&self.editors[indices[next]].focus_handle(cx), cx);
+            cx.stop_propagation();
+        }
+    }
+
+    fn focus_prev_param(&mut self, _: &Backtab, window: &mut Window, cx: &mut Context<Self>) {
+        let indices = self.focusable_editor_indices();
+        if indices.len() <= 1 {
+            return;
+        }
+        if let Some(current) = indices
+            .iter()
+            .position(|&i| self.editors[i].focus_handle(cx).is_focused(window))
+        {
+            let prev = if current == 0 {
+                indices.len() - 1
+            } else {
+                current - 1
+            };
+            window.focus(&self.editors[indices[prev]].focus_handle(cx), cx);
+            cx.stop_propagation();
+        }
+    }
+
     fn toggle_checkbox(&mut self, index: usize, cx: &mut Context<Self>) {
         if index < self.checkbox_states.len() {
             self.checkbox_states[index] = !self.checkbox_states[index];
@@ -289,6 +334,8 @@ impl Render for ScriptParamsModal {
             .on_action(cx.listener(|this, _: &menu::Confirm, window, cx| {
                 this.run(window, cx);
             }))
+            .capture_action(cx.listener(Self::focus_next_param))
+            .capture_action(cx.listener(Self::focus_prev_param))
             .elevation_3(cx)
             .p_4()
             .gap_3()

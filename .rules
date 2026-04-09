@@ -189,6 +189,88 @@ v_flex()
 - Esc 关闭已由 `ModalView` 自动处理，无需额外绑定
 - 实例：`ScriptParamsModal`（`script_params_modal.rs`）
 
+### 多 Editor 间 Tab/Shift-Tab 切换焦点
+
+当一个容器（Modal、Panel 等）包含多个 `Editor` 子组件时，默认按 Tab 会被 Editor 自身消费（插入制表符或触发补全），不会切换到下一个 Editor。需要在容器层用 `capture_action` 在 Capture 阶段拦截 `editor::actions::Tab` / `editor::actions::Backtab`，在 Editor 处理之前截获并手动切换焦点。
+
+**核心原理：** GPUI action dispatch 分两阶段——Capture（root→focused）和 Bubble（focused→root）。`.capture_action()` 注册在 Capture 阶段，比 Editor 自身的 `.on_action()` 更早执行。拦截后调用 `cx.stop_propagation()` 阻止 Editor 收到该 action。
+
+**标准实现模式：**
+
+```rust
+use editor::actions::{Backtab, Tab};
+use editor::Editor;
+
+struct MyContainer {
+    editors: Vec<Entity<Editor>>,
+    focus_handle: FocusHandle,
+    // ...
+}
+
+impl MyContainer {
+    /// 收集所有可聚焦的 editor index（跳过非 editor 参数如 Boolean/Choice）
+    fn focusable_editor_indices(&self) -> Vec<usize> {
+        self.params.iter().enumerate()
+            .filter(|(_, p)| p.has_editor())  // 根据业务逻辑过滤
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    fn focus_next_editor(&mut self, _: &Tab, window: &mut Window, cx: &mut Context<Self>) {
+        let indices = self.focusable_editor_indices();
+        if indices.len() <= 1 {
+            return;  // 0 或 1 个 editor 时不拦截，让 Editor 正常处理 Tab
+        }
+        if let Some(current) = indices.iter()
+            .position(|&i| self.editors[i].focus_handle(cx).is_focused(window))
+        {
+            let next = (current + 1) % indices.len();
+            window.focus(&self.editors[indices[next]].focus_handle(cx), cx);
+            cx.stop_propagation();  // 必须调用，阻止 Editor 插入 Tab 字符
+        }
+    }
+
+    fn focus_prev_editor(&mut self, _: &Backtab, window: &mut Window, cx: &mut Context<Self>) {
+        let indices = self.focusable_editor_indices();
+        if indices.len() <= 1 {
+            return;
+        }
+        if let Some(current) = indices.iter()
+            .position(|&i| self.editors[i].focus_handle(cx).is_focused(window))
+        {
+            let prev = if current == 0 { indices.len() - 1 } else { current - 1 };
+            window.focus(&self.editors[indices[prev]].focus_handle(cx), cx);
+            cx.stop_propagation();
+        }
+    }
+}
+
+// render() 中：在根元素上注册 capture_action
+impl Render for MyContainer {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        v_flex()
+            .id("my-container")
+            .track_focus(&self.focus_handle)
+            .capture_action(cx.listener(Self::focus_next_editor))
+            .capture_action(cx.listener(Self::focus_prev_editor))
+            // ...
+    }
+}
+```
+
+**关键注意事项：**
+
+1. **必须用 `capture_action`，不能用 `on_action`**：`on_action` 在 Bubble 阶段执行，此时 Editor 已经处理了 Tab（插入字符或触发补全），焦点切换会在错误状态下发生
+2. **必须调用 `cx.stop_propagation()`**：否则 action 继续传播到 Editor，导致 Tab 字符被插入到目标 editor 中
+3. **只有 1 个或 0 个可聚焦 editor 时应 early return**：不调用 `stop_propagation()`，让 Editor 正常处理 Tab 键
+4. **焦点未命中任何已知 editor 时不拦截**：`position()` 返回 `None` 时直接跳过，不调用 `stop_propagation()`，避免破坏其他组件的 Tab 行为
+5. **不需要修改 keymap 文件**：`editor::actions::Tab` 和 `Backtab` 已由 Editor 绑定到 `tab` 和 `shift-tab`，capture_action 直接复用这些绑定
+6. **循环切换（wrapping）**：最后一个 editor 按 Tab 回到第一个，第一个按 Shift-Tab 到最后一个，符合标准表单导航预期
+
+**参考实现：**
+- `ScriptParamsModal`（`script_params_modal.rs`）— Modal 中多参数 editor 的 Tab 切换，跳过 Boolean/Choice 类型
+- `BufferSearchBar`（`buffer_search.rs:551-552, 1678-1706`）— 搜索栏中 query/replacement editor 的 Tab 切换（原始参考）
+
 ### Drag and Drop
 
 **Pitfall:** `on_drag_move` fires for ALL handlers (Capture phase). Always check `event.bounds.contains(&event.event.position)`.
