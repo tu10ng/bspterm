@@ -17,7 +17,7 @@ use workspace::{
     item::{Item, ItemEvent, SaveOptions, TabContentParams},
 };
 
-use script_panel::script_runner::{ScriptRunner, ScriptStatus};
+use script_panel::script_runner::{ScriptOutput, ScriptRunner, ScriptStatus};
 
 pub use script_panel::script_runner;
 
@@ -60,8 +60,8 @@ impl ButtonBarScriptRunner {
         self.runner.status()
     }
 
-    pub fn read_output(&mut self) -> Option<String> {
-        self.runner.read_output()
+    pub fn read_output_split(&mut self) -> Option<ScriptOutput> {
+        self.runner.read_output_split()
     }
 }
 

@@ -1957,10 +1957,19 @@ print(output)
             return;
         };
 
-        // Read and log any output
-        if let Some(output) = runner.read_output() {
-            for line in output.lines() {
+        // Read and log any output, write to terminal
+        if let Some(output) = runner.read_output_split() {
+            for line in output.stdout.lines() {
                 log::debug!("[button-bar-script] {}", line);
+            }
+            for line in output.stderr.lines() {
+                log::debug!("[button-bar-script:err] {}", line);
+            }
+            let terminal_bytes = output.format_for_terminal();
+            if !terminal_bytes.is_empty() {
+                self.terminal.update(cx, |terminal, cx| {
+                    terminal.write_output(&terminal_bytes, cx);
+                });
             }
         }
 
@@ -1969,6 +1978,9 @@ print(output)
         let error_message = match &status {
             ScriptStatus::Finished(code) => {
                 log::debug!("Button bar script finished with code {}", code);
+                self.terminal.update(cx, |terminal, _cx| {
+                    terminal.input(b"\r".to_vec());
+                });
                 self.button_bar_runner = None;
                 self.unregister_button_bar_script(cx);
                 None
@@ -1976,6 +1988,9 @@ print(output)
             ScriptStatus::Failed(err) => {
                 log::error!("Button bar script failed: {}", err);
                 let err_msg = err.clone();
+                self.terminal.update(cx, |terminal, _cx| {
+                    terminal.input(b"\r".to_vec());
+                });
                 self.button_bar_runner = None;
                 self.unregister_button_bar_script(cx);
                 Some(err_msg)
@@ -1993,9 +2008,18 @@ print(output)
             return;
         };
 
-        if let Some(output) = runner.read_output() {
-            for line in output.lines() {
+        if let Some(output) = runner.read_output_split() {
+            for line in output.stdout.lines() {
                 log::info!("[function-script] {}", line);
+            }
+            for line in output.stderr.lines() {
+                log::info!("[function-script:err] {}", line);
+            }
+            let terminal_bytes = output.format_for_terminal();
+            if !terminal_bytes.is_empty() {
+                self.terminal.update(cx, |terminal, cx| {
+                    terminal.write_output(&terminal_bytes, cx);
+                });
             }
         }
 
@@ -2003,6 +2027,9 @@ print(output)
         let error_message = match &status {
             ScriptStatus::Finished(code) => {
                 log::info!("[function-script] finished with code {}", code);
+                self.terminal.update(cx, |terminal, _cx| {
+                    terminal.input(b"\r".to_vec());
+                });
                 self.function_runner = None;
                 self.unregister_function_script(cx);
                 None
@@ -2010,6 +2037,9 @@ print(output)
             ScriptStatus::Failed(err) => {
                 log::error!("[function-script] failed: {}", err);
                 let err_msg = err.clone();
+                self.terminal.update(cx, |terminal, _cx| {
+                    terminal.input(b"\r".to_vec());
+                });
                 self.function_runner = None;
                 self.unregister_function_script(cx);
                 Some(err_msg)

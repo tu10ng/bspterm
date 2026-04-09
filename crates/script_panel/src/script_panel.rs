@@ -98,6 +98,7 @@ pub struct ScriptPanel {
     selected_script: Option<usize>,
     script_runner: Option<ScriptRunner>,
     output: String,
+    focused_terminal_id: Option<Uuid>,
     _subscription: Option<gpui::Subscription>,
     registry_id: Option<Uuid>,
     _registry_subscription: Option<Subscription>,
@@ -122,6 +123,7 @@ impl ScriptPanel {
             selected_script: None,
             script_runner: None,
             output: String::new(),
+            focused_terminal_id: None,
             _subscription: None,
             registry_id: None,
             _registry_subscription: registry_subscription,
@@ -257,8 +259,10 @@ impl ScriptPanel {
         self.output.clear();
         self.output.push_str(&format!("Running {}...\n", script_name));
 
+        self.focused_terminal_id = terminal_scripting::TerminalRegistry::focused_id(cx);
+
         let focused_terminal_id =
-            terminal_scripting::TerminalRegistry::focused_id(cx).map(|id| id.to_string());
+            self.focused_terminal_id.map(|id| id.to_string());
 
         let Some(connection_info) = terminal_scripting::ScriptingServer::get(cx) else {
             self.output
@@ -310,6 +314,7 @@ impl ScriptPanel {
             self.output.push_str("Script stopped.\n");
         }
         self.script_runner = None;
+        self.focused_terminal_id = None;
         self.unregister_from_registry(cx);
     }
 
@@ -325,8 +330,23 @@ impl ScriptPanel {
 
     fn update_output(&mut self, cx: &mut Context<Self>) {
         if let Some(runner) = &mut self.script_runner {
-            if let Some(output) = runner.read_output() {
-                self.output.push_str(&output);
+            if let Some(output) = runner.read_output_split() {
+                self.output.push_str(&output.as_combined());
+
+                // Write to focused terminal if available
+                if let Some(terminal_id) = self.focused_terminal_id {
+                    let terminal_bytes = output.format_for_terminal();
+                    if !terminal_bytes.is_empty() {
+                        if let Some(terminal) =
+                            terminal_scripting::TerminalRegistry::get_terminal(terminal_id, cx)
+                        {
+                            terminal.update(cx, |terminal, cx| {
+                                terminal.write_output(&terminal_bytes, cx);
+                            });
+                        }
+                    }
+                }
+
                 cx.notify();
             }
 
@@ -334,13 +354,33 @@ impl ScriptPanel {
                 ScriptStatus::Finished(code) => {
                     self.output
                         .push_str(&format!("\nScript finished with exit code: {}\n", code));
+                    if let Some(terminal_id) = self.focused_terminal_id {
+                        if let Some(terminal) =
+                            terminal_scripting::TerminalRegistry::get_terminal(terminal_id, cx)
+                        {
+                            terminal.update(cx, |terminal, _cx| {
+                                terminal.input(b"\r".to_vec());
+                            });
+                        }
+                    }
                     self.script_runner = None;
+                    self.focused_terminal_id = None;
                     self.unregister_from_registry(cx);
                     cx.notify();
                 }
                 ScriptStatus::Failed(err) => {
                     self.output.push_str(&format!("\nScript failed: {}\n", err));
+                    if let Some(terminal_id) = self.focused_terminal_id {
+                        if let Some(terminal) =
+                            terminal_scripting::TerminalRegistry::get_terminal(terminal_id, cx)
+                        {
+                            terminal.update(cx, |terminal, _cx| {
+                                terminal.input(b"\r".to_vec());
+                            });
+                        }
+                    }
                     self.script_runner = None;
+                    self.focused_terminal_id = None;
                     self.unregister_from_registry(cx);
                     cx.notify();
                 }

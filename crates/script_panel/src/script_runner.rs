@@ -18,6 +18,42 @@ pub enum ScriptStatus {
     Failed(String),
 }
 
+pub struct ScriptOutput {
+    pub stdout: String,
+    pub stderr: String,
+}
+
+impl ScriptOutput {
+    /// Format as ANSI-colored terminal output.
+    /// stdout lines: \x1b[90m[script]\x1b[0m line (gray prefix)
+    /// stderr lines: \x1b[31m[script:err]\x1b[0m line (red prefix)
+    pub fn format_for_terminal(&self) -> Vec<u8> {
+        let mut result = Vec::new();
+        let has_content = !self.stdout.is_empty() || !self.stderr.is_empty();
+        if has_content {
+            result.extend_from_slice(b"\r\n");
+        }
+        for line in self.stdout.lines() {
+            result.extend_from_slice(b"\x1b[90m[script]\x1b[0m ");
+            result.extend_from_slice(line.as_bytes());
+            result.extend_from_slice(b"\r\n");
+        }
+        for line in self.stderr.lines() {
+            result.extend_from_slice(b"\x1b[31m[script:err]\x1b[0m ");
+            result.extend_from_slice(line.as_bytes());
+            result.extend_from_slice(b"\r\n");
+        }
+        result
+    }
+
+    pub fn as_combined(&self) -> String {
+        let mut combined = String::new();
+        combined.push_str(&self.stdout);
+        combined.push_str(&self.stderr);
+        combined
+    }
+}
+
 pub struct ScriptRunner {
     script_path: PathBuf,
     connection_string: String,
@@ -254,6 +290,79 @@ impl ScriptRunner {
             None
         } else {
             Some(output)
+        }
+    }
+
+    pub fn read_output_split(&mut self) -> Option<ScriptOutput> {
+        let child = self.process.as_mut()?;
+        let mut stdout_output = String::new();
+        let mut stderr_output = String::new();
+
+        #[cfg(unix)]
+        {
+            if let Some(stdout) = child.stdout.as_mut() {
+                let mut buf = [0u8; 1024];
+                loop {
+                    match stdout.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => stdout_output.push_str(&String::from_utf8_lossy(&buf[..n])),
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                        Err(e) => {
+                            log::warn!("[script-runner] stdout read error: {}", e);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if let Some(stderr) = child.stderr.as_mut() {
+                let mut buf = [0u8; 1024];
+                loop {
+                    match stderr.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => stderr_output.push_str(&String::from_utf8_lossy(&buf[..n])),
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                        Err(e) => {
+                            log::warn!("[script-runner] stderr read error: {}", e);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        #[cfg(windows)]
+        {
+            if let Some(stdout) = child.stdout.as_mut() {
+                let handle = stdout.as_raw_handle();
+                let available = peek_available(handle);
+                if available > 0 {
+                    let mut buf = vec![0u8; available.min(4096)];
+                    if let Ok(n) = stdout.read(&mut buf) {
+                        stdout_output.push_str(&String::from_utf8_lossy(&buf[..n]));
+                    }
+                }
+            }
+
+            if let Some(stderr) = child.stderr.as_mut() {
+                let handle = stderr.as_raw_handle();
+                let available = peek_available(handle);
+                if available > 0 {
+                    let mut buf = vec![0u8; available.min(4096)];
+                    if let Ok(n) = stderr.read(&mut buf) {
+                        stderr_output.push_str(&String::from_utf8_lossy(&buf[..n]));
+                    }
+                }
+            }
+        }
+
+        if stdout_output.is_empty() && stderr_output.is_empty() {
+            None
+        } else {
+            Some(ScriptOutput {
+                stdout: stdout_output,
+                stderr: stderr_output,
+            })
         }
     }
 }

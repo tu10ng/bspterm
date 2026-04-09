@@ -14020,6 +14020,7 @@ dependencies = [
  "paths",
  "python_runtime",
  "serde",
+ "terminal",
  "terminal_scripting",
  "ui",
  "util",
