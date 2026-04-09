@@ -38,8 +38,7 @@
       "fn-f": "zed::ToggleFullScreen",
       "ctrl-cmd-f": "zed::ToggleFullScreen",
       "ctrl-cmd-l": "lsp_tool::ToggleMenu",
-      "ctrl-cmd-c": "editor::DisplayCursorNames",
-      "ctrl-cmd-s": "workspace::ToggleWorktreeSecurity"
+      "ctrl-cmd-c": "editor::DisplayCursorNames"
     }
   },
   {

@@ -9,7 +9,7 @@ use std::{
 };
 
 use anyhow::{Context as _, Result, bail};
-use collections::{HashMap, HashSet, IndexSet};
+use collections::{HashMap, IndexSet};
 use db::{
     kvp::KEY_VALUE_STORE,
     query,
@@ -19,7 +19,6 @@ use db::{
 use gpui::{Axis, Bounds, Task, WindowBounds, WindowId, point, size};
 use project::{
     debugger::breakpoint_store::{BreakpointState, SourceBreakpoint},
-    trusted_worktrees::{DbTrustedPaths, RemoteHostLocation},
 };
 
 use language::{LanguageName, Toolchain, ToolchainScope};
@@ -51,9 +50,6 @@ use model::{
 use self::model::{DockStructure, SerializedWorkspaceLocation};
 
 // https://www.sqlite.org/limits.html
-// > <..> the maximum value of a host parameter number is SQLITE_MAX_VARIABLE_NUMBER,
-// > which defaults to <..> 32766 for SQLite versions after 3.32.0.
-const MAX_QUERY_PLACEHOLDERS: usize = 32000;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub(crate) struct SerializedAxis(pub(crate) gpui::Axis);
@@ -2121,119 +2117,6 @@ impl WorkspaceDb {
 
             Ok(())
         }).await
-    }
-
-    pub(crate) async fn save_trusted_worktrees(
-        &self,
-        trusted_worktrees: HashMap<Option<RemoteHostLocation>, HashSet<PathBuf>>,
-    ) -> anyhow::Result<()> {
-        use anyhow::Context as _;
-        use db::sqlez::statement::Statement;
-        use itertools::Itertools as _;
-
-        DB.clear_trusted_worktrees()
-            .await
-            .context("clearing previous trust state")?;
-
-        let trusted_worktrees = trusted_worktrees
-            .into_iter()
-            .flat_map(|(host, abs_paths)| {
-                abs_paths
-                    .into_iter()
-                    .map(move |abs_path| (Some(abs_path), host.clone()))
-            })
-            .collect::<Vec<_>>();
-        let mut first_worktree;
-        let mut last_worktree = 0_usize;
-        for (count, placeholders) in std::iter::once("(?, ?, ?)")
-            .cycle()
-            .take(trusted_worktrees.len())
-            .chunks(MAX_QUERY_PLACEHOLDERS / 3)
-            .into_iter()
-            .map(|chunk| {
-                let mut count = 0;
-                let placeholders = chunk
-                    .inspect(|_| {
-                        count += 1;
-                    })
-                    .join(", ");
-                (count, placeholders)
-            })
-            .collect::<Vec<_>>()
-        {
-            first_worktree = last_worktree;
-            last_worktree = last_worktree + count;
-            let query = format!(
-                r#"INSERT INTO trusted_worktrees(absolute_path, user_name, host_name)
-VALUES {placeholders};"#
-            );
-
-            let trusted_worktrees = trusted_worktrees[first_worktree..last_worktree].to_vec();
-            self.write(move |conn| {
-                let mut statement = Statement::prepare(conn, query)?;
-                let mut next_index = 1;
-                for (abs_path, host) in trusted_worktrees {
-                    let abs_path = abs_path.as_ref().map(|abs_path| abs_path.to_string_lossy());
-                    next_index = statement.bind(
-                        &abs_path.as_ref().map(|abs_path| abs_path.as_ref()),
-                        next_index,
-                    )?;
-                    next_index = statement.bind(
-                        &host
-                            .as_ref()
-                            .and_then(|host| Some(host.user_name.as_ref()?.as_str())),
-                        next_index,
-                    )?;
-                    next_index = statement.bind(
-                        &host.as_ref().map(|host| host.host_identifier.as_str()),
-                        next_index,
-                    )?;
-                }
-                statement.exec()
-            })
-            .await
-            .context("inserting new trusted state")?;
-        }
-        Ok(())
-    }
-
-    pub fn fetch_trusted_worktrees(&self) -> Result<DbTrustedPaths> {
-        let trusted_worktrees = DB.trusted_worktrees()?;
-        Ok(trusted_worktrees
-            .into_iter()
-            .filter_map(|(abs_path, user_name, host_name)| {
-                let db_host = match (user_name, host_name) {
-                    (None, Some(host_name)) => Some(RemoteHostLocation {
-                        user_name: None,
-                        host_identifier: SharedString::new(host_name),
-                    }),
-                    (Some(user_name), Some(host_name)) => Some(RemoteHostLocation {
-                        user_name: Some(SharedString::new(user_name)),
-                        host_identifier: SharedString::new(host_name),
-                    }),
-                    _ => None,
-                };
-                Some((db_host, abs_path?))
-            })
-            .fold(HashMap::default(), |mut acc, (remote_host, abs_path)| {
-                acc.entry(remote_host)
-                    .or_insert_with(HashSet::default)
-                    .insert(abs_path);
-                acc
-            }))
-    }
-
-    query! {
-        fn trusted_worktrees() -> Result<Vec<(Option<PathBuf>, Option<String>, Option<String>)>> {
-            SELECT absolute_path, user_name, host_name
-            FROM trusted_worktrees
-        }
-    }
-
-    query! {
-        pub async fn clear_trusted_worktrees() -> Result<()> {
-            DELETE FROM trusted_worktrees
-        }
     }
 }
 

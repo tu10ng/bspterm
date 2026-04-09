@@ -45,7 +45,6 @@ use crate::{
     prettier_store::{self, PrettierStore, PrettierStoreEvent},
     project_settings::{BinarySettings, LspSettings, ProjectSettings},
     toolchain_store::{LocalToolchainStore, ToolchainStoreEvent},
-    trusted_worktrees::{PathTrust, TrustedWorktrees, TrustedWorktreesEvent},
     worktree_store::{WorktreeStore, WorktreeStoreEvent},
     yarn::YarnPathStore,
 };
@@ -62,8 +61,8 @@ use futures::{
 };
 use globset::{Glob, GlobBuilder, GlobMatcher, GlobSet, GlobSetBuilder};
 use gpui::{
-    App, AppContext, AsyncApp, Context, Entity, EventEmitter, PromptLevel, SharedString,
-    Subscription, Task, WeakEntity,
+    App, AppContext, AsyncApp, Context, Entity, EventEmitter, PromptLevel, SharedString, Task,
+    WeakEntity,
 };
 use http_client::HttpClient;
 use itertools::Itertools as _;
@@ -114,7 +113,7 @@ use std::{
     borrow::Cow,
     cell::RefCell,
     cmp::{Ordering, Reverse},
-    collections::{VecDeque, hash_map},
+    collections::VecDeque,
     convert::TryInto,
     ffi::OsStr,
     future::ready,
@@ -326,7 +325,6 @@ pub struct LocalLspStore {
         LanguageServerId,
         HashMap<Option<SharedString>, HashMap<PathBuf, Option<SharedString>>>,
     >,
-    restricted_worktrees_tasks: HashMap<WorktreeId, (Subscription, watch::Receiver<bool>)>,
 
     buffers_to_refresh_hash_set: HashSet<BufferId>,
     buffers_to_refresh_queue: VecDeque<BufferId>,
@@ -420,45 +418,7 @@ impl LocalLspStore {
             adapter.name.0
         );
 
-        let wait_until_worktree_trust =
-            TrustedWorktrees::try_get_global(cx).and_then(|trusted_worktrees| {
-                let can_trust = trusted_worktrees.update(cx, |trusted_worktrees, cx| {
-                    trusted_worktrees.can_trust(&self.worktree_store, worktree_id, cx)
-                });
-                if can_trust {
-                    self.restricted_worktrees_tasks.remove(&worktree_id);
-                    None
-                } else {
-                    match self.restricted_worktrees_tasks.entry(worktree_id) {
-                        hash_map::Entry::Occupied(o) => Some(o.get().1.clone()),
-                        hash_map::Entry::Vacant(v) => {
-                            let (mut tx, rx) = watch::channel::<bool>();
-                            let lsp_store = self.weak.clone();
-                            let subscription = cx.subscribe(&trusted_worktrees, move |_, e, cx| {
-                                if let TrustedWorktreesEvent::Trusted(_, trusted_paths) = e {
-                                    if trusted_paths.contains(&PathTrust::Worktree(worktree_id)) {
-                                        tx.blocking_send(true).ok();
-                                        lsp_store
-                                            .update(cx, |lsp_store, _| {
-                                                if let Some(local_lsp_store) =
-                                                    lsp_store.as_local_mut()
-                                                {
-                                                    local_lsp_store
-                                                        .restricted_worktrees_tasks
-                                                        .remove(&worktree_id);
-                                                }
-                                            })
-                                            .ok();
-                                    }
-                                }
-                            });
-                            v.insert((subscription, rx.clone()));
-                            Some(rx)
-                        }
-                    }
-                }
-            });
-        let update_binary_status = wait_until_worktree_trust.is_none();
+        let update_binary_status = true;
 
         let binary = self.get_language_server_binary(
             worktree_abs_path.clone(),
@@ -467,7 +427,6 @@ impl LocalLspStore {
             toolchain.clone(),
             delegate.clone(),
             true,
-            wait_until_worktree_trust,
             cx,
         );
         let pending_workspace_folders = Arc::<Mutex<BTreeSet<Uri>>>::default();
@@ -672,41 +631,19 @@ impl LocalLspStore {
 
     fn get_language_server_binary(
         &self,
-        worktree_abs_path: Arc<Path>,
+        _worktree_abs_path: Arc<Path>,
         adapter: Arc<CachedLspAdapter>,
         settings: Arc<LspSettings>,
         toolchain: Option<Toolchain>,
         delegate: Arc<dyn LspAdapterDelegate>,
         allow_binary_download: bool,
-        wait_until_worktree_trust: Option<watch::Receiver<bool>>,
         cx: &mut App,
     ) -> Task<Result<LanguageServerBinary>> {
         if let Some(settings) = &settings.binary
             && let Some(path) = settings.path.as_ref().map(PathBuf::from)
         {
             let settings = settings.clone();
-            let languages = self.languages.clone();
             return cx.background_spawn(async move {
-                if let Some(mut wait_until_worktree_trust) = wait_until_worktree_trust {
-                    let already_trusted =  *wait_until_worktree_trust.borrow();
-                    if !already_trusted {
-                        log::info!(
-                            "Waiting for worktree {worktree_abs_path:?} to be trusted, before starting language server {}",
-                            adapter.name(),
-                        );
-                        while let Some(worktree_trusted) = wait_until_worktree_trust.recv().await {
-                            if worktree_trusted {
-                                break;
-                            }
-                        }
-                        log::info!(
-                            "Worktree {worktree_abs_path:?} is trusted, starting language server {}",
-                            adapter.name(),
-                        );
-                    }
-                    languages
-                        .update_lsp_binary_status(adapter.name(), BinaryStatus::Starting);
-                }
                 let mut env = delegate.shell_env().await;
                 env.extend(settings.env.unwrap_or_default());
 
@@ -737,25 +674,6 @@ impl LocalLspStore {
         };
 
         cx.spawn(async move |cx| {
-            if let Some(mut wait_until_worktree_trust) = wait_until_worktree_trust {
-                let already_trusted =  *wait_until_worktree_trust.borrow();
-                if !already_trusted {
-                    log::info!(
-                        "Waiting for worktree {worktree_abs_path:?} to be trusted, before starting language server {}",
-                        adapter.name(),
-                    );
-                    while let Some(worktree_trusted) = wait_until_worktree_trust.recv().await {
-                        if worktree_trusted {
-                            break;
-                        }
-                    }
-                    log::info!(
-                        "Worktree {worktree_abs_path:?} is trusted, starting language server {}",
-                            adapter.name(),
-                    );
-                }
-            }
-
             let (existing_binary, maybe_download_binary) = adapter
                 .clone()
                 .get_language_server_command(delegate.clone(), toolchain, lsp_binary_options, cx)
@@ -3486,7 +3404,6 @@ impl LocalLspStore {
         id_to_remove: WorktreeId,
         cx: &mut Context<LspStore>,
     ) -> Vec<LanguageServerId> {
-        self.restricted_worktrees_tasks.remove(&id_to_remove);
         self.diagnostics.remove(&id_to_remove);
         self.prettier_store.update(cx, |prettier_store, cx| {
             prettier_store.remove_worktree(id_to_remove, cx);
@@ -4208,7 +4125,6 @@ impl LspStore {
                 buffers_opened_in_servers: HashMap::default(),
                 buffer_pull_diagnostics_result_ids: HashMap::default(),
                 workspace_pull_diagnostics_result_ids: HashMap::default(),
-                restricted_worktrees_tasks: HashMap::default(),
                 watched_manifest_filenames: ManifestProvidersStore::global(cx)
                     .manifest_file_names(),
             }),

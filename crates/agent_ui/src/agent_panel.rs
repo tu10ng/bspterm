@@ -2767,7 +2767,7 @@ impl AgentPanel {
         }
     }
 
-    fn render_workspace_trust_message(&self, cx: &Context<Self>) -> Option<impl IntoElement> {
+    fn render_workspace_trust_message(&self, _cx: &Context<Self>) -> Option<impl IntoElement> {
         if !self.show_trust_workspace_message {
             return None;
         }
@@ -2784,17 +2784,7 @@ impl AgentPanel {
                 .actions_slot(
                     Button::new("open-trust-modal", "Configure Project Trust")
                         .label_size(LabelSize::Small)
-                        .style(ButtonStyle::Outlined)
-                        .on_click({
-                            cx.listener(move |this, _, window, cx| {
-                                this.workspace
-                                    .update(cx, |workspace, cx| {
-                                        workspace
-                                            .show_worktree_trust_security_modal(true, window, cx)
-                                    })
-                                    .log_err();
-                            })
-                        }),
+                        .style(ButtonStyle::Outlined),
                 ),
         )
     }

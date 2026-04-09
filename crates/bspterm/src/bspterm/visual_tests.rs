@@ -91,7 +91,6 @@ pub async fn open_test_workspace(
             app_state.fs.clone(),
             None,
             project::LocalProjectFlags {
-                init_worktree_trust: false,
                 ..Default::default()
             },
             cx,

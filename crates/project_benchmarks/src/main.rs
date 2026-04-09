@@ -150,7 +150,7 @@ fn main() -> Result<(), anyhow::Error> {
                     let (_tx, rx) = oneshot::channel();
                     let remote_client =  cx.update(|cx| remote::RemoteClient::new(ConnectionIdentifier::setup(), remote_connection, rx, delegate.clone(), cx )).await?.ok_or_else(|| anyhow!("ssh initialization returned None"))?;
 
-                    cx.update(|cx| Project::remote(remote_client,  client, node, user_store, registry, fs, false, cx))
+                    cx.update(|cx| Project::remote(remote_client,  client, node, user_store, registry, fs, cx))
                 } else {
                     println!("Setting up local project");
                     cx.update(|cx| Project::local(
@@ -161,7 +161,6 @@ fn main() -> Result<(), anyhow::Error> {
                     fs,
                     Some(Default::default()),
                     project::LocalProjectFlags {
-                        init_worktree_trust: false,
                         ..Default::default()
                     },
                     cx,

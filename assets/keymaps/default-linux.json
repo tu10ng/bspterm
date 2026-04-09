@@ -31,8 +31,7 @@
       "ctrl-alt-,": "zed::OpenSettingsFile",
       "ctrl-q": "zed::Quit",
       "f11": "zed::ToggleFullScreen",
-      "ctrl-alt-l": "lsp_tool::ToggleMenu",
-      "ctrl-alt-shift-s": "workspace::ToggleWorktreeSecurity"
+      "ctrl-alt-l": "lsp_tool::ToggleMenu"
     }
   },
   {

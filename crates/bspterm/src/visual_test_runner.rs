@@ -259,7 +259,6 @@ fn run_visual_tests(project_path: PathBuf, update_baseline: bool) -> Result<()> 
             app_state.fs.clone(),
             None,
             project::LocalProjectFlags {
-                init_worktree_trust: false,
                 ..Default::default()
             },
             cx,
@@ -957,7 +956,6 @@ fn run_breakpoint_hover_visual_tests(
             app_state.fs.clone(),
             None,
             project::LocalProjectFlags {
-                init_worktree_trust: false,
                 ..Default::default()
             },
             cx,
@@ -1229,7 +1227,6 @@ fn run_settings_ui_subpage_visual_tests(
             app_state.fs.clone(),
             None,
             project::LocalProjectFlags {
-                init_worktree_trust: false,
                 ..Default::default()
             },
             cx,
@@ -1441,7 +1438,6 @@ import { AiPaneTabContext } from 'context';
             app_state.fs.clone(),
             None,
             project::LocalProjectFlags {
-                init_worktree_trust: false,
                 ..Default::default()
             },
             cx,
@@ -1934,7 +1930,6 @@ fn run_agent_thread_view_test(
             app_state.fs.clone(),
             None,
             project::LocalProjectFlags {
-                init_worktree_trust: false,
                 ..Default::default()
             },
             cx,
@@ -2279,7 +2274,6 @@ fn run_tool_permissions_visual_tests(
             app_state.fs.clone(),
             None,
             project::LocalProjectFlags {
-                init_worktree_trust: false,
                 ..Default::default()
             },
             cx,

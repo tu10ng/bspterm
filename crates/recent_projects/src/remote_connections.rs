@@ -11,7 +11,6 @@ use futures::{FutureExt as _, channel::oneshot, select};
 use gpui::{AppContext, AsyncApp, PromptLevel, WindowHandle};
 
 use language::Point;
-use project::trusted_worktrees;
 use remote::{
     DockerConnectionOptions, Interactive, RemoteConnection, RemoteConnectionOptions,
     SshConnectionOptions,
@@ -212,7 +211,6 @@ pub async fn open_remote_project(
                 app_state.fs.clone(),
                 None,
                 project::LocalProjectFlags {
-                    init_worktree_trust: false,
                     ..Default::default()
                 },
                 cx,
@@ -379,17 +377,10 @@ pub async fn open_remote_project(
                 }
 
                 window
-                    .update(cx, |workspace, window, cx| {
+                    .update(cx, |_workspace, window, _cx| {
                         if created_new_window {
                             window.remove_window();
                         }
-                        trusted_worktrees::track_worktree_trust(
-                            workspace.project().read(cx).worktree_store(),
-                            None,
-                            None,
-                            None,
-                            cx,
-                        );
                     })
                     .ok();
             }
@@ -543,7 +534,6 @@ mod tests {
                     languages,
                     extension_host_proxy: proxy,
                 },
-                false,
                 cx,
             )
         });

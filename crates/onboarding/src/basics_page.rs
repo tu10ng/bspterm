@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use fs::Fs;
 use gpui::{Action, App, IntoElement};
-use project::project_settings::ProjectSettings;
 use settings::{BaseKeymap, Settings, update_settings_file};
 use theme::{
     Appearance, SystemAppearance, ThemeAppearanceMode, ThemeName, ThemeRegistry, ThemeSelection,
@@ -10,7 +9,7 @@ use theme::{
 };
 use ui::{
     ParentElement as _, StatefulInteractiveElement, SwitchField, TintColor, ToggleButtonGroup,
-    ToggleButtonGroupSize, ToggleButtonSimple, ToggleButtonWithIcon, Tooltip, prelude::*,
+    ToggleButtonGroupSize, ToggleButtonSimple, ToggleButtonWithIcon, prelude::*,
     rems_from_px,
 };
 use vim_mode_setting::VimModeSetting;
@@ -307,48 +306,6 @@ fn render_vim_mode_switch(tab_index: &mut isize, cx: &mut App) -> impl IntoEleme
     })
 }
 
-fn render_worktree_auto_trust_switch(tab_index: &mut isize, cx: &mut App) -> impl IntoElement {
-    let toggle_state = if ProjectSettings::get_global(cx).session.trust_all_worktrees {
-        ui::ToggleState::Selected
-    } else {
-        ui::ToggleState::Unselected
-    };
-
-    let tooltip_description = "Zed can only allow services like language servers, project settings, and MCP servers to run after you mark a new project as trusted.";
-
-    SwitchField::new(
-        "onboarding-auto-trust-worktrees",
-        Some("Trust All Projects By Default"),
-        Some("Automatically mark all new projects as trusted to unlock all Zed's features".into()),
-        toggle_state,
-        {
-            let fs = <dyn Fs>::global(cx);
-            move |&selection, _, cx| {
-                let trust = match selection {
-                    ToggleState::Selected => true,
-                    ToggleState::Unselected => false,
-                    ToggleState::Indeterminate => {
-                        return;
-                    }
-                };
-                update_settings_file(fs.clone(), cx, move |setting, _| {
-                    setting.session.get_or_insert_default().trust_all_worktrees = Some(trust);
-                });
-
-                telemetry::event!(
-                    "Welcome Page Worktree Auto Trust Toggled",
-                    options = if trust { "on" } else { "off" }
-                );
-            }
-        },
-    )
-    .tab_index({
-        *tab_index += 1;
-        *tab_index - 1
-    })
-    .tooltip(Tooltip::text(tooltip_description))
-}
-
 fn render_setting_import_button(
     tab_index: isize,
     label: SharedString,
@@ -421,5 +378,4 @@ pub(crate) fn render_basics_page(cx: &mut App) -> impl IntoElement {
         .child(render_base_keymap_section(&mut tab_index, cx))
         .child(render_import_settings_section(&mut tab_index, cx))
         .child(render_vim_mode_switch(&mut tab_index, cx))
-        .child(render_worktree_auto_trust_switch(&mut tab_index, cx))
 }

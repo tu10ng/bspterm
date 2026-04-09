@@ -31,8 +31,7 @@
       "ctrl-q": "zed::Quit",
       "f11": "zed::ToggleFullScreen",
       "shift-alt-l": "lsp_tool::ToggleMenu",
-      "ctrl-shift-alt-c": "editor::DisplayCursorNames",
-      "ctrl-shift-alt-s": "workspace::ToggleWorktreeSecurity"
+      "ctrl-shift-alt-c": "editor::DisplayCursorNames"
     }
   },
   {

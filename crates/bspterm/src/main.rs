@@ -33,7 +33,7 @@ use reqwest_client::ReqwestClient;
 use assets::Assets;
 use node_runtime::{NodeBinaryOptions, NodeRuntime};
 use parking_lot::Mutex;
-use project::{project_settings::ProjectSettings, trusted_worktrees};
+use project::project_settings::ProjectSettings;
 use proto;
 use recent_projects::{RemoteSettings, open_remote_project};
 use release_channel::{AppCommitSha, AppVersion};
@@ -426,14 +426,6 @@ fn main() {
     });
 
     app.run(move |cx| {
-        let db_trusted_paths = match workspace::WORKSPACE_DB.fetch_trusted_worktrees() {
-            Ok(trusted_paths) => trusted_paths,
-            Err(e) => {
-                log::error!("Failed to do initial trusted worktrees fetch: {e:#}");
-                HashMap::default()
-            }
-        };
-        trusted_worktrees::init(db_trusted_paths, cx);
         i18n::LocaleEntity::init(cx);
         menu::init();
         bspterm_actions::init();

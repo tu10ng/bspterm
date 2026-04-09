@@ -1,5 +1,4 @@
 use anyhow::Context as _;
-use collections::HashSet;
 use fuzzy::StringMatchCandidate;
 
 use git::repository::Worktree as GitWorktree;
@@ -10,11 +9,7 @@ use gpui::{
     actions, rems,
 };
 use picker::{Picker, PickerDelegate, PickerEditorPosition};
-use project::{
-    DirectoryLister,
-    git_store::Repository,
-    trusted_worktrees::{PathTrust, TrustedWorktrees},
-};
+use project::{DirectoryLister, git_store::Repository};
 use remote::{RemoteConnectionOptions, remote_client::ConnectionIdentifier};
 use remote_connection::{RemoteConnectionModal, connect};
 use std::{path::PathBuf, sync::Arc};
@@ -303,33 +298,6 @@ impl WorktreeListDelegate {
             .await??;
             let new_worktree_path = path.join(branch);
 
-            workspace.update(cx, |workspace, cx| {
-                if let Some(trusted_worktrees) = TrustedWorktrees::try_get_global(cx) {
-                    let repo_path = &repo.read(cx).snapshot().work_directory_abs_path;
-                    let project = workspace.project();
-                    if let Some((parent_worktree, _)) =
-                        project.read(cx).find_worktree(repo_path, cx)
-                    {
-                        let worktree_store = project.read(cx).worktree_store();
-                        trusted_worktrees.update(cx, |trusted_worktrees, cx| {
-                            if trusted_worktrees.can_trust(
-                                &worktree_store,
-                                parent_worktree.read(cx).id(),
-                                cx,
-                            ) {
-                                trusted_worktrees.trust(
-                                    &worktree_store,
-                                    HashSet::from_iter([PathTrust::AbsPath(
-                                        new_worktree_path.clone(),
-                                    )]),
-                                    cx,
-                                );
-                            }
-                        });
-                    }
-                }
-            })?;
-
             let (connection_options, app_state, is_local) =
                 workspace.update(cx, |workspace, cx| {
                     let project = workspace.project().clone();
@@ -491,7 +459,6 @@ async fn open_remote_worktree(
             app_state.user_store.clone(),
             app_state.languages.clone(),
             app_state.fs.clone(),
-            true,
             cx,
         )
     });

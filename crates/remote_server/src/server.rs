@@ -11,7 +11,6 @@ pub use headless_project::{HeadlessAppState, HeadlessProject};
 use anyhow::{Context as _, Result, anyhow};
 use clap::Subcommand;
 use client::ProxySettings;
-use collections::HashMap;
 use extension::ExtensionHostProxy;
 use fs::{Fs, RealFs};
 use futures::{
@@ -30,7 +29,7 @@ use net::async_net::{UnixListener, UnixStream};
 use smol::net::{TcpListener, TcpStream};
 use node_runtime::{NodeBinaryOptions, NodeRuntime};
 use paths::logs_dir;
-use project::{project_settings::ProjectSettings, trusted_worktrees};
+use project::project_settings::ProjectSettings;
 use proto::CrashReport;
 use release_channel::{AppCommitSha, AppVersion, RELEASE_CHANNEL, ReleaseChannel};
 use remote::{
@@ -562,8 +561,6 @@ pub fn execute_run(
 
         log::info!("gpui app started, initializing server");
         let session = start_server(listeners, log_rx, cx, is_wsl_interop);
-        trusted_worktrees::init(HashMap::default(), cx);
-
         GitHostingProviderRegistry::set_global(git_hosting_provider_registry, cx);
         git_hosting_providers::init(cx);
         dap_adapters::init(cx);
@@ -611,7 +608,6 @@ pub fn execute_run(
                     languages,
                     extension_host_proxy,
                 },
-                true,
                 cx,
             )
         });

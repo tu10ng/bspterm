@@ -213,7 +213,6 @@ async fn setup_project(
             app_state.fs.clone(),
             None,
             project::LocalProjectFlags {
-                init_worktree_trust: false,
                 watch_global_configs: false,
             },
             cx,

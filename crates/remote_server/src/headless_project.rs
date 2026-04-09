@@ -1,6 +1,4 @@
 use anyhow::{Context as _, Result, anyhow};
-use client::ProjectId;
-use collections::HashSet;
 use language::File;
 use lsp::LanguageServerId;
 
@@ -24,7 +22,6 @@ use project::{
     project_settings::SettingsObserver,
     search::SearchQuery,
     task_store::TaskStore,
-    trusted_worktrees::{PathTrust, RemoteHostLocation, TrustedWorktrees},
     worktree_store::{WorktreeIdCounter, WorktreeStore},
 };
 use rpc::{
@@ -91,7 +88,6 @@ impl HeadlessProject {
             languages,
             extension_host_proxy: proxy,
         }: HeadlessAppState,
-        init_worktree_trust: bool,
         cx: &mut Context<Self>,
     ) -> Self {
         debug_adapter_extension::init(proxy.clone(), cx);
@@ -102,16 +98,6 @@ impl HeadlessProject {
             store.shared(REMOTE_SERVER_PROJECT_ID, session.clone(), cx);
             store
         });
-
-        if init_worktree_trust {
-            project::trusted_worktrees::track_worktree_trust(
-                worktree_store.clone(),
-                None::<RemoteHostLocation>,
-                Some((session.clone(), ProjectId(REMOTE_SERVER_PROJECT_ID))),
-                None,
-                cx,
-            );
-        }
 
         let environment =
             cx.new(|cx| ProjectEnvironment::new(None, worktree_store.downgrade(), None, true, cx));
@@ -295,8 +281,6 @@ impl HeadlessProject {
         session.add_entity_request_handler(Self::handle_get_directory_environment);
         session.add_entity_message_handler(Self::handle_toggle_lsp_logs);
         session.add_entity_request_handler(Self::handle_open_image_by_path);
-        session.add_entity_request_handler(Self::handle_trust_worktrees);
-        session.add_entity_request_handler(Self::handle_restrict_worktrees);
         session.add_entity_request_handler(Self::handle_download_file_by_path);
 
         session.add_entity_message_handler(Self::handle_find_search_candidates_cancel);
@@ -640,52 +624,6 @@ impl HeadlessProject {
         Ok(proto::OpenImageResponse {
             image_id: image_id.to_proto(),
         })
-    }
-
-    pub async fn handle_trust_worktrees(
-        this: Entity<Self>,
-        envelope: TypedEnvelope<proto::TrustWorktrees>,
-        mut cx: AsyncApp,
-    ) -> Result<proto::Ack> {
-        let trusted_worktrees = cx
-            .update(|cx| TrustedWorktrees::try_get_global(cx))
-            .context("missing trusted worktrees")?;
-        let worktree_store = this.read_with(&cx, |project, _| project.worktree_store.clone());
-        trusted_worktrees.update(&mut cx, |trusted_worktrees, cx| {
-            trusted_worktrees.trust(
-                &worktree_store,
-                envelope
-                    .payload
-                    .trusted_paths
-                    .into_iter()
-                    .filter_map(PathTrust::from_proto)
-                    .collect(),
-                cx,
-            );
-        });
-        Ok(proto::Ack {})
-    }
-
-    pub async fn handle_restrict_worktrees(
-        this: Entity<Self>,
-        envelope: TypedEnvelope<proto::RestrictWorktrees>,
-        mut cx: AsyncApp,
-    ) -> Result<proto::Ack> {
-        let trusted_worktrees = cx
-            .update(|cx| TrustedWorktrees::try_get_global(cx))
-            .context("missing trusted worktrees")?;
-        let worktree_store = this.read_with(&cx, |project, _| project.worktree_store.downgrade());
-        trusted_worktrees.update(&mut cx, |trusted_worktrees, cx| {
-            let restricted_paths = envelope
-                .payload
-                .worktree_ids
-                .into_iter()
-                .map(WorktreeId::from_proto)
-                .map(PathTrust::Worktree)
-                .collect::<HashSet<_>>();
-            trusted_worktrees.restrict(worktree_store, restricted_paths, cx);
-        });
-        Ok(proto::Ack {})
     }
 
     pub async fn handle_download_file_by_path(
