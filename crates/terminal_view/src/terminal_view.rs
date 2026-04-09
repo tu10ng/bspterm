@@ -3382,7 +3382,7 @@ print(output)
                 cx.spawn(async move |_this, cx| {
                     for (index, line) in lines.iter().enumerate() {
                         terminal.update(cx, |terminal, _cx| {
-                            terminal.paste_line(line, index == 0);
+                            terminal.paste_line(line);
                         });
                         if index < lines.len() - 1 {
                             cx.background_executor()

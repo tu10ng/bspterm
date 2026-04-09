@@ -3546,8 +3546,6 @@ impl Terminal {
 
     ///Paste text into the terminal
     pub fn paste(&mut self, text: &str) {
-        self.clear_input_buffers();
-
         let clean_text = text.replace("\r\n", "\r").replace('\n', "\r");
         self.update_input_buffers(clean_text.as_bytes());
 
@@ -3561,11 +3559,7 @@ impl Terminal {
     }
 
     /// Paste a single line into the terminal (for line-by-line paste mode).
-    /// first_line: if true, clears input buffers before sending.
-    pub fn paste_line(&mut self, line: &str, first_line: bool) {
-        if first_line {
-            self.clear_input_buffers();
-        }
+    pub fn paste_line(&mut self, line: &str) {
         let mut text = line.to_string();
         text.push('\r');
         self.update_input_buffers(text.as_bytes());
@@ -6349,8 +6343,8 @@ mod tests {
                 assert_eq!(term.current_line_buffer, "old");
 
                 term.paste("new");
-                assert_eq!(term.current_line_buffer, "new");
-                assert_eq!(term.current_word_buffer, "new");
+                assert_eq!(term.current_line_buffer, "oldnew");
+                assert_eq!(term.current_word_buffer, "oldnew");
             });
         }
 
@@ -6361,6 +6355,7 @@ mod tests {
                 term.paste("line1\nline2\nline3");
                 assert_eq!(term.current_line_buffer, "line3");
 
+                // Second paste appends to existing buffer before \r clears it
                 term.paste("line1\r\nline2");
                 assert_eq!(term.current_line_buffer, "line2");
             });
@@ -6384,9 +6379,8 @@ mod tests {
                 term.update_input_buffers(b"old");
                 assert_eq!(term.current_line_buffer, "old");
 
-                term.paste_line("new_line", true);
-                // first_line=true clears buffers, then appends "new_line\r"
-                // \r clears line buffer, so it ends empty
+                term.paste_line("new_line");
+                // paste_line appends "new_line\r", \r clears line buffer
                 assert_eq!(term.current_line_buffer, "");
                 assert_eq!(term.current_word_buffer, "");
             });
@@ -6396,13 +6390,12 @@ mod tests {
         async fn test_paste_line_subsequent_appends(cx: &mut TestAppContext) {
             let terminal = build_display_only_terminal(cx);
             terminal.update(cx, |term: &mut Terminal, _cx| {
-                term.paste_line("line1", true);
+                term.paste_line("line1");
                 // After \r, buffers are cleared
                 assert_eq!(term.current_line_buffer, "");
 
-                term.paste_line("line2", false);
-                // first_line=false does not clear buffers before appending
-                // but \r at end clears them again
+                term.paste_line("line2");
+                // \r at end clears them again
                 assert_eq!(term.current_line_buffer, "");
                 assert_eq!(term.current_word_buffer, "");
             });
