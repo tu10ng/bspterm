@@ -61,6 +61,8 @@ pub struct ScriptRunner {
     params: HashMap<String, String>,
     process: Option<Child>,
     status: ScriptStatus,
+    pending_stdout: String,
+    pending_stderr: String,
 }
 
 impl ScriptRunner {
@@ -92,6 +94,8 @@ impl ScriptRunner {
             params,
             process: None,
             status: ScriptStatus::NotStarted,
+            pending_stdout: String::new(),
+            pending_stderr: String::new(),
         }
     }
 
@@ -177,7 +181,7 @@ impl ScriptRunner {
     }
 
     pub fn status(&mut self) -> &ScriptStatus {
-        if let Some(child) = &mut self.process {
+        if let Some(mut child) = self.process.take() {
             match child.try_wait() {
                 Ok(Some(status)) => {
                     let exit_code = status.code().unwrap_or(-1);
@@ -206,22 +210,56 @@ impl ScriptRunner {
                             self.script_path,
                         );
                     }
+                    self.drain_pipes(&mut child);
                     self.status = ScriptStatus::Finished(exit_code);
-                    self.process = None;
+                    // process already taken, don't put it back
                 }
-                Ok(None) => {}
+                Ok(None) => {
+                    // Still running, put it back
+                    self.process = Some(child);
+                }
                 Err(e) => {
                     log::error!(
                         "[script-runner] Failed to check process status: {} (script: {:?})",
                         e,
                         self.script_path,
                     );
+                    self.drain_pipes(&mut child);
                     self.status = ScriptStatus::Failed(e.to_string());
-                    self.process = None;
+                    // process already taken, don't put it back
                 }
             }
         }
         &self.status
+    }
+
+    fn drain_pipes(&mut self, child: &mut Child) {
+        if let Some(mut stdout) = child.stdout.take() {
+            let mut buf = String::new();
+            match stdout.read_to_string(&mut buf) {
+                Ok(n) if n > 0 => {
+                    log::info!("[script-runner] Drained {} bytes from stdout on exit", n);
+                    self.pending_stdout.push_str(&buf);
+                }
+                Err(e) => {
+                    log::warn!("[script-runner] Failed to drain stdout: {}", e);
+                }
+                _ => {}
+            }
+        }
+        if let Some(mut stderr) = child.stderr.take() {
+            let mut buf = String::new();
+            match stderr.read_to_string(&mut buf) {
+                Ok(n) if n > 0 => {
+                    log::info!("[script-runner] Drained {} bytes from stderr on exit", n);
+                    self.pending_stderr.push_str(&buf);
+                }
+                Err(e) => {
+                    log::warn!("[script-runner] Failed to drain stderr: {}", e);
+                }
+                _ => {}
+            }
+        }
     }
 
     pub fn read_output(&mut self) -> Option<String> {
@@ -294,66 +332,79 @@ impl ScriptRunner {
     }
 
     pub fn read_output_split(&mut self) -> Option<ScriptOutput> {
-        let child = self.process.as_mut()?;
         let mut stdout_output = String::new();
         let mut stderr_output = String::new();
 
-        #[cfg(unix)]
-        {
-            if let Some(stdout) = child.stdout.as_mut() {
-                let mut buf = [0u8; 1024];
-                loop {
-                    match stdout.read(&mut buf) {
-                        Ok(0) => break,
-                        Ok(n) => stdout_output.push_str(&String::from_utf8_lossy(&buf[..n])),
-                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
-                        Err(e) => {
-                            log::warn!("[script-runner] stdout read error: {}", e);
-                            break;
+        if let Some(child) = self.process.as_mut() {
+            #[cfg(unix)]
+            {
+                if let Some(stdout) = child.stdout.as_mut() {
+                    let mut buf = [0u8; 1024];
+                    loop {
+                        match stdout.read(&mut buf) {
+                            Ok(0) => break,
+                            Ok(n) => stdout_output.push_str(&String::from_utf8_lossy(&buf[..n])),
+                            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                            Err(e) => {
+                                log::warn!("[script-runner] stdout read error: {}", e);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if let Some(stderr) = child.stderr.as_mut() {
+                    let mut buf = [0u8; 1024];
+                    loop {
+                        match stderr.read(&mut buf) {
+                            Ok(0) => break,
+                            Ok(n) => stderr_output.push_str(&String::from_utf8_lossy(&buf[..n])),
+                            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                            Err(e) => {
+                                log::warn!("[script-runner] stderr read error: {}", e);
+                                break;
+                            }
                         }
                     }
                 }
             }
 
-            if let Some(stderr) = child.stderr.as_mut() {
-                let mut buf = [0u8; 1024];
-                loop {
-                    match stderr.read(&mut buf) {
-                        Ok(0) => break,
-                        Ok(n) => stderr_output.push_str(&String::from_utf8_lossy(&buf[..n])),
-                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
-                        Err(e) => {
-                            log::warn!("[script-runner] stderr read error: {}", e);
-                            break;
+            #[cfg(windows)]
+            {
+                if let Some(stdout) = child.stdout.as_mut() {
+                    let handle = stdout.as_raw_handle();
+                    let available = peek_available(handle);
+                    log::info!("[script-runner] Windows PeekNamedPipe stdout: available={}", available);
+                    if available > 0 {
+                        let mut buf = vec![0u8; available.min(4096)];
+                        if let Ok(n) = stdout.read(&mut buf) {
+                            stdout_output.push_str(&String::from_utf8_lossy(&buf[..n]));
+                        }
+                    }
+                }
+
+                if let Some(stderr) = child.stderr.as_mut() {
+                    let handle = stderr.as_raw_handle();
+                    let available = peek_available(handle);
+                    log::info!("[script-runner] Windows PeekNamedPipe stderr: available={}", available);
+                    if available > 0 {
+                        let mut buf = vec![0u8; available.min(4096)];
+                        if let Ok(n) = stderr.read(&mut buf) {
+                            stderr_output.push_str(&String::from_utf8_lossy(&buf[..n]));
                         }
                     }
                 }
             }
         }
 
-        #[cfg(windows)]
-        {
-            if let Some(stdout) = child.stdout.as_mut() {
-                let handle = stdout.as_raw_handle();
-                let available = peek_available(handle);
-                if available > 0 {
-                    let mut buf = vec![0u8; available.min(4096)];
-                    if let Ok(n) = stdout.read(&mut buf) {
-                        stdout_output.push_str(&String::from_utf8_lossy(&buf[..n]));
-                    }
-                }
-            }
-
-            if let Some(stderr) = child.stderr.as_mut() {
-                let handle = stderr.as_raw_handle();
-                let available = peek_available(handle);
-                if available > 0 {
-                    let mut buf = vec![0u8; available.min(4096)];
-                    if let Ok(n) = stderr.read(&mut buf) {
-                        stderr_output.push_str(&String::from_utf8_lossy(&buf[..n]));
-                    }
-                }
-            }
+        // Merge any pending data drained on process exit
+        if !self.pending_stdout.is_empty() {
+            stdout_output.push_str(&self.pending_stdout);
+            self.pending_stdout.clear();
+        }
+        if !self.pending_stderr.is_empty() {
+            stderr_output.push_str(&self.pending_stderr);
+            self.pending_stderr.clear();
         }
 
         if stdout_output.is_empty() && stderr_output.is_empty() {

@@ -1977,7 +1977,21 @@ print(output)
         let status = runner.status();
         let error_message = match &status {
             ScriptStatus::Finished(code) => {
-                log::debug!("Button bar script finished with code {}", code);
+                log::info!("[button-bar-script] finished with code {}, doing final pipe read", code);
+                // Final drain read for any data buffered during process exit
+                if let Some(output) = runner.read_output_split() {
+                    log::info!(
+                        "[button-bar-script] final read: stdout={} bytes, stderr={} bytes",
+                        output.stdout.len(),
+                        output.stderr.len(),
+                    );
+                    let terminal_bytes = output.format_for_terminal();
+                    if !terminal_bytes.is_empty() {
+                        self.terminal.update(cx, |terminal, cx| {
+                            terminal.write_output(&terminal_bytes, cx);
+                        });
+                    }
+                }
                 self.terminal.update(cx, |terminal, _cx| {
                     terminal.input(b"\r".to_vec());
                 });
@@ -1986,8 +2000,22 @@ print(output)
                 None
             }
             ScriptStatus::Failed(err) => {
-                log::error!("Button bar script failed: {}", err);
+                log::error!("[button-bar-script] failed: {}", err);
                 let err_msg = err.clone();
+                // Final drain read for any data buffered during process exit
+                if let Some(output) = runner.read_output_split() {
+                    log::info!(
+                        "[button-bar-script] final read on failure: stdout={} bytes, stderr={} bytes",
+                        output.stdout.len(),
+                        output.stderr.len(),
+                    );
+                    let terminal_bytes = output.format_for_terminal();
+                    if !terminal_bytes.is_empty() {
+                        self.terminal.update(cx, |terminal, cx| {
+                            terminal.write_output(&terminal_bytes, cx);
+                        });
+                    }
+                }
                 self.terminal.update(cx, |terminal, _cx| {
                     terminal.input(b"\r".to_vec());
                 });
@@ -2026,7 +2054,20 @@ print(output)
         let status = runner.status();
         let error_message = match &status {
             ScriptStatus::Finished(code) => {
-                log::info!("[function-script] finished with code {}", code);
+                log::info!("[function-script] finished with code {}, doing final pipe read", code);
+                if let Some(output) = runner.read_output_split() {
+                    log::info!(
+                        "[function-script] final read: stdout={} bytes, stderr={} bytes",
+                        output.stdout.len(),
+                        output.stderr.len(),
+                    );
+                    let terminal_bytes = output.format_for_terminal();
+                    if !terminal_bytes.is_empty() {
+                        self.terminal.update(cx, |terminal, cx| {
+                            terminal.write_output(&terminal_bytes, cx);
+                        });
+                    }
+                }
                 self.terminal.update(cx, |terminal, _cx| {
                     terminal.input(b"\r".to_vec());
                 });
@@ -2037,6 +2078,19 @@ print(output)
             ScriptStatus::Failed(err) => {
                 log::error!("[function-script] failed: {}", err);
                 let err_msg = err.clone();
+                if let Some(output) = runner.read_output_split() {
+                    log::info!(
+                        "[function-script] final read on failure: stdout={} bytes, stderr={} bytes",
+                        output.stdout.len(),
+                        output.stderr.len(),
+                    );
+                    let terminal_bytes = output.format_for_terminal();
+                    if !terminal_bytes.is_empty() {
+                        self.terminal.update(cx, |terminal, cx| {
+                            terminal.write_output(&terminal_bytes, cx);
+                        });
+                    }
+                }
                 self.terminal.update(cx, |terminal, _cx| {
                     terminal.input(b"\r".to_vec());
                 });

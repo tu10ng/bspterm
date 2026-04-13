@@ -350,41 +350,60 @@ impl ScriptPanel {
                 cx.notify();
             }
 
-            match runner.status() {
-                ScriptStatus::Finished(code) => {
+            // Copy status info to release the borrow on runner
+            let status_info = match runner.status() {
+                ScriptStatus::Finished(code) => Some((true, *code, String::new())),
+                ScriptStatus::Failed(err) => Some((false, -1, err.clone())),
+                _ => None,
+            };
+
+            if let Some((is_finished, code, err)) = status_info {
+                // Final drain read for any data buffered during process exit
+                if let Some(output) = runner.read_output_split() {
+                    log::info!(
+                        "[script-panel] final read: stdout={} bytes, stderr={} bytes",
+                        output.stdout.len(),
+                        output.stderr.len(),
+                    );
+                    self.output.push_str(&output.as_combined());
+                    if let Some(terminal_id) = self.focused_terminal_id {
+                        let terminal_bytes = output.format_for_terminal();
+                        if !terminal_bytes.is_empty() {
+                            if let Some(terminal) =
+                                terminal_scripting::TerminalRegistry::get_terminal(
+                                    terminal_id, cx,
+                                )
+                            {
+                                terminal.update(cx, |terminal, cx| {
+                                    terminal.write_output(&terminal_bytes, cx);
+                                });
+                            }
+                        }
+                    }
+                }
+
+                if is_finished {
+                    log::info!("[script-panel] finished with code {}", code);
                     self.output
                         .push_str(&format!("\nScript finished with exit code: {}\n", code));
-                    if let Some(terminal_id) = self.focused_terminal_id {
-                        if let Some(terminal) =
-                            terminal_scripting::TerminalRegistry::get_terminal(terminal_id, cx)
-                        {
-                            terminal.update(cx, |terminal, _cx| {
-                                terminal.input(b"\r".to_vec());
-                            });
-                        }
-                    }
-                    self.script_runner = None;
-                    self.focused_terminal_id = None;
-                    self.unregister_from_registry(cx);
-                    cx.notify();
-                }
-                ScriptStatus::Failed(err) => {
+                } else {
+                    log::info!("[script-panel] failed: {}", err);
                     self.output.push_str(&format!("\nScript failed: {}\n", err));
-                    if let Some(terminal_id) = self.focused_terminal_id {
-                        if let Some(terminal) =
-                            terminal_scripting::TerminalRegistry::get_terminal(terminal_id, cx)
-                        {
-                            terminal.update(cx, |terminal, _cx| {
-                                terminal.input(b"\r".to_vec());
-                            });
-                        }
-                    }
-                    self.script_runner = None;
-                    self.focused_terminal_id = None;
-                    self.unregister_from_registry(cx);
-                    cx.notify();
                 }
-                _ => {}
+
+                if let Some(terminal_id) = self.focused_terminal_id {
+                    if let Some(terminal) =
+                        terminal_scripting::TerminalRegistry::get_terminal(terminal_id, cx)
+                    {
+                        terminal.update(cx, |terminal, _cx| {
+                            terminal.input(b"\r".to_vec());
+                        });
+                    }
+                }
+                self.script_runner = None;
+                self.focused_terminal_id = None;
+                self.unregister_from_registry(cx);
+                cx.notify();
             }
         }
     }
