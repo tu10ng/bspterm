@@ -4077,7 +4077,13 @@ impl Terminal {
 
                     let selection_type = match e.click_count {
                         0 => return, //This is a release
-                        1 => Some(SelectionType::Simple),
+                        1 => {
+                            if e.modifiers.alt {
+                                Some(SelectionType::Block)
+                            } else {
+                                Some(SelectionType::Simple)
+                            }
+                        }
                         2 => Some(SelectionType::Semantic),
                         3 => Some(SelectionType::Lines),
                         _ => None,

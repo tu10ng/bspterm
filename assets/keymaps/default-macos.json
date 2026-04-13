@@ -664,6 +664,7 @@
       "cmd-c": "terminal::Copy",
       "cmd-v": "terminal::Paste",
       "cmd-f": "buffer_search::Deploy",
+      "cmd-a": "editor::SelectAll",
       "alt-b": ["terminal::SendText", "\u001bb"],
       "alt-f": ["terminal::SendText", "\u001bf"],
       "ctrl-delete": ["terminal::SendText", "\u001bd"],

@@ -141,7 +141,7 @@ pub struct LayoutState {
     batched_text_runs: Vec<BatchedTextRun>,
     rects: Vec<LayoutRect>,
     border_regions: Vec<BorderRegion>,
-    relative_highlighted_ranges: Vec<(RangeInclusive<AlacPoint>, Hsla)>,
+    relative_highlighted_ranges: Vec<(RangeInclusive<AlacPoint>, Hsla, bool)>,
     cursor: Option<CursorLayout>,
     ime_cursor_bounds: Option<Bounds<Pixels>>,
     background_color: Hsla,
@@ -1791,11 +1791,11 @@ impl Element for TerminalElement {
                 // searches, highlights to a single range representations
                 let mut relative_highlighted_ranges = Vec::new();
                 for search_match in search_matches {
-                    relative_highlighted_ranges.push((search_match, match_color))
+                    relative_highlighted_ranges.push((search_match, match_color, false))
                 }
                 if let Some(selection) = selection {
                     relative_highlighted_ranges
-                        .push((selection.start..=selection.end, player_color.selection));
+                        .push((selection.start..=selection.end, player_color.selection, selection.is_block));
                 }
 
                 // Add outline jump highlight
@@ -1815,7 +1815,7 @@ impl Element for TerminalElement {
                         AlacLine(relative_line),
                         AlacColumn(columns.saturating_sub(1)),
                     );
-                    relative_highlighted_ranges.push((start..=end, highlight_color));
+                    relative_highlighted_ranges.push((start..=end, highlight_color, false));
                 }
 
                 // Word highlight: selection text matching (temporary)
@@ -1824,7 +1824,7 @@ impl Element for TerminalElement {
                     if !selection_text.is_empty() && selection_text.len() <= 200 {
                         let color = gpui::hsla(0.0, 0.0, 0.5, 0.2);
                         for range in find_visible_occurrences(&terminal_content.cells, selection_text) {
-                            relative_highlighted_ranges.push((range, color));
+                            relative_highlighted_ranges.push((range, color, false));
                         }
                     }
                 }
@@ -1836,7 +1836,7 @@ impl Element for TerminalElement {
                         if !clicked_word.is_empty() {
                             let color = gpui::hsla(0.0, 0.0, 0.5, 0.2);
                             for range in find_visible_occurrences(&terminal_content.cells, clicked_word) {
-                                relative_highlighted_ranges.push((range, color));
+                                relative_highlighted_ranges.push((range, color, false));
                             }
                         }
                     }
@@ -1847,7 +1847,7 @@ impl Element for TerminalElement {
                 for wh in &terminal_content.word_highlights {
                     let color = highlight_colors[wh.color_index % highlight_colors.len()];
                     for range in find_visible_occurrences(&terminal_content.cells, &wh.text) {
-                        relative_highlighted_ranges.push((range, color));
+                        relative_highlighted_ranges.push((range, color, false));
                     }
                 }
 
@@ -2251,9 +2251,9 @@ impl Element for TerminalElement {
                         border.paint(origin, &layout.dimensions, window);
                     }
 
-                    for (relative_highlighted_range, color) in &layout.relative_highlighted_ranges {
+                    for (relative_highlighted_range, color, is_block) in &layout.relative_highlighted_ranges {
                         if let Some((start_y, highlighted_range_lines)) =
-                            to_highlighted_range_lines(relative_highlighted_range, layout, origin)
+                            to_highlighted_range_lines(relative_highlighted_range, layout, origin, *is_block)
                         {
                             let corner_radius = if EditorSettings::get_global(cx).rounded_selection
                             {
@@ -2516,6 +2516,7 @@ fn to_highlighted_range_lines(
     range: &RangeInclusive<AlacPoint>,
     layout: &LayoutState,
     origin: Point<Pixels>,
+    is_block: bool,
 ) -> Option<(Pixels, Vec<HighlightedRangeLine>)> {
     // Step 1. Normalize the points to be viewport relative.
     // When display_offset = 1, here's how the grid is arranged:
@@ -2561,16 +2562,23 @@ fn to_highlighted_range_lines(
     //  (also convert to pixels)
     let mut highlighted_range_lines = Vec::new();
     for line in clamped_start_line..=clamped_end_line {
-        let mut line_start = 0;
-        let mut line_end = layout.dimensions.columns();
+        let (line_start, line_end) = if is_block {
+            // Block selection: every line uses the same column range
+            (unclamped_start.column.0, unclamped_end.column.0 + 1)
+        } else {
+            let mut ls = 0;
+            let mut le = layout.dimensions.columns();
 
-        if line == clamped_start_line && unclamped_start.line.0 >= 0 {
-            line_start = unclamped_start.column.0;
-        }
-        if line == clamped_end_line && unclamped_end.line.0 <= layout.dimensions.num_lines() as i32
-        {
-            line_end = unclamped_end.column.0 + 1; // +1 for inclusive
-        }
+            if line == clamped_start_line && unclamped_start.line.0 >= 0 {
+                ls = unclamped_start.column.0;
+            }
+            if line == clamped_end_line
+                && unclamped_end.line.0 <= layout.dimensions.num_lines() as i32
+            {
+                le = unclamped_end.column.0 + 1; // +1 for inclusive
+            }
+            (ls, le)
+        };
 
         highlighted_range_lines.push(HighlightedRangeLine {
             start_x: origin.x + line_start as f32 * layout.dimensions.cell_width,
