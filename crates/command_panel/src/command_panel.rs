@@ -1,7 +1,7 @@
 use anyhow::Result;
 use bspterm_actions::command_panel::{
-    AddTab, Clear, CloseTab, ConvertToScript, RenameTab, Send, StartCycleSend, StopCycleSend,
-    ToggleFocus,
+    AddTab, BroadcastSend, Clear, CloseTab, ConvertToScript, RenameTab, Send, StartCycleSend,
+    StopCycleSend, ToggleFocus,
 };
 use collections::HashMap;
 use editor::{Editor, EditorEvent, EditorMode, HighlightKey, MultiBuffer, SizingBehavior, ToPoint};
@@ -577,6 +577,37 @@ impl CommandPanel {
         } else {
             let editor = self.active_editor().clone();
             Self::send_from_editor(&editor, &terminal, cx);
+        }
+        self.schedule_save(cx);
+    }
+
+    fn get_all_remote_terminals(&self, cx: &App) -> Vec<Entity<Terminal>> {
+        let Some(workspace) = self.workspace.upgrade() else {
+            return vec![];
+        };
+        let workspace = workspace.read(cx);
+        workspace
+            .items_of_type::<TerminalView>(cx)
+            .filter_map(|terminal_view| {
+                let terminal = terminal_view.read(cx).terminal().clone();
+                if terminal.read(cx).connection_info().is_some() {
+                    Some(terminal)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    fn broadcast_send(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let remote_terminals = self.get_all_remote_terminals(cx);
+        if remote_terminals.is_empty() {
+            log::warn!("{}", t("command_panel.broadcast_no_remote"));
+            return;
+        }
+        let editor = self.active_editor().clone();
+        for terminal in &remote_terminals {
+            Self::send_from_editor(&editor, terminal, cx);
         }
         self.schedule_save(cx);
     }
@@ -1476,8 +1507,20 @@ impl CommandPanel {
                 );
         }
 
-        // Send & Clear buttons (always)
+        // Broadcast Send & Send & Clear buttons (always)
         right_controls = right_controls
+            .child(
+                ui::Button::new("broadcast-send", t("command_panel.broadcast_send"))
+                    .style(ui::ButtonStyle::Subtle)
+                    .size(ui::ButtonSize::Compact)
+                    .icon(IconName::UserGroup)
+                    .icon_size(IconSize::Small)
+                    .icon_position(ui::IconPosition::Start)
+                    .tooltip(Tooltip::text(t("command_panel.broadcast_send")))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.broadcast_send(window, cx);
+                    })),
+            )
             .child(
                 ui::Button::new("send", t("command_panel.send_tooltip"))
                     .style(ui::ButtonStyle::Filled)
@@ -1584,6 +1627,9 @@ impl Render for CommandPanel {
             }))
             .on_action(cx.listener(|this, _: &ConvertToScript, window, cx| {
                 this.convert_to_script(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &BroadcastSend, window, cx| {
+                this.broadcast_send(window, cx);
             }))
             .child(self.render_hint_bar(window, cx))
             .map(|el| {

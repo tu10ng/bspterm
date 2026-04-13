@@ -493,7 +493,9 @@ pub mod command_panel {
             /// Renames the current user tab in the command panel.
             RenameTab,
             /// Converts the command panel content to a Python script and copies to clipboard.
-            ConvertToScript
+            ConvertToScript,
+            /// Broadcasts the command to all open remote terminals.
+            BroadcastSend
         ]
     );
 }
