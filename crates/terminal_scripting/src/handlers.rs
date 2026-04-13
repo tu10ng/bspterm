@@ -25,6 +25,35 @@ use crate::protocol::{
 };
 use crate::session::TerminalRegistry;
 
+/// Wait for the terminal's last line to match the prompt regex, ensuring
+/// all prior output (e.g. from preceding `send()` calls) has landed.
+/// Returns silently on timeout — the terminal may not have a prompt yet
+/// (e.g. first connection).
+async fn wait_for_prompt_settled(
+    terminal_id: &str,
+    regex: &Regex,
+    cx: &mut AsyncApp,
+) -> Result<(), JsonRpcError> {
+    let settle_timeout = Duration::from_secs(3);
+    let start = std::time::Instant::now();
+    loop {
+        let content = cx.update(|cx| {
+            let terminal = TerminalRegistry::get_by_id_str(terminal_id, cx)
+                .map_err(|e| JsonRpcError::terminal_not_found(&e.to_string()))?;
+            Ok::<_, JsonRpcError>(terminal.read(cx).get_content())
+        })?;
+        let last_line = content.trim_end().lines().last().unwrap_or("");
+        if regex.is_match(last_line) {
+            return Ok(());
+        }
+        if start.elapsed() >= settle_timeout {
+            return Ok(());
+        }
+        #[allow(clippy::disallowed_methods)]
+        smol::Timer::after(Duration::from_millis(50)).await;
+    }
+}
+
 pub async fn handle_request(request: JsonRpcRequest, cx: &mut AsyncApp) -> JsonRpcResponse {
     let result = match request.method.as_str() {
         "session.current" => handle_session_current(&request, cx).await,
@@ -351,6 +380,9 @@ async fn handle_terminal_run(
     let timeout = Duration::from_millis(params.timeout_ms);
     let start = std::time::Instant::now();
 
+    // Wait for prior send() output to land before snapshotting
+    wait_for_prompt_settled(&terminal_id, &regex, cx).await?;
+
     let update_start = std::time::Instant::now();
     let content_before = cx.update(|cx| {
         let terminal = TerminalRegistry::get_by_id_str(&terminal_id, cx)
@@ -481,6 +513,9 @@ async fn handle_terminal_sendcmd(
     let terminal_id = params.terminal_id.clone();
     let timeout = Duration::from_millis(params.timeout_ms);
     let start = std::time::Instant::now();
+
+    // Wait for prior send() output to land before snapshotting
+    wait_for_prompt_settled(&terminal_id, &regex, cx).await?;
 
     let content_before = cx.update(|cx| {
         let terminal = TerminalRegistry::get_by_id_str(&terminal_id, cx)
@@ -659,6 +694,9 @@ async fn handle_run_marked(
 
     let timeout = Duration::from_millis(params.timeout_ms);
     let start = std::time::Instant::now();
+
+    // Wait for prior send() output to land before snapshotting
+    wait_for_prompt_settled(&terminal_id_str, &regex, cx).await?;
 
     let command_id = cx.update(|cx| {
         TerminalRegistry::get_terminal(terminal_id, cx)
