@@ -313,6 +313,7 @@ Persistent SSH/Telnet configs in `crates/terminal/src/session_store.rs`. Key typ
 - **Gutter**: `terminal_element.rs` + `row_decorator.rs` — line numbers, timestamps, relative line numbers, logic line numbers (wrapped lines share one number)
 - **Remote Explorer**: `crates/remote_explorer` — session tree with Quick Add (`src/quick_add/`), filter by name/tags/host/username (auto-expands groups when filtering). Protocol-specific creation: `SessionEditModal::new_create_ssh()` / `new_create_telnet()` with default ports (22/23).
 - **Reconnection**: Preserves scrollback by reusing `Terminal` entity and `events_tx` — `Term` buffer is never replaced
+- **VTE Processor Persistence**: `Terminal` holds a single `vte_processor` field reused across all `process_ssh_input()` and `write_output()` calls. Never create a new `Processor::new()` per call — that discards parser state and corrupts escape sequences split across TCP reads.
 - **Editor Panel**: `crates/editor_panel` — dockable editor wrapping a `Pane`, auto-closes when empty
 - **Function Bar**: `function_store.rs` + `function_bar.rs` — custom buttons with parameter UI modal (string/number/boolean/choice/password types). Supports two kinds: **Script** (Python script execution) and **Abbreviation** (simple text expansion: trigger word → expansion text, e.g. "g" → "git"). Abbreviations are triggered by Space (expands and appends space) or Enter (expands and sends Enter). Both share the same store (`functions.json`), bar UI, and CRUD flow. `FunctionKind` enum (`Script` | `Abbreviation { trigger, expansion }`) is `#[serde(flatten)]` on `FunctionConfig` — backward compatible with existing JSON. Separate `abbreviation_enabled` toggle in store.
 - **Button Bar @params**: `button_bar.rs` — `run_button_script()` detects `@params` in scripts and shows `ScriptParamsModal`; without params, executes directly. Same modal flow as function bar's `execute_function_from_bar()`
@@ -401,6 +402,10 @@ Official scripts in `assets/scripts/` are auto-installed to user's scripts direc
 ## Terminal Automation Rules
 
 Rule engine in `crates/terminal/src/rule_engine.rs` and `rule_store.rs`. Types: `AutomationRule`, `TriggerEvent` (Wakeup/Connected/Disconnected), `RuleCondition` (Pattern/ConnectionType/All/Any), `RuleAction` (SendText/SendCredential/RunPython/Sequence/Delay). Features: pre-compiled regex, 2s cooldown, `max_triggers`, context-aware exclusion. Panel: `crates/rule_editor/`. Persistence: `~/.config/bspterm/terminal_rules.json`. Test: `cargo test -p terminal rule_engine`.
+
+**Rule Action Notes**:
+- `SendText`/`SendCredential` append `\r` (CR, 0x0D) as Enter — not `\n` (LF). CR is the standard terminal Enter key byte.
+- `Delay` uses `std::thread::sleep()` (blocks UI thread), capped at 5000ms to prevent UI freeze. Logs a warning if the configured value exceeds the cap.
 
 **Context Exclusion**: `ContextExclusion` (`exclude_context` field on `AutomationRule`) — skips rule action if a pattern matches in the preceding N lines. Fields: `pattern` (regex), `case_insensitive` (bool), `lines_before` (usize, default 5). Patterns are pre-compiled at rule load time.
 

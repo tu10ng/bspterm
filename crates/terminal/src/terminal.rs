@@ -590,6 +590,7 @@ impl TerminalBuilder {
             word_highlights: Vec::new(),
             next_word_highlight_color_index: 0,
             detected_device_type: DetectedDeviceType::default(),
+            vte_processor: alacritty_terminal::vte::ansi::Processor::new(),
         };
 
         Ok(TerminalBuilder {
@@ -850,6 +851,7 @@ impl TerminalBuilder {
                 word_highlights: Vec::new(),
                 next_word_highlight_color_index: 0,
                 detected_device_type: DetectedDeviceType::default(),
+                vte_processor: alacritty_terminal::vte::ansi::Processor::new(),
             };
             if !activation_script.is_empty() && no_task {
                 for activation_script in activation_script {
@@ -1078,6 +1080,7 @@ impl TerminalBuilder {
                 word_highlights: Vec::new(),
                 next_word_highlight_color_index: 0,
                 detected_device_type: DetectedDeviceType::default(),
+                vte_processor: alacritty_terminal::vte::ansi::Processor::new(),
             };
             terminal.init_rule_engine();
             terminal.init_session_logger(session_logging_settings, session_logger_metadata);
@@ -1273,6 +1276,7 @@ impl TerminalBuilder {
                 word_highlights: Vec::new(),
                 next_word_highlight_color_index: 0,
                 detected_device_type: DetectedDeviceType::default(),
+                vte_processor: alacritty_terminal::vte::ansi::Processor::new(),
             };
             terminal.init_rule_engine();
             terminal.init_session_logger(session_logging_settings, session_logger_metadata);
@@ -1463,6 +1467,7 @@ impl TerminalBuilder {
             word_highlights: Vec::new(),
             next_word_highlight_color_index: 0,
             detected_device_type: DetectedDeviceType::default(),
+            vte_processor: alacritty_terminal::vte::ansi::Processor::new(),
         };
 
         terminal.init_rule_engine();
@@ -1739,6 +1744,11 @@ pub struct Terminal {
     next_word_highlight_color_index: usize,
     /// Detected device type (Huawei VRP, Linux, etc.)
     detected_device_type: DetectedDeviceType,
+    /// Persistent VTE parser — reused across calls to avoid losing state
+    /// when escape sequences are split across TCP reads.
+    vte_processor: alacritty_terminal::vte::ansi::Processor<
+        alacritty_terminal::vte::ansi::StdSyncHandler,
+    >,
 }
 
 struct CopyTemplate {
@@ -2295,22 +2305,16 @@ impl Terminal {
             prev_byte = byte;
         }
 
-        let mut processor = alacritty_terminal::vte::ansi::Processor::<
-            alacritty_terminal::vte::ansi::StdSyncHandler,
-        >::new();
         {
             let mut term = self.term.lock();
-            processor.advance(&mut *term, &converted);
+            self.vte_processor.advance(&mut *term, &converted);
         }
         cx.emit(Event::Wakeup);
     }
 
-    fn process_ssh_input(&self, bytes: &[u8]) {
-        let mut processor = alacritty_terminal::vte::ansi::Processor::<
-            alacritty_terminal::vte::ansi::StdSyncHandler,
-        >::new();
+    fn process_ssh_input(&mut self, bytes: &[u8]) {
         let mut term = self.term.lock();
-        processor.advance(&mut *term, bytes);
+        self.vte_processor.advance(&mut *term, bytes);
     }
 
     pub fn total_lines(&self) -> usize {
@@ -5248,7 +5252,7 @@ impl Terminal {
             rule_store::RuleAction::SendText { text, append_newline } => {
                 let mut data = text.clone();
                 if *append_newline {
-                    data.push('\n');
+                    data.push('\r');
                 }
                 self.input(data.into_bytes());
             }
@@ -5256,7 +5260,7 @@ impl Terminal {
                 if let Some(engine) = &self.rule_engine {
                     if let Some(credential) = engine.get_credential(credential_type) {
                         let mut data = credential;
-                        data.push('\n');
+                        data.push('\r');
                         self.input(data.into_bytes());
                     }
                 }
@@ -5270,7 +5274,14 @@ impl Terminal {
                 }
             }
             rule_store::RuleAction::Delay { milliseconds } => {
-                std::thread::sleep(std::time::Duration::from_millis(*milliseconds));
+                let capped = (*milliseconds).min(5000);
+                if *milliseconds > 5000 {
+                    log::warn!(
+                        "Rule delay capped to 5000ms (requested {}ms) to avoid UI freeze",
+                        milliseconds
+                    );
+                }
+                std::thread::sleep(std::time::Duration::from_millis(capped));
             }
         }
     }
