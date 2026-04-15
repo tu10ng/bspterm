@@ -25,6 +25,19 @@ use crate::protocol::{
 };
 use crate::session::TerminalRegistry;
 
+/// 过滤掉 script panel 注入的 [script] / [script:err] 输出行，
+/// 避免干扰 prompt 检测和行数计算。
+fn filter_script_lines(content: &str) -> String {
+    content
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            !trimmed.starts_with("[script] ") && !trimmed.starts_with("[script:err] ")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Wait for the terminal's last line to match the prompt regex, ensuring
 /// all prior output (e.g. from preceding `send()` calls) has landed.
 /// Returns silently on timeout — the terminal may not have a prompt yet
@@ -34,7 +47,7 @@ async fn wait_for_prompt_settled(
     regex: &Regex,
     cx: &mut AsyncApp,
 ) -> Result<(), JsonRpcError> {
-    let settle_timeout = Duration::from_secs(3);
+    let settle_timeout = Duration::from_millis(500);
     let start = std::time::Instant::now();
     loop {
         let content = cx.update(|cx| {
@@ -42,7 +55,8 @@ async fn wait_for_prompt_settled(
                 .map_err(|e| JsonRpcError::terminal_not_found(&e.to_string()))?;
             Ok::<_, JsonRpcError>(terminal.read(cx).get_content())
         })?;
-        let last_line = content.trim_end().lines().last().unwrap_or("");
+        let filtered = filter_script_lines(&content);
+        let last_line = filtered.trim_end().lines().last().unwrap_or("");
         if regex.is_match(last_line) {
             return Ok(());
         }
@@ -394,7 +408,8 @@ async fn handle_terminal_run(
         update_start.elapsed()
     );
 
-    let content_before_trimmed = content_before.trim_end();
+    let content_before_filtered = filter_script_lines(&content_before);
+    let content_before_trimmed = content_before_filtered.trim_end();
     let line_count_before = content_before_trimmed.lines().count();
     log::info!(
         "[terminal.run] line_count_before: {}, last_line_before: {:?}",
@@ -439,7 +454,8 @@ async fn handle_terminal_run(
             );
         }
 
-        let lines: Vec<&str> = content.trim_end().lines().collect();
+        let filtered = filter_script_lines(&content);
+        let lines: Vec<&str> = filtered.trim_end().lines().collect();
         if lines.len() > line_count_before {
             let last_line = lines.last().unwrap_or(&"");
             if regex.is_match(last_line) {
@@ -523,7 +539,8 @@ async fn handle_terminal_sendcmd(
         Ok::<_, JsonRpcError>(terminal.read(cx).get_content())
     })?;
 
-    let line_count_before = content_before.trim_end().lines().count();
+    let content_before_filtered = filter_script_lines(&content_before);
+    let line_count_before = content_before_filtered.trim_end().lines().count();
 
     cx.update(|cx| {
         let terminal = TerminalRegistry::get_by_id_str(&terminal_id, cx)
@@ -545,7 +562,8 @@ async fn handle_terminal_sendcmd(
             Ok::<_, JsonRpcError>(terminal.read(cx).get_content())
         })?;
 
-        let lines: Vec<&str> = content.trim_end().lines().collect();
+        let filtered = filter_script_lines(&content);
+        let lines: Vec<&str> = filtered.trim_end().lines().collect();
         if lines.len() > line_count_before {
             let last_line = lines.last().unwrap_or(&"");
             if regex.is_match(last_line) {
@@ -711,7 +729,8 @@ async fn handle_run_marked(
     let line_count_before = cx.update(|cx| {
         let terminal = TerminalRegistry::get_by_id_str(&terminal_id_str, cx)
             .map_err(|e| JsonRpcError::terminal_not_found(&e.to_string()))?;
-        Ok::<_, JsonRpcError>(terminal.read(cx).get_content().trim_end().lines().count())
+        let content = terminal.read(cx).get_content();
+        Ok::<_, JsonRpcError>(filter_script_lines(&content).trim_end().lines().count())
     })?;
 
     cx.update(|cx| {
@@ -738,7 +757,8 @@ async fn handle_run_marked(
             Ok::<_, JsonRpcError>(content)
         })?;
 
-        let lines: Vec<&str> = content.trim_end().lines().collect();
+        let filtered = filter_script_lines(&content);
+        let lines: Vec<&str> = filtered.trim_end().lines().collect();
         if lines.len() > line_count_before {
             let last_line = lines.last().unwrap_or(&"");
             if regex.is_match(last_line) {

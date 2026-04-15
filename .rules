@@ -383,6 +383,8 @@ Unix socket JSON-RPC in `crates/terminal_scripting/` and `crates/script_panel/`.
 
 Methods: `session.current`, `session.list`, `session.create_ssh`, `session.create_telnet`, `terminal.send`, `terminal.read`, `terminal.wait_for`, `terminal.run`, `terminal.close`
 
+**`[script]` 行过滤**：`handlers.rs` 中的 `filter_script_lines()` 在 prompt 检测和行数计算时过滤掉 `[script] ` / `[script:err] ` 前缀行（由 `write_output()` 注入），避免干扰 `sendcmd`/`run`/`run_marked` 的 prompt 匹配。注意前缀含尾部空格，不会误过滤华为 prompt `[Huawei]`。`wait_for_prompt_settled` 超时为 500ms。`terminal.read` 和 `terminal.wait_for` 不过滤（返回原始内容）。
+
 Python client: `assets/scripts/bspterm.py`. Scripts in `~/.config/bspterm/scripts/*.py`. Scripts can declare `@params` blocks in docstrings for modal parameter input (types: string, number, boolean, choice, password). See `crates/script_panel/src/script_params.rs`.
 
 Official scripts in `assets/scripts/` are auto-installed to user's scripts directory on startup. Includes: `ctrl_b.py` (auto-send Ctrl+B for BootROM menu), `scan_mpu_ip.py`, `device_online_notify.py`, `disp_boa.py`, `example_with_params.py`.
