@@ -1,8 +1,10 @@
 use gpui::{App, AppContext, AsyncApp, Entity};
 use notifications::status_toast::{StatusToast, ToastIcon};
+use parking_lot::Mutex;
 use regex::Regex;
 use serde_json::{Value, json};
 use settings::Settings;
+use std::sync::Arc;
 use std::time::Duration;
 use terminal::connection::ssh::{SshAuthConfig, SshConfig};
 use terminal::connection::telnet::TelnetConfig;
@@ -24,6 +26,107 @@ use crate::protocol::{
     TrackStopParams, WaitForLoginParams, WaitForParams,
 };
 use crate::session::TerminalRegistry;
+
+/// Show a toast notification from async context.
+fn show_toast(cx: &mut AsyncApp, message: &str, level: &str) {
+    let message = message.to_string();
+    let level = level.to_string();
+    let _ = cx.update(|cx| {
+        show_toast_sync(&message, &level, cx);
+    });
+}
+
+/// Show a toast notification from sync context.
+fn show_toast_sync(message: &str, level: &str, cx: &mut App) {
+    let Some(window_handle) = cx.active_window() else {
+        return;
+    };
+    let message = message.to_string();
+    let level = level.to_string();
+    let _ = window_handle.update(cx, |_, window, cx| {
+        let Some(workspace_entity) = window.root::<Workspace>().flatten() else {
+            return;
+        };
+        let toast = StatusToast::new(&message, cx, |toast, _cx| {
+            let icon = match level.as_str() {
+                "error" => ToastIcon::new(IconName::XCircle).color(Color::Error),
+                "warning" => ToastIcon::new(IconName::Warning).color(Color::Warning),
+                "success" => ToastIcon::new(IconName::Check).color(Color::Success),
+                _ => ToastIcon::new(IconName::Info).color(Color::Muted),
+            };
+            toast.icon(icon)
+        });
+        workspace_entity.update(cx, |workspace, cx| {
+            workspace.toggle_status_toast(toast, cx);
+        });
+    });
+}
+
+/// Spawn an idle timeout monitor for a hidden terminal.
+/// Checks every 30 seconds if the terminal has been idle for `timeout_secs`.
+fn spawn_idle_timeout(terminal_id: Uuid, timeout_secs: u64, cx: &mut AsyncApp) {
+    let last_output = Arc::new(Mutex::new(std::time::Instant::now()));
+
+    // Subscribe to terminal events to track last output time
+    let last_output_for_sub = last_output.clone();
+    let _ = cx.update(|cx| {
+        if let Some(terminal) = TerminalRegistry::get_terminal(terminal_id, cx) {
+            cx.subscribe(&terminal, move |_terminal: Entity<Terminal>, _event: &terminal::Event, _cx: &mut App| {
+                *last_output_for_sub.lock() = std::time::Instant::now();
+            })
+            .detach();
+        }
+    });
+
+    // Spawn background check loop
+    let last_output_for_task = last_output.clone();
+    let _ = cx.update(|cx| {
+        cx.spawn(async move |cx| {
+            let timeout = Duration::from_secs(timeout_secs);
+            loop {
+                #[allow(clippy::disallowed_methods)]
+                smol::Timer::after(Duration::from_secs(30)).await;
+
+                let elapsed = last_output_for_task.lock().elapsed();
+                if elapsed >= timeout {
+                    let name = cx
+                        .update(|cx| TerminalRegistry::get_session_name(terminal_id, cx));
+
+                    // Disconnect and unregister
+                    cx.update(|cx| {
+                        if let Some(terminal) =
+                            TerminalRegistry::get_terminal(terminal_id, cx)
+                        {
+                            terminal.update(cx, |terminal, _cx| terminal.disconnect());
+                        }
+                        TerminalRegistry::unregister(terminal_id, cx);
+                    });
+
+                    // Show toast
+                    let msg = if let Some(name) = name {
+                        format!(
+                            "Hidden terminal auto-closed (idle timeout): {}",
+                            name
+                        )
+                    } else {
+                        "Hidden terminal auto-closed (idle timeout)".to_string()
+                    };
+                    show_toast(cx, &msg, "warning");
+
+                    break;
+                }
+
+                // Check if terminal still exists
+                let exists = cx
+                    .update(|cx| TerminalRegistry::get_terminal(terminal_id, cx).is_some());
+                if !exists {
+                    break;
+                }
+            }
+        })
+        .detach();
+    });
+}
 
 /// 过滤掉 script panel 注入的 [script] / [script:err] 输出行，
 /// 避免干扰 prompt 检测和行数计算。
@@ -72,6 +175,7 @@ pub async fn handle_request(request: JsonRpcRequest, cx: &mut AsyncApp) -> JsonR
     let result = match request.method.as_str() {
         "session.current" => handle_session_current(&request, cx).await,
         "session.list" => handle_session_list(cx).await,
+        "session.list_hidden" => handle_session_list_hidden(cx).await,
         "session.new_terminal" => handle_new_terminal().await,
         "session.create_ssh" => handle_create_ssh(&request, cx).await,
         "session.create_telnet" => handle_create_telnet(&request, cx).await,
@@ -132,6 +236,13 @@ async fn handle_session_list(cx: &mut AsyncApp) -> Result<Value, JsonRpcError> {
     }))
 }
 
+async fn handle_session_list_hidden(cx: &mut AsyncApp) -> Result<Value, JsonRpcError> {
+    Ok(cx.update(|cx| {
+        let sessions = TerminalRegistry::list_hidden(cx);
+        json!(sessions)
+    }))
+}
+
 async fn handle_new_terminal() -> Result<Value, JsonRpcError> {
     Err(JsonRpcError::internal_error(
         "new_terminal not yet implemented - requires workspace integration",
@@ -186,17 +297,35 @@ async fn handle_create_ssh(
 
     let host = params.host.clone();
     let port = params.port;
+    let hidden = params.hidden;
+    let idle_timeout = params.idle_timeout.unwrap_or(300);
     let terminal_id = cx.update(|cx| {
         let terminal = cx.new(|cx| terminal_builder.subscribe(cx));
         let name = format!("ssh://{}:{}", host, port);
-        TerminalRegistry::register(&terminal, name, cx)
+        if hidden {
+            TerminalRegistry::register_hidden(&terminal, name, cx)
+        } else {
+            TerminalRegistry::register(&terminal, name, cx)
+        }
     });
+
+    if hidden {
+        show_toast(
+            cx,
+            &format!("Hidden terminal created: ssh://{}:{}", host, port),
+            "info",
+        );
+        if idle_timeout > 0 {
+            spawn_idle_timeout(terminal_id, idle_timeout, cx);
+        }
+    }
 
     Ok(json!({
         "id": terminal_id.to_string(),
         "type": "ssh",
         "host": host,
-        "port": port
+        "port": port,
+        "hidden": hidden
     }))
 }
 
@@ -237,17 +366,35 @@ async fn handle_create_telnet(
 
     let host = params.host.clone();
     let port = params.port;
+    let hidden = params.hidden;
+    let idle_timeout = params.idle_timeout.unwrap_or(300);
     let terminal_id = cx.update(|cx| {
         let terminal = cx.new(|cx| terminal_builder.subscribe(cx));
         let name = format!("telnet://{}:{}", host, port);
-        TerminalRegistry::register(&terminal, name, cx)
+        if hidden {
+            TerminalRegistry::register_hidden(&terminal, name, cx)
+        } else {
+            TerminalRegistry::register(&terminal, name, cx)
+        }
     });
+
+    if hidden {
+        show_toast(
+            cx,
+            &format!("Hidden terminal created: telnet://{}:{}", host, port),
+            "info",
+        );
+        if idle_timeout > 0 {
+            spawn_idle_timeout(terminal_id, idle_timeout, cx);
+        }
+    }
 
     Ok(json!({
         "id": terminal_id.to_string(),
         "type": "telnet",
         "host": host,
-        "port": port
+        "port": port,
+        "hidden": hidden
     }))
 }
 
@@ -608,7 +755,21 @@ async fn handle_terminal_close(
     cx.update(|cx| {
         let id = Uuid::parse_str(&params.terminal_id)
             .map_err(|_| JsonRpcError::invalid_params("Invalid terminal ID"))?;
+
+        let name = TerminalRegistry::get_session_name(id, cx);
+        let hidden = TerminalRegistry::is_hidden(id, cx);
+
+        if let Some(terminal) = TerminalRegistry::get_terminal(id, cx) {
+            terminal.update(cx, |terminal, _| terminal.disconnect());
+        }
         TerminalRegistry::unregister(id, cx);
+
+        if hidden {
+            if let Some(name) = name {
+                show_toast_sync(&format!("Hidden terminal closed: {}", name), "info", cx);
+            }
+        }
+
         Ok(json!({"success": true}))
     })
 }

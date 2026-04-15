@@ -531,6 +531,7 @@ class SessionInfo:
     name: str
     type: str
     connected: bool
+    hidden: bool
 
     def connect(self) -> Terminal:
         """Get a Terminal instance for this session."""
@@ -551,6 +552,23 @@ class Session:
                 name=s["name"],
                 type=s["type"],
                 connected=s["connected"],
+                hidden=s.get("hidden", False),
+            )
+            for s in result
+        ]
+
+    @staticmethod
+    def list_hidden() -> List[SessionInfo]:
+        """List only hidden (background) terminal sessions."""
+        client = _get_client()
+        result = client.call("session.list_hidden")
+        return [
+            SessionInfo(
+                id=s["id"],
+                name=s["name"],
+                type=s["type"],
+                connected=s["connected"],
+                hidden=s.get("hidden", False),
             )
             for s in result
         ]
@@ -752,6 +770,8 @@ class SSH:
         password: str = None,
         private_key_path: str = None,
         passphrase: str = None,
+        hidden: bool = False,
+        idle_timeout: int = 300,
     ) -> Terminal:
         """
         Create a background SSH connection (no UI window).
@@ -763,17 +783,18 @@ class SSH:
             password: Password for authentication
             private_key_path: Path to private key file
             passphrase: Passphrase for private key
+            hidden: If True, terminal runs in background without UI (default: False)
+            idle_timeout: Auto-close after N seconds of no output (default: 300, 0=never)
 
         Returns:
             Terminal instance for the SSH connection
-
-        Note:
-            This function is not yet implemented.
         """
         client = _get_client()
         params = {
             "host": host,
             "port": port,
+            "hidden": hidden,
+            "idle_timeout": idle_timeout,
         }
         if user:
             params["username"] = user
@@ -801,6 +822,8 @@ class Telnet:
         port: int = 23,
         username: str = None,
         password: str = None,
+        hidden: bool = False,
+        idle_timeout: int = 300,
     ) -> Terminal:
         """
         Create a background Telnet connection (no UI window).
@@ -810,17 +833,18 @@ class Telnet:
             port: Telnet port (default: 23)
             username: Username for login
             password: Password for login
+            hidden: If True, terminal runs in background without UI (default: False)
+            idle_timeout: Auto-close after N seconds of no output (default: 300, 0=never)
 
         Returns:
             Terminal instance for the Telnet connection
-
-        Note:
-            This function is not yet implemented.
         """
         client = _get_client()
         params = {
             "host": host,
             "port": port,
+            "hidden": hidden,
+            "idle_timeout": idle_timeout,
         }
         if username:
             params["username"] = username

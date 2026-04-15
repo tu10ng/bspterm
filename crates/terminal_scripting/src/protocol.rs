@@ -123,6 +123,8 @@ pub struct SessionInfo {
     #[serde(rename = "type")]
     pub session_type: String,
     pub connected: bool,
+    #[serde(default)]
+    pub hidden: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -143,6 +145,10 @@ pub struct CreateSshParams {
     pub password: Option<String>,
     pub private_key_path: Option<String>,
     pub passphrase: Option<String>,
+    #[serde(default)]
+    pub hidden: bool,
+    /// Idle timeout in seconds for hidden terminals. Default: 300 (5 min). 0 = no timeout.
+    pub idle_timeout: Option<u64>,
 }
 
 fn default_ssh_port() -> u16 {
@@ -156,6 +162,10 @@ pub struct CreateTelnetParams {
     pub port: u16,
     pub username: Option<String>,
     pub password: Option<String>,
+    #[serde(default)]
+    pub hidden: bool,
+    /// Idle timeout in seconds for hidden terminals. Default: 300 (5 min). 0 = no timeout.
+    pub idle_timeout: Option<u64>,
 }
 
 fn default_telnet_port() -> u16 {

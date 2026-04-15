@@ -39,6 +39,7 @@ const DISP_BOA_PY: &[u8] = include_bytes!("../../../assets/scripts/disp_boa.py")
 const EXAMPLE_WITH_PARAMS_PY: &[u8] =
     include_bytes!("../../../assets/scripts/example_with_params.py");
 const CTRL_B_PY: &[u8] = include_bytes!("../../../assets/scripts/ctrl_b.py");
+const EXAMPLE_HIDDEN_PY: &[u8] = include_bytes!("../../../assets/scripts/example_hidden.py");
 
 fn scripts_dir() -> PathBuf {
     paths::config_dir().join("scripts")
@@ -58,6 +59,7 @@ fn ensure_default_scripts() {
         ("device_online_notify.py", DEVICE_ONLINE_NOTIFY_PY),
         ("disp_boa.py", DISP_BOA_PY),
         ("example_with_params.py", EXAMPLE_WITH_PARAMS_PY),
+        ("example_hidden.py", EXAMPLE_HIDDEN_PY),
         ("ctrl_b.py", CTRL_B_PY),
     ];
 

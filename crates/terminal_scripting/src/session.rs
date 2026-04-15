@@ -14,15 +14,17 @@ pub struct TerminalSession {
     pub name: String,
     pub terminal: WeakEntity<Terminal>,
     pub item_id: Option<EntityId>,
+    pub hidden: bool,
 }
 
 impl TerminalSession {
-    pub fn new(name: String, terminal: WeakEntity<Terminal>, item_id: Option<EntityId>) -> Self {
+    pub fn new(name: String, terminal: WeakEntity<Terminal>, item_id: Option<EntityId>, hidden: bool) -> Self {
         Self {
             id: Uuid::new_v4(),
             name,
             terminal,
             item_id,
+            hidden,
         }
     }
 
@@ -34,6 +36,7 @@ impl TerminalSession {
             name: self.name.clone(),
             session_type: self.session_type(cx),
             connected,
+            hidden: self.hidden,
         })
     }
 
@@ -78,6 +81,15 @@ impl TerminalRegistry {
         Self::register_with_item_id(terminal, name, None, cx)
     }
 
+    pub fn register_hidden(terminal: &Entity<Terminal>, name: String, cx: &App) -> Uuid {
+        let global = cx.global::<GlobalTerminalRegistry>();
+        let mut inner = global.0.write();
+        let session = TerminalSession::new(name, terminal.downgrade(), None, true);
+        let id = session.id;
+        inner.sessions.insert(id, session);
+        id
+    }
+
     pub fn register_with_item_id(
         terminal: &Entity<Terminal>,
         name: String,
@@ -86,7 +98,7 @@ impl TerminalRegistry {
     ) -> Uuid {
         let global = cx.global::<GlobalTerminalRegistry>();
         let mut inner = global.0.write();
-        let session = TerminalSession::new(name, terminal.downgrade(), item_id);
+        let session = TerminalSession::new(name, terminal.downgrade(), item_id, false);
         let id = session.id;
         inner.sessions.insert(id, session);
         id
@@ -137,6 +149,17 @@ impl TerminalRegistry {
             .collect()
     }
 
+    pub fn list_hidden(cx: &App) -> Vec<SessionInfo> {
+        let global = cx.global::<GlobalTerminalRegistry>();
+        let inner = global.0.read();
+        inner
+            .sessions
+            .values()
+            .filter(|session| session.hidden)
+            .filter_map(|session| session.to_info(cx))
+            .collect()
+    }
+
     pub fn get_terminal(id: Uuid, cx: &App) -> Option<Entity<Terminal>> {
         let global = cx.global::<GlobalTerminalRegistry>();
         let inner = global.0.read();
@@ -144,6 +167,18 @@ impl TerminalRegistry {
             .sessions
             .get(&id)
             .and_then(|session| session.terminal.upgrade())
+    }
+
+    pub fn get_session_name(id: Uuid, cx: &App) -> Option<String> {
+        let global = cx.global::<GlobalTerminalRegistry>();
+        let inner = global.0.read();
+        inner.sessions.get(&id).map(|s| s.name.clone())
+    }
+
+    pub fn is_hidden(id: Uuid, cx: &App) -> bool {
+        let global = cx.global::<GlobalTerminalRegistry>();
+        let inner = global.0.read();
+        inner.sessions.get(&id).map_or(false, |s| s.hidden)
     }
 
     pub fn get_by_id_str(id_str: &str, cx: &App) -> Result<Entity<Terminal>> {
